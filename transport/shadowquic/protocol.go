@@ -29,12 +29,21 @@ var (
 	errPacketTooLarge  = errors.New("shadowquic: packet too large")
 )
 
+// MetadataAddr returns the target in the KIP address form. A named target goes
+// through the wire encoder; an IP target is built from its AddrPort, so an IP
+// never becomes a string only to be parsed back.
 func MetadataAddr(metadata *C.Metadata) (socks5.Addr, error) {
-	addr := socks5.ParseAddr(metadata.RemoteAddress())
-	if addr == nil {
+	if metadata.Host == "" {
+		addrPort := metadata.AddrPort()
+		if addrPort.IsValid() {
+			return socks5.AddrFromStdAddrPort(addrPort), nil
+		}
 		return nil, fmt.Errorf("%w: %s", errInvalidAddress, metadata.RemoteAddress())
 	}
-	return addr, nil
+	if addr := socks5.ParseAddr(metadata.RemoteAddress()); addr != nil {
+		return addr, nil
+	}
+	return nil, fmt.Errorf("%w: %s", errInvalidAddress, metadata.RemoteAddress())
 }
 
 func UnspecifiedAddr() socks5.Addr {

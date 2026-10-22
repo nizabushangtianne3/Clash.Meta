@@ -1,0 +1,26 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/transport/shadowquic
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkMetadataAddr/addrport-16         	78098052	        13.33 ns/op	       8 B/op	       1 allocs/op
+BenchmarkMetadataAddr/addrport-16         	92703464	        11.67 ns/op	       8 B/op	       1 allocs/op
+BenchmarkMetadataAddr/addrport-16         	91088506	        13.07 ns/op	       8 B/op	       1 allocs/op
+BenchmarkMetadataAddr/addrport-16         	100000000	        16.75 ns/op	       8 B/op	       1 allocs/op
+BenchmarkMetadataAddr/addrport-16         	98053815	        13.69 ns/op	       8 B/op	       1 allocs/op
+BenchmarkMetadataAddr/addrport-16         	100000000	        24.72 ns/op	       8 B/op	       1 allocs/op
+BenchmarkMetadataAddr/addrport-16         	57479246	        27.73 ns/op	       8 B/op	       1 allocs/op
+BenchmarkMetadataAddr/addrport-16         	68131666	        17.74 ns/op	       8 B/op	       1 allocs/op
+BenchmarkMetadataAddr/addrport-16         	89865268	        19.34 ns/op	       8 B/op	       1 allocs/op
+BenchmarkMetadataAddr/addrport-16         	100000000	        14.87 ns/op	       8 B/op	       1 allocs/op
+BenchmarkMetadataAddr/addr-string-16      	 6748586	       480.6 ns/op	      40 B/op	       3 allocs/op
+BenchmarkMetadataAddr/addr-string-16      	 7048490	       184.1 ns/op	      40 B/op	       3 allocs/op
+BenchmarkMetadataAddr/addr-string-16      	 6664148	       419.8 ns/op	      40 B/op	       3 allocs/op
+BenchmarkMetadataAddr/addr-string-16      	 1974061	       605.5 ns/op	      40 B/op	       3 allocs/op
+BenchmarkMetadataAddr/addr-string-16      	 4282076	       296.4 ns/op	      40 B/op	       3 allocs/op
+BenchmarkMetadataAddr/addr-string-16      	 5367367	       374.7 ns/op	      40 B/op	       3 allocs/op
+BenchmarkMetadataAddr/addr-string-16      	 6468810	       395.9 ns/op	      40 B/op	       3 allocs/op
+BenchmarkMetadataAddr/addr-string-16      	 8043842	       216.7 ns/op	      40 B/op	       3 allocs/op
+BenchmarkMetadataAddr/addr-string-16      	 7361655	       171.6 ns/op	      40 B/op	       3 allocs/op
+BenchmarkMetadataAddr/addr-string-16      	 8553356	       317.4 ns/op	      40 B/op	       3 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/transport/shadowquic	43.717s
