@@ -345,15 +345,22 @@ func (z *ZeroTier) wireTransportConfig() (ZTTransport.Config, error) {
 		SecondaryPort:    z.option.SecondaryPort,
 		TCPFallbackMode:  fallbackMode,
 		TCPFallbackRelay: z.option.TCPFallbackRelay,
-		Log: func(level ZTTransport.LogLevel, format string, arguments ...interface{}) {
-			message := fmt.Sprintf(format, arguments...)
-			if level == ZTTransport.LogInfo {
-				log.Infoln("[ZeroTier](%s) %s", z.Name(), message)
-			} else {
-				log.Debugln("[ZeroTier](%s) %s", z.Name(), message)
-			}
-		},
+		Log:              z.logFromTransport,
 	}, nil
+}
+
+// logFromTransport relays the library's log lines. The arguments are only
+// formatted once the level is on, so a disabled level costs nothing.
+func (z *ZeroTier) logFromTransport(level ZTTransport.LogLevel, format string, arguments ...interface{}) {
+	if level == ZTTransport.LogInfo {
+		if log.InfoEnabled() {
+			log.Infoln("[ZeroTier](%s) %s", z.Name(), fmt.Sprintf(format, arguments...))
+		}
+		return
+	}
+	if log.DebugEnabled() {
+		log.Debugln("[ZeroTier](%s) %s", z.Name(), fmt.Sprintf(format, arguments...))
+	}
 }
 
 func zeroTierTransportInterfaces() ([]ZTTransport.Interface, error) {

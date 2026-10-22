@@ -1,0 +1,26 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/adapter/outbound
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkZeroTierTransportLog/guarded-16         	392526555	         2.633 ns/op	       0 B/op	       0 allocs/op
+BenchmarkZeroTierTransportLog/guarded-16         	438861154	         2.676 ns/op	       0 B/op	       0 allocs/op
+BenchmarkZeroTierTransportLog/guarded-16         	428137174	         2.745 ns/op	       0 B/op	       0 allocs/op
+BenchmarkZeroTierTransportLog/guarded-16         	349577520	         3.284 ns/op	       0 B/op	       0 allocs/op
+BenchmarkZeroTierTransportLog/guarded-16         	476066358	         3.104 ns/op	       0 B/op	       0 allocs/op
+BenchmarkZeroTierTransportLog/guarded-16         	412918285	         5.190 ns/op	       0 B/op	       0 allocs/op
+BenchmarkZeroTierTransportLog/guarded-16         	482174534	         4.357 ns/op	       0 B/op	       0 allocs/op
+BenchmarkZeroTierTransportLog/guarded-16         	100000000	        10.43 ns/op	       0 B/op	       0 allocs/op
+BenchmarkZeroTierTransportLog/guarded-16         	473916219	         2.705 ns/op	       0 B/op	       0 allocs/op
+BenchmarkZeroTierTransportLog/guarded-16         	444690506	         2.497 ns/op	       0 B/op	       0 allocs/op
+BenchmarkZeroTierTransportLog/unguarded-16       	10384638	       117.7 ns/op	      64 B/op	       2 allocs/op
+BenchmarkZeroTierTransportLog/unguarded-16       	10533207	       118.5 ns/op	      64 B/op	       2 allocs/op
+BenchmarkZeroTierTransportLog/unguarded-16       	10464547	       116.4 ns/op	      64 B/op	       2 allocs/op
+BenchmarkZeroTierTransportLog/unguarded-16       	10577560	       117.0 ns/op	      64 B/op	       2 allocs/op
+BenchmarkZeroTierTransportLog/unguarded-16       	 9943750	       115.7 ns/op	      64 B/op	       2 allocs/op
+BenchmarkZeroTierTransportLog/unguarded-16       	10424820	       116.7 ns/op	      64 B/op	       2 allocs/op
+BenchmarkZeroTierTransportLog/unguarded-16       	10505056	       118.0 ns/op	      64 B/op	       2 allocs/op
+BenchmarkZeroTierTransportLog/unguarded-16       	 9900769	       121.6 ns/op	      64 B/op	       2 allocs/op
+BenchmarkZeroTierTransportLog/unguarded-16       	10234156	       117.5 ns/op	      64 B/op	       2 allocs/op
+BenchmarkZeroTierTransportLog/unguarded-16       	10184050	       125.9 ns/op	      64 B/op	       2 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/adapter/outbound	32.965s
