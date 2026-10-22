@@ -14,11 +14,17 @@ import (
 
 type fakeExtendedConn struct {
 	net.Conn
+	r      io.Reader
 	w      io.Writer
 	writes int
 }
 
-func (c *fakeExtendedConn) Read([]byte) (int, error)     { return 0, io.EOF }
+func (c *fakeExtendedConn) Read(b []byte) (int, error) {
+	if c.r != nil {
+		return c.r.Read(b)
+	}
+	return 0, io.EOF
+}
 func (c *fakeExtendedConn) ReadBuffer(*buf.Buffer) error { return nil }
 func (c *fakeExtendedConn) WriteBuffer(*buf.Buffer) error {
 	return nil

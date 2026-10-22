@@ -11,7 +11,8 @@ import (
 
 type PacketConn struct {
 	net.Conn
-	rAddr netip.AddrPort
+	rAddr      netip.AddrPort
+	readHeader [2]byte
 }
 
 // WriteTo sends the length and the payload as one frame: writing the two-byte
@@ -29,11 +30,10 @@ func (c *PacketConn) WriteTo(b []byte, addr net.Addr) (int, error) {
 }
 
 func (c *PacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
-	var length uint16
-	err := binary.Read(c.Conn, binary.BigEndian, &length)
-	if err != nil {
+	if _, err := io.ReadFull(c.Conn, c.readHeader[:]); err != nil {
 		return 0, nil, err
 	}
+	length := binary.BigEndian.Uint16(c.readHeader[:])
 	if len(b) < int(length) {
 		return 0, nil, io.ErrShortBuffer
 	}
@@ -42,11 +42,10 @@ func (c *PacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
 }
 
 func (c *PacketConn) WaitReadFrom() (data []byte, addr netip.AddrPort, err error) {
-	var length uint16
-	err = binary.Read(c.Conn, binary.BigEndian, &length)
-	if err != nil {
+	if _, err = io.ReadFull(c.Conn, c.readHeader[:]); err != nil {
 		return
 	}
+	length := binary.BigEndian.Uint16(c.readHeader[:])
 	readBuf := pool.Get(int(length))
 	n, err := io.ReadFull(c.Conn, readBuf)
 	if err != nil {

@@ -53,7 +53,7 @@ func (c *Client) StreamConn(conn net.Conn, dst *DstAddr) (net.Conn, error) {
 }
 
 func (c *Client) PacketConn(conn net.Conn, rAddr netip.AddrPort) net.PacketConn {
-	return &PacketConn{conn, rAddr}
+	return &PacketConn{Conn: conn, rAddr: rAddr}
 }
 
 // NewClient return Client instance

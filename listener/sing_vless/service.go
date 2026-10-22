@@ -211,6 +211,7 @@ type serverPacketConn struct {
 	N.ExtendedConn
 	destination     M.Socksaddr
 	readWaitOptions N.ReadWaitOptions
+	readHeader      [2]byte
 }
 
 func (c *serverPacketConn) InitializeReadWaiter(options N.ReadWaitOptions) (needCopy bool) {
@@ -219,11 +220,10 @@ func (c *serverPacketConn) InitializeReadWaiter(options N.ReadWaitOptions) (need
 }
 
 func (c *serverPacketConn) WaitReadPacket() (buffer *buf.Buffer, destination M.Socksaddr, err error) {
-	var packetLen uint16
-	err = binary.Read(c.ExtendedConn, binary.BigEndian, &packetLen)
-	if err != nil {
+	if _, err = io.ReadFull(c.ExtendedConn, c.readHeader[:]); err != nil {
 		return
 	}
+	packetLen := binary.BigEndian.Uint16(c.readHeader[:])
 
 	buffer = c.readWaitOptions.NewPacketBuffer()
 	_, err = buffer.ReadFullFrom(c.ExtendedConn, int(packetLen))
@@ -238,11 +238,10 @@ func (c *serverPacketConn) WaitReadPacket() (buffer *buf.Buffer, destination M.S
 }
 
 func (c *serverPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
-	var packetLen uint16
-	err = binary.Read(c.ExtendedConn, binary.BigEndian, &packetLen)
-	if err != nil {
+	if _, err = io.ReadFull(c.ExtendedConn, c.readHeader[:]); err != nil {
 		return
 	}
+	packetLen := binary.BigEndian.Uint16(c.readHeader[:])
 	if len(p) < int(packetLen) {
 		err = io.ErrShortBuffer
 		return
@@ -275,11 +274,10 @@ func (c *serverPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 }
 
 func (c *serverPacketConn) ReadPacket(buffer *buf.Buffer) (destination M.Socksaddr, err error) {
-	var packetLen uint16
-	err = binary.Read(c.ExtendedConn, binary.BigEndian, &packetLen)
-	if err != nil {
+	if _, err = io.ReadFull(c.ExtendedConn, c.readHeader[:]); err != nil {
 		return
 	}
+	packetLen := binary.BigEndian.Uint16(c.readHeader[:])
 
 	_, err = buffer.ReadFullFrom(c.ExtendedConn, int(packetLen))
 	if err != nil {
