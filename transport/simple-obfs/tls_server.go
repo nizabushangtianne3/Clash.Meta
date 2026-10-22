@@ -118,7 +118,9 @@ func (tos *TLSObfsServer) write(b []byte) (int, error) {
 	buf := pool.GetBuffer()
 	defer pool.PutBuffer(buf)
 	buf.Write([]byte{0x17, 0x03, 0x03})
-	binary.Write(buf, binary.BigEndian, uint16(len(b)))
+	length := uint16(len(b))
+	_ = buf.WriteByte(byte(length >> 8))
+	_ = buf.WriteByte(byte(length))
 	buf.Write(b)
 	_, err := tos.Conn.Write(buf.Bytes())
 	if err != nil {
