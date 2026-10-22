@@ -21,7 +21,8 @@ The QUIC-relay push path also built a fresh `bufio.Writer` sized to the packet
 for every datagram; it now serializes into a pooled buffer and writes that, the
 same shape the other call sites in this package already use.
 
-`transport/tuic/v4` has the same codec shape and was left alone in this change.
+`transport/tuic/v4` has the same codec shape; the follow-up
+`2026-10-22-tuic-v4-packet-fields-report.md` applies the same removal there.
 
 ## Gate
 

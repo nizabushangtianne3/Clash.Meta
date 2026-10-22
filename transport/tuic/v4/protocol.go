@@ -25,6 +25,51 @@ type BufferedWriter interface {
 	io.ByteWriter
 }
 
+// writeUint16 writes a big-endian uint16 through WriteByte. Handing the writer
+// a scratch slice would escape through the interface and allocate per packet.
+func writeUint16(writer BufferedWriter, v uint16) error {
+	if err := writer.WriteByte(byte(v >> 8)); err != nil {
+		return err
+	}
+	return writer.WriteByte(byte(v))
+}
+
+// readUint16 is writeUint16 for the read side.
+func readUint16(reader BufferedReader) (uint16, error) {
+	hi, err := reader.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	lo, err := reader.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	return uint16(hi)<<8 | uint16(lo), nil
+}
+
+// writeUint32 is writeUint16 for the four-byte association id.
+func writeUint32(writer BufferedWriter, v uint32) error {
+	for shift := 24; shift >= 0; shift -= 8 {
+		if err := writer.WriteByte(byte(v >> shift)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// readUint32 is writeUint32 for the read side.
+func readUint32(reader BufferedReader) (uint32, error) {
+	var v uint32
+	for range 4 {
+		b, err := reader.ReadByte()
+		if err != nil {
+			return 0, err
+		}
+		v = v<<8 | uint32(b)
+	}
+	return v, nil
+}
+
 type CommandType byte
 
 const (
@@ -228,12 +273,10 @@ func ReadPacketWithHead(head CommandHead, reader BufferedReader) (c Packet, err 
 		err = fmt.Errorf("error command type: %s", c.CommandHead.TYPE)
 		return
 	}
-	err = binary.Read(reader, binary.BigEndian, &c.ASSOC_ID)
-	if err != nil {
+	if c.ASSOC_ID, err = readUint32(reader); err != nil {
 		return
 	}
-	err = binary.Read(reader, binary.BigEndian, &c.LEN)
-	if err != nil {
+	if c.LEN, err = readUint16(reader); err != nil {
 		return
 	}
 	c.ADDR, err = ReadAddress(reader)
@@ -261,12 +304,10 @@ func (c Packet) WriteTo(writer BufferedWriter) (err error) {
 	if err != nil {
 		return
 	}
-	err = binary.Write(writer, binary.BigEndian, c.ASSOC_ID)
-	if err != nil {
+	if err = writeUint32(writer, c.ASSOC_ID); err != nil {
 		return
 	}
-	err = binary.Write(writer, binary.BigEndian, c.LEN)
-	if err != nil {
+	if err = writeUint16(writer, c.LEN); err != nil {
 		return
 	}
 	err = c.ADDR.WriteTo(writer)
@@ -304,8 +345,7 @@ func ReadDissociateWithHead(head CommandHead, reader BufferedReader) (c Dissocia
 		err = fmt.Errorf("error command type: %s", c.CommandHead.TYPE)
 		return
 	}
-	err = binary.Read(reader, binary.BigEndian, &c.ASSOC_ID)
-	if err != nil {
+	if c.ASSOC_ID, err = readUint32(reader); err != nil {
 		return
 	}
 	return
@@ -324,8 +364,7 @@ func (c Dissociate) WriteTo(writer BufferedWriter) (err error) {
 	if err != nil {
 		return
 	}
-	err = binary.Write(writer, binary.BigEndian, c.ASSOC_ID)
-	if err != nil {
+	if err = writeUint32(writer, c.ASSOC_ID); err != nil {
 		return
 	}
 	return
@@ -529,8 +568,7 @@ func ReadAddress(reader BufferedReader) (c Address, err error) {
 		}
 	}
 
-	err = binary.Read(reader, binary.BigEndian, &c.PORT)
-	if err != nil {
+	if c.PORT, err = readUint16(reader); err != nil {
 		return
 	}
 	return
@@ -545,8 +583,7 @@ func (c Address) WriteTo(writer BufferedWriter) (err error) {
 	if err != nil {
 		return
 	}
-	err = binary.Write(writer, binary.BigEndian, c.PORT)
-	if err != nil {
+	if err = writeUint16(writer, c.PORT); err != nil {
 		return
 	}
 	return
