@@ -331,10 +331,10 @@ func (v *Vmess) streamConnContext(ctx context.Context, c net.Conn, metadata *C.M
 	} else {
 		if useEarly {
 			conn = v.client.DialEarlyConn(c,
-				M.ParseSocksaddrHostPort(metadata.String(), metadata.DstPort))
+				destinationSocksaddr(metadata))
 		} else {
 			conn, err = v.client.DialConn(c,
-				M.ParseSocksaddrHostPort(metadata.String(), metadata.DstPort))
+				destinationSocksaddr(metadata))
 		}
 	}
 	if err != nil {

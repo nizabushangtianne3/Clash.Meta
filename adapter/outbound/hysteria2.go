@@ -90,7 +90,7 @@ type Hysteria2RealmOption struct {
 }
 
 func (h *Hysteria2) DialContext(ctx context.Context, metadata *C.Metadata) (_ C.Conn, err error) {
-	c, err := h.client.DialConn(ctx, M.ParseSocksaddrHostPort(metadata.String(), metadata.DstPort))
+	c, err := h.client.DialConn(ctx, destinationSocksaddr(metadata))
 	if err != nil {
 		return nil, err
 	}

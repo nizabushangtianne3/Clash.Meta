@@ -39,7 +39,7 @@ type BrutalOption struct {
 }
 
 func (s *SingMux) DialContext(ctx context.Context, metadata *C.Metadata) (_ C.Conn, err error) {
-	c, err := s.client.DialContext(ctx, "tcp", M.ParseSocksaddrHostPort(metadata.String(), metadata.DstPort))
+	c, err := s.client.DialContext(ctx, "tcp", destinationSocksaddr(metadata))
 	if err != nil {
 		return nil, err
 	}
