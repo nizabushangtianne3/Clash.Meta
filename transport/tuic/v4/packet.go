@@ -14,6 +14,8 @@ import (
 	"github.com/metacubex/quic-go"
 )
 
+const addressScratchSize = 256
+
 type quicStreamPacketConn struct {
 	connId    uint32
 	quicConn  *quic.Conn
@@ -26,9 +28,10 @@ type quicStreamPacketConn struct {
 	closeDeferFn    func()
 	writeClosed     *atomic.Bool
 
-	closeOnce sync.Once
-	closeErr  error
-	closed    bool
+	addrScratch [addressScratchSize]byte
+	closeOnce   sync.Once
+	closeErr    error
+	closed      bool
 }
 
 func (q *quicStreamPacketConn) Close() error {
@@ -95,7 +98,7 @@ func (q *quicStreamPacketConn) SetWriteDeadline(t time.Time) error {
 func (q *quicStreamPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 	if q.inputConn != nil {
 		var packet Packet
-		packet, err = ReadPacket(q.inputConn)
+		packet, err = readPacketInto(q.inputConn, q.addrScratch[:])
 		if err != nil {
 			return
 		}

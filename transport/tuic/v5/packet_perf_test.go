@@ -56,6 +56,25 @@ func TestReadPacketAllocatesPayloadAndAddressOnly(t *testing.T) {
 	require.LessOrEqual(t, allocations, 2.5)
 }
 
+func TestReadPacketIntoAllocatesPayloadOnly(t *testing.T) {
+	packet := benchPacket()
+	var buf bytes.Buffer
+	require.NoError(t, packet.WriteTo(&buf))
+	raw := buf.Bytes()
+
+	rawReader := bytes.NewReader(raw)
+	reader := bufio.NewReaderSize(rawReader, 4096)
+	scratch := make([]byte, addressScratchSize)
+	allocations := testing.AllocsPerRun(1000, func() {
+		rawReader.Reset(raw)
+		reader.Reset(rawReader)
+		if _, err := readPacketInto(reader, scratch); err != nil {
+			t.Fatal(err)
+		}
+	})
+	require.LessOrEqual(t, allocations, 1.5)
+}
+
 func BenchmarkPacketWriteTo(b *testing.B) {
 	packet := benchPacket()
 	buf := &bytes.Buffer{}
@@ -89,6 +108,28 @@ func BenchmarkReadPacket(b *testing.B) {
 			b.Fatal(err)
 		}
 		if _, err := ReadPacketWithHead(head, reader); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkReadPacketInto(b *testing.B) {
+	packet := benchPacket()
+	var buf bytes.Buffer
+	if err := packet.WriteTo(&buf); err != nil {
+		b.Fatal(err)
+	}
+	raw := buf.Bytes()
+
+	rawReader := bytes.NewReader(raw)
+	reader := bufio.NewReaderSize(rawReader, 4096)
+	scratch := make([]byte, addressScratchSize)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		rawReader.Reset(raw)
+		reader.Reset(rawReader)
+		if _, err := readPacketInto(reader, scratch); err != nil {
 			b.Fatal(err)
 		}
 	}

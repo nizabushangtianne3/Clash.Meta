@@ -268,6 +268,18 @@ func NewPacket(ASSOC_ID uint32, LEN uint16, ADDR Address, DATA []byte) Packet {
 }
 
 func ReadPacketWithHead(head CommandHead, reader BufferedReader) (c Packet, err error) {
+	return readPacketWithHead(head, reader, nil)
+}
+
+func readPacketInto(reader BufferedReader, addrScratch []byte) (c Packet, err error) {
+	head, err := ReadCommandHead(reader)
+	if err != nil {
+		return
+	}
+	return readPacketWithHead(head, reader, addrScratch)
+}
+
+func readPacketWithHead(head CommandHead, reader BufferedReader, addrScratch []byte) (c Packet, err error) {
 	c.CommandHead = head
 	if c.CommandHead.TYPE != PacketType {
 		err = fmt.Errorf("error command type: %s", c.CommandHead.TYPE)
@@ -279,7 +291,7 @@ func ReadPacketWithHead(head CommandHead, reader BufferedReader) (c Packet, err 
 	if c.LEN, err = readUint16(reader); err != nil {
 		return
 	}
-	c.ADDR, err = ReadAddress(reader)
+	c.ADDR, err = readAddress(reader, addrScratch)
 	if err != nil {
 		return
 	}
@@ -292,11 +304,7 @@ func ReadPacketWithHead(head CommandHead, reader BufferedReader) (c Packet, err 
 }
 
 func ReadPacket(reader BufferedReader) (c Packet, err error) {
-	head, err := ReadCommandHead(reader)
-	if err != nil {
-		return
-	}
-	return ReadPacketWithHead(head, reader)
+	return readPacketInto(reader, nil)
 }
 
 func (c Packet) WriteTo(writer BufferedWriter) (err error) {
@@ -537,19 +545,29 @@ func NewAddressAddrPort(addrPort netip.AddrPort) Address {
 }
 
 func ReadAddress(reader BufferedReader) (c Address, err error) {
+	return readAddress(reader, nil)
+}
+
+func readAddress(reader BufferedReader, scratch []byte) (c Address, err error) {
 	c.TYPE, err = reader.ReadByte()
 	if err != nil {
 		return
 	}
 	switch c.TYPE {
 	case AtypIPv4:
-		c.ADDR = make([]byte, net.IPv4len)
+		c.ADDR, err = addressBuffer(net.IPv4len, scratch)
+		if err != nil {
+			return
+		}
 		_, err = io.ReadFull(reader, c.ADDR)
 		if err != nil {
 			return
 		}
 	case AtypIPv6:
-		c.ADDR = make([]byte, net.IPv6len)
+		c.ADDR, err = addressBuffer(net.IPv6len, scratch)
+		if err != nil {
+			return
+		}
 		_, err = io.ReadFull(reader, c.ADDR)
 		if err != nil {
 			return
@@ -560,7 +578,10 @@ func ReadAddress(reader BufferedReader) (c Address, err error) {
 		if err != nil {
 			return
 		}
-		c.ADDR = make([]byte, addrLen+1)
+		c.ADDR, err = addressBuffer(int(addrLen)+1, scratch)
+		if err != nil {
+			return
+		}
 		c.ADDR[0] = addrLen
 		_, err = io.ReadFull(reader, c.ADDR[1:])
 		if err != nil {
@@ -572,6 +593,16 @@ func ReadAddress(reader BufferedReader) (c Address, err error) {
 		return
 	}
 	return
+}
+
+func addressBuffer(size int, scratch []byte) ([]byte, error) {
+	if scratch == nil {
+		return make([]byte, size), nil
+	}
+	if size > len(scratch) {
+		return nil, io.ErrShortBuffer
+	}
+	return scratch[:size], nil
 }
 
 func (c Address) WriteTo(writer BufferedWriter) (err error) {

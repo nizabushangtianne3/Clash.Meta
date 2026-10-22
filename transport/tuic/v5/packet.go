@@ -16,6 +16,8 @@ import (
 	"github.com/metacubex/randv2"
 )
 
+const addressScratchSize = 256
+
 type quicStreamPacketConn struct {
 	connId    uint16
 	quicConn  *quic.Conn
@@ -28,9 +30,10 @@ type quicStreamPacketConn struct {
 	closeDeferFn    func()
 	writeClosed     *atomic.Bool
 
-	closeOnce sync.Once
-	closeErr  error
-	closed    bool
+	addrScratch [addressScratchSize]byte
+	closeOnce   sync.Once
+	closeErr    error
+	closed      bool
 
 	deFragger
 }
@@ -100,7 +103,7 @@ func (q *quicStreamPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err err
 	if inputConn := q.inputConn; inputConn != nil { // copy inputConn avoid be nil in for loop
 		for {
 			var packet Packet
-			packet, err = ReadPacket(inputConn)
+			packet, err = readPacketInto(inputConn, q.addrScratch[:])
 			if err != nil {
 				return
 			}
