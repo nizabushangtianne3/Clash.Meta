@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"strings"
 	"sync"
 	"testing"
@@ -197,7 +198,7 @@ func TestHTTPMaskTunnel_Stream_TCPRoundTrip(t *testing.T) {
 
 func TestHTTPMaskTunnel_Poll_UoTRoundTrip(t *testing.T) {
 	key := "tunnel-poll-key"
-	target := "8.8.8.8:53"
+	target := netip.MustParseAddrPort("8.8.8.8:53")
 	payload := []byte{0xaa, 0xbb, 0xcc, 0xdd}
 
 	serverCfg := newTunnelTestTable(t, key)

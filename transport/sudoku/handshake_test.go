@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"sync"
 	"testing"
 	"time"
@@ -184,7 +185,7 @@ func runPackedTCPSession(id int, cfg *ProtocolConfig, errCh chan<- error) {
 
 func runPackedUoTSession(id int, cfg *ProtocolConfig, errCh chan<- error) {
 	serverConn, clientConn := net.Pipe()
-	target := "8.8.8.8:53"
+	target := netip.MustParseAddrPort("8.8.8.8:53")
 	payload := []byte{0xaa, byte(id)}
 
 	serverErr := make(chan error, 1)

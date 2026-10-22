@@ -12,6 +12,7 @@ import (
 
 	"github.com/metacubex/mihomo/adapter/inbound"
 	N "github.com/metacubex/mihomo/common/net"
+	"github.com/metacubex/mihomo/common/pool"
 	C "github.com/metacubex/mihomo/constant"
 	LC "github.com/metacubex/mihomo/listener/config"
 	"github.com/metacubex/mihomo/listener/inner"
@@ -166,32 +167,63 @@ func wrapSessionConn(conn net.Conn) net.Conn {
 }
 
 func (l *Listener) handleUoTSession(conn net.Conn, tunnel C.Tunnel, additions ...inbound.Addition) {
-	writer := sudoku.NewUoTPacketConn(conn)
-	remoteAddr := conn.RemoteAddr()
+	session := uotSession{
+		writer:    sudoku.NewUoTPacketConn(conn),
+		source:    N.AddrPortFromNetAddr(conn.RemoteAddr()),
+		tunnel:    tunnel,
+		additions: additions,
+	}
 
 	for {
-		addrStr, payload, err := sudoku.ReadDatagram(conn)
+		target, payload, err := sudoku.ReadDatagram(conn)
 		if err != nil {
+			if errors.Is(err, sudoku.ErrAddrNotRepresentable) {
+				if log.DebugEnabled() {
+					log.Debugln("[Sudoku][UoT] drop datagram with a non-IP target")
+				}
+				continue
+			}
 			if !errors.Is(err, io.EOF) {
-				log.Debugln("[Sudoku][UoT] session closed: %v", err)
+				if log.DebugEnabled() {
+					log.Debugln("[Sudoku][UoT] session closed: %v", err)
+				}
 			}
 			_ = conn.Close()
 			return
 		}
-
-		target := socks5.ParseAddr(addrStr)
-		if target == nil {
-			log.Debugln("[Sudoku][UoT] drop invalid target: %s", addrStr)
-			continue
-		}
-
-		cPacket := &uotPacket{
-			payload: payload,
-			writer:  writer,
-			source:  N.AddrPortFromNetAddr(remoteAddr),
-		}
-		tunnel.HandleUDPPacket(inbound.NewPacket(target, cPacket, C.SUDOKU, additions...))
+		session.handle(target, payload)
 	}
+}
+
+const uotFlowCacheSize = 256
+
+// uotSession keeps one metadata per destination, so only the first datagram of
+// a flow pays to parse one.
+type uotSession struct {
+	writer    *sudoku.UoTPacketConn
+	source    netip.AddrPort
+	tunnel    C.Tunnel
+	additions []inbound.Addition
+	flows     map[netip.AddrPort]*C.Metadata
+}
+
+func (s *uotSession) handle(target netip.AddrPort, payload []byte) {
+	metadata, ok := s.flows[target]
+	packet := &uotPacket{
+		payload: payload,
+		writer:  s.writer,
+		source:  s.source,
+	}
+	if !ok {
+		if s.flows == nil {
+			s.flows = make(map[netip.AddrPort]*C.Metadata, 8)
+		} else if len(s.flows) >= uotFlowCacheSize {
+			clear(s.flows)
+		}
+		_, metadata = inbound.NewPacketFromAddrPort(target, packet, C.SUDOKU, s.additions...)
+		s.flows[target] = metadata
+	}
+	s.tunnel.HandleUDPPacket(packet, metadata)
 }
 
 type uotPacket struct {
@@ -214,6 +246,10 @@ func (p *uotPacket) WriteBack(b []byte, addr netip.AddrPort) (int, error) {
 }
 
 func (p *uotPacket) Drop() {
+	if p.payload == nil {
+		return
+	}
+	_ = pool.Put(p.payload)
 	p.payload = nil
 }
 
