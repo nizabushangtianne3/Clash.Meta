@@ -3,6 +3,7 @@
 package gost
 
 import (
+	"bytes"
 	"net"
 	"net/netip"
 	"testing"
@@ -33,6 +34,44 @@ func BenchmarkRelayPacketConnWriteTo(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		if _, err := conn.WriteTo(payload, raddr); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func TestRelayPacketConnReadFromAllocatesNothing(t *testing.T) {
+	raddr := net.UDPAddrFromAddrPort(netip.MustParseAddrPort("203.0.113.7:443"))
+	raw := append([]byte{0x05, 0x46}, make([]byte, 1350)...)
+	reader := bytes.NewReader(raw)
+	conn := &relayPacketConn{
+		conn:  fakeRelayReadConn{r: reader},
+		raddr: raddr,
+	}
+	buf := make([]byte, 2048)
+
+	allocations := testing.AllocsPerRun(1000, func() {
+		reader.Reset(raw)
+		if _, _, err := conn.ReadFrom(buf); err != nil {
+			t.Fatal(err)
+		}
+	})
+	require.LessOrEqual(t, allocations, 0.5)
+}
+
+func BenchmarkRelayPacketConnReadFrom(b *testing.B) {
+	raddr := net.UDPAddrFromAddrPort(netip.MustParseAddrPort("203.0.113.7:443"))
+	raw := append([]byte{0x05, 0x46}, make([]byte, 1350)...)
+	reader := bytes.NewReader(raw)
+	conn := &relayPacketConn{
+		conn:  fakeRelayReadConn{r: reader},
+		raddr: raddr,
+	}
+	buf := make([]byte, 2048)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		reader.Reset(raw)
+		if _, _, err := conn.ReadFrom(buf); err != nil {
 			b.Fatal(err)
 		}
 	}

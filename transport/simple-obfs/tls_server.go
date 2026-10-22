@@ -17,6 +17,7 @@ type TLSObfsServer struct {
 	firstRequest      bool
 	sessionTicketDone bool
 	firstResponse     bool
+	readHeader        [2]byte
 }
 
 func (tos *TLSObfsServer) Upstream() any {
@@ -31,13 +32,12 @@ func (tos *TLSObfsServer) read(b []byte, discardN int) (int, error) {
 		return 0, err
 	}
 
-	sizeBuf := make([]byte, 2)
-	_, err = io.ReadFull(tos.Conn, sizeBuf)
+	_, err = io.ReadFull(tos.Conn, tos.readHeader[:])
 	if err != nil {
 		return 0, nil
 	}
 
-	length := int(binary.BigEndian.Uint16(sizeBuf))
+	length := int(binary.BigEndian.Uint16(tos.readHeader[:]))
 	if length > len(b) {
 		n, err := tos.Conn.Read(b)
 		if err != nil {

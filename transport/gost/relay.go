@@ -287,18 +287,18 @@ func writeRelayRequest(w io.Writer, command byte, address string, network uint16
 }
 
 type relayPacketConn struct {
-	conn  net.Conn
-	raddr net.Addr
-	wmu   sync.Mutex
+	conn       net.Conn
+	raddr      net.Addr
+	readHeader [2]byte
+	wmu        sync.Mutex
 }
 
 func (c *relayPacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
-	var header [2]byte
-	if _, err := io.ReadFull(c.conn, header[:]); err != nil {
+	if _, err := io.ReadFull(c.conn, c.readHeader[:]); err != nil {
 		return 0, nil, err
 	}
 
-	packetLen := int(binary.BigEndian.Uint16(header[:]))
+	packetLen := int(binary.BigEndian.Uint16(c.readHeader[:]))
 	if packetLen <= len(p) {
 		n, err := io.ReadFull(c.conn, p[:packetLen])
 		return n, c.raddr, err

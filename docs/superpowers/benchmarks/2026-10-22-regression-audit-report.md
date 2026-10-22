@@ -42,11 +42,12 @@ and the `security == nil` branch the old code carried is unreachable because
 `Config.security` always returns an authenticator.
 
 Reading a two-byte length through `io.ReadFull(conn, header[:])` still escapes
-the array and allocates, because `conn` is an interface. The only ways to
-remove those are to reuse a per-direction field on the conn or to park the
-length in the caller's buffer before overwriting it; both change a public
-method's behaviour for buffers smaller than the header, so the remaining sites
-(`transport/gost` `ReadFrom`, `transport/simple-obfs` reads) were left alone.
+the array and allocates, because `conn` is an interface. The remaining sites
+(`transport/gost` `ReadFrom`, `transport/simple-obfs` reads) now keep the
+two-byte header on the connection and pass that field, so the read is
+allocation-free without changing their short-buffer handling. Parking the
+length in the caller's buffer stays rejected: that would change a public
+method's behaviour for buffers smaller than the header.
 
 ## Coverage added
 
