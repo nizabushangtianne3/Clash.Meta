@@ -228,7 +228,7 @@ func (p *serverUDPPacket) Data() []byte {
 }
 
 func (p *serverUDPPacket) WriteBack(b []byte, addr netip.AddrPort) (int, error) {
-	return p.assoc.WriteTo(b, net.UDPAddrFromAddrPort(addr))
+	return p.assoc.WriteToAddrPort(b, addr)
 }
 
 func (p *serverUDPPacket) Drop() {

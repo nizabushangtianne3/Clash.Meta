@@ -2,11 +2,13 @@ package shadowquic
 
 import (
 	"net"
+	"net/netip"
 	"os"
 	"sync"
 	"time"
 
 	"github.com/metacubex/mihomo/common/net/deadline"
+	"github.com/metacubex/mihomo/transport/socks5"
 
 	"github.com/metacubex/jls-quic-go"
 )
@@ -21,10 +23,10 @@ type association struct {
 	input chan receivedPacket
 
 	mu         sync.Mutex
-	sendIDs    map[string]uint16
+	sendIDs    map[netip.AddrPort]uint16
 	sendIDSet  map[uint16]struct{}
 	recvIDSet  map[uint16]struct{}
-	uniStreams map[string]*quic.SendStream
+	uniStreams map[netip.AddrPort]*quic.SendStream
 
 	closed    chan struct{}
 	closeOnce sync.Once
@@ -40,10 +42,10 @@ func newAssociation(parent *connState, control *quic.Stream, mode udpMode) *asso
 		mode:          mode,
 		control:       control,
 		input:         make(chan receivedPacket, packetInputQueue),
-		sendIDs:       make(map[string]uint16),
+		sendIDs:       make(map[netip.AddrPort]uint16),
 		sendIDSet:     make(map[uint16]struct{}),
 		recvIDSet:     make(map[uint16]struct{}),
-		uniStreams:    make(map[string]*quic.SendStream),
+		uniStreams:    make(map[netip.AddrPort]*quic.SendStream),
 		closed:        make(chan struct{}),
 		readDeadline:  deadline.MakePipeDeadline(),
 		writeDeadline: deadline.MakePipeDeadline(),
@@ -101,7 +103,17 @@ func (a *association) WaitReadFrom() ([]byte, func(), net.Addr, error) {
 	}
 }
 
+// WriteTo writes one datagram to addr. The net.PacketConn interface hands the
+// address as a net.Addr, so an AddrPort caller skips the conversion.
 func (a *association) WriteTo(p []byte, addr net.Addr) (n int, err error) {
+	addrPort, err := AddrPortFromNetAddr(addr)
+	if err != nil {
+		return 0, err
+	}
+	return a.WriteToAddrPort(p, addrPort)
+}
+
+func (a *association) WriteToAddrPort(p []byte, addr netip.AddrPort) (n int, err error) {
 	if len(p) > maxUDPPacketSize {
 		return 0, errPacketTooLarge
 	}
@@ -112,33 +124,32 @@ func (a *association) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 		return 0, os.ErrDeadlineExceeded
 	default:
 	}
-
-	socksAddr, err := AddrFromNetAddr(addr)
-	if err != nil {
-		return 0, err
+	if !addr.IsValid() {
+		return 0, errInvalidAddress
 	}
-	key := string(socksAddr)
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	id, exists := a.sendIDs[key]
+	// The destination is its own map key: formatting it into a socks address
+	// per datagram was a string allocation on every reply.
+	id, exists := a.sendIDs[addr]
 	if !exists {
 		id, err = a.parent.allocSendID()
 		if err != nil {
 			return 0, err
 		}
-		if err = WriteUDPControl(a.control, socksAddr, id); err != nil {
+		if err = WriteUDPControl(a.control, socks5.AddrFromStdAddrPort(addr), id); err != nil {
 			a.parent.releaseSendIDs(map[uint16]struct{}{id: struct{}{}})
 			return 0, err
 		}
-		a.sendIDs[key] = id
+		a.sendIDs[addr] = id
 		a.sendIDSet[id] = struct{}{}
 	}
 
 	switch a.mode {
 	case udpModeStream:
-		stream := a.uniStreams[key]
+		stream := a.uniStreams[addr]
 		if stream == nil {
 			stream, err = a.parent.quicConn.OpenUniStreamSync(a.parent.ctx)
 			if err != nil {
@@ -148,7 +159,7 @@ func (a *association) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 				_ = stream.Close()
 				return 0, err
 			}
-			a.uniStreams[key] = stream
+			a.uniStreams[addr] = stream
 		}
 		if err = WritePacketStreamPayload(stream, p); err != nil {
 			return 0, err

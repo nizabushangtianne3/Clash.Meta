@@ -41,18 +41,23 @@ func UnspecifiedAddr() socks5.Addr {
 	return socks5.AddrFromStdAddrPort(netip.AddrPortFrom(netip.IPv4Unspecified(), 0))
 }
 
-func AddrFromNetAddr(addr net.Addr) (socks5.Addr, error) {
-	if addr == nil {
-		return nil, errInvalidAddress
+// AddrPortFromNetAddr resolves the net.Addr a net.PacketConn caller hands in.
+// Every destination this relay writes back to is already an IP:port, so the
+// address crosses this one interface boundary and never becomes a socks form.
+func AddrPortFromNetAddr(addr net.Addr) (netip.AddrPort, error) {
+	switch addr := addr.(type) {
+	case nil:
+		return netip.AddrPort{}, errInvalidAddress
+	case *net.UDPAddr:
+		return addr.AddrPort(), nil
+	case *net.TCPAddr:
+		return addr.AddrPort(), nil
 	}
-	socksAddr := socks5.ParseAddrToSocksAddr(addr)
-	if socksAddr == nil {
-		socksAddr = socks5.ParseAddr(addr.String())
+	addrPort, err := netip.ParseAddrPort(addr.String())
+	if err != nil {
+		return netip.AddrPort{}, fmt.Errorf("%w: %s", errInvalidAddress, addr)
 	}
-	if socksAddr == nil {
-		return nil, fmt.Errorf("%w: %s", errInvalidAddress, addr.String())
-	}
-	return socksAddr, nil
+	return addrPort, nil
 }
 
 func AddrToNetAddr(addr socks5.Addr) net.Addr {
