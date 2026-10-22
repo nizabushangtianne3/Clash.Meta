@@ -51,7 +51,7 @@ type AnyTLSOption struct {
 }
 
 func (t *AnyTLS) DialContext(ctx context.Context, metadata *C.Metadata) (_ C.Conn, err error) {
-	c, err := t.client.CreateProxy(ctx, destinationSocksaddr(metadata))
+	c, err := t.client.CreateProxy(ctx, metadata.Socksaddr())
 	if err != nil {
 		return nil, err
 	}

@@ -10,19 +10,7 @@ import (
 	"github.com/metacubex/mihomo/component/resolver"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/transport/socks5"
-
-	M "github.com/metacubex/sing/common/metadata"
 )
-
-// destinationSocksaddr returns the dial destination in sing's address form. A
-// host keeps its name, and an IP target comes from the AddrPort, so the
-// metadata is never formatted into a host:port string only to be parsed back.
-func destinationSocksaddr(metadata *C.Metadata) M.Socksaddr {
-	if metadata.Host != "" {
-		return M.ParseSocksaddrHostPort(metadata.Host, metadata.DstPort)
-	}
-	return M.SocksaddrFromNetIP(metadata.AddrPort())
-}
 
 func serializesSocksAddr(metadata *C.Metadata) []byte {
 	var buf [][]byte

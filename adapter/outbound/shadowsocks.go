@@ -205,9 +205,9 @@ func (ss *ShadowSocks) StreamConnContext(ctx context.Context, c net.Conn, metada
 		}
 	}
 	if useEarly {
-		return ss.method.DialEarlyConn(c, destinationSocksaddr(metadata)), nil
+		return ss.method.DialEarlyConn(c, metadata.Socksaddr()), nil
 	} else {
-		return ss.method.DialConn(c, destinationSocksaddr(metadata))
+		return ss.method.DialConn(c, metadata.Socksaddr())
 	}
 }
 

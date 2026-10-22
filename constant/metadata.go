@@ -6,6 +6,8 @@ import (
 	"net"
 	"net/netip"
 	"strconv"
+
+	M "github.com/metacubex/sing/common/metadata"
 )
 
 // SOCKS address types as defined in RFC 1928 section 5.
@@ -294,6 +296,16 @@ func (m *Metadata) Clone() *Metadata {
 
 func (m *Metadata) AddrPort() netip.AddrPort {
 	return netip.AddrPortFrom(m.DstIP.Unmap(), m.DstPort)
+}
+
+// Socksaddr returns the destination in sing's address form. A name keeps its
+// name and an IP target comes from the AddrPort, so the destination is never
+// formatted into a host:port string only to be parsed back.
+func (m *Metadata) Socksaddr() M.Socksaddr {
+	if m.Host != "" {
+		return M.ParseSocksaddrHostPort(m.Host, m.DstPort)
+	}
+	return M.SocksaddrFromNetIP(m.AddrPort())
 }
 
 func (m *Metadata) UDPAddr() *net.UDPAddr {

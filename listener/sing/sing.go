@@ -69,7 +69,7 @@ func ConvertMetadata(metadata *C.Metadata) M.Metadata {
 	return M.Metadata{
 		Protocol:    metadata.Type.String(),
 		Source:      M.SocksaddrFrom(metadata.SrcIP, metadata.SrcPort),
-		Destination: M.ParseSocksaddrHostPort(metadata.String(), metadata.DstPort),
+		Destination: metadata.Socksaddr(),
 	}
 }
 
