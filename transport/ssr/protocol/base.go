@@ -49,9 +49,26 @@ func (a *authData) next() *authData {
 }
 
 func (a *authData) putAuthData(buf *bytes.Buffer) {
-	binary.Write(buf, binary.LittleEndian, uint32(ntp.Now().Unix()))
+	writeUint32LE(buf, uint32(ntp.Now().Unix()))
 	buf.Write(a.clientID[:])
-	binary.Write(buf, binary.LittleEndian, a.connectionID)
+	writeUint32LE(buf, a.connectionID)
+}
+
+func writeUint16LE(buf *bytes.Buffer, v uint16) {
+	_ = buf.WriteByte(byte(v))
+	_ = buf.WriteByte(byte(v >> 8))
+}
+
+func writeUint16BE(buf *bytes.Buffer, v uint16) {
+	_ = buf.WriteByte(byte(v >> 8))
+	_ = buf.WriteByte(byte(v))
+}
+
+func writeUint32LE(buf *bytes.Buffer, v uint32) {
+	_ = buf.WriteByte(byte(v))
+	_ = buf.WriteByte(byte(v >> 8))
+	_ = buf.WriteByte(byte(v >> 16))
+	_ = buf.WriteByte(byte(v >> 24))
 }
 
 func (a *authData) putEncryptedData(b *bytes.Buffer, userKey []byte, paddings [2]int, salt string) error {

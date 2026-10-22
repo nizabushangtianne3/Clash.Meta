@@ -120,11 +120,11 @@ func (a *authSHA1V4) packData(poolBuf *bytes.Buffer, data []byte) {
 		packedDataLength -= 2
 	}
 
-	binary.Write(poolBuf, binary.BigEndian, uint16(packedDataLength))
-	binary.Write(poolBuf, binary.LittleEndian, uint16(crc32.ChecksumIEEE(poolBuf.Bytes()[poolBuf.Len()-2:])&0xffff))
+	writeUint16BE(poolBuf, uint16(packedDataLength))
+	writeUint16LE(poolBuf, uint16(crc32.ChecksumIEEE(poolBuf.Bytes()[poolBuf.Len()-2:])&0xffff))
 	a.packRandData(poolBuf, randDataLength)
 	poolBuf.Write(data)
-	binary.Write(poolBuf, binary.LittleEndian, adler32.Checksum(poolBuf.Bytes()[poolBuf.Len()-packedDataLength+4:]))
+	writeUint32LE(poolBuf, adler32.Checksum(poolBuf.Bytes()[poolBuf.Len()-packedDataLength+4:]))
 }
 
 func (a *authSHA1V4) packAuthData(poolBuf *bytes.Buffer, data []byte) {
@@ -155,7 +155,7 @@ func (a *authSHA1V4) packAuthData(poolBuf *bytes.Buffer, data []byte) {
 	copy(key[len(a.iv):], a.Key)
 
 	poolBuf.Write(crcData[:2])
-	binary.Write(poolBuf, binary.LittleEndian, crc32.ChecksumIEEE(crcData))
+	writeUint32LE(poolBuf, crc32.ChecksumIEEE(crcData))
 	a.packRandData(poolBuf, randDataLength)
 	a.putAuthData(poolBuf)
 	poolBuf.Write(data)
@@ -169,7 +169,7 @@ func (a *authSHA1V4) packRandData(poolBuf *bytes.Buffer, size int) {
 		return
 	}
 	poolBuf.WriteByte(255)
-	binary.Write(poolBuf, binary.BigEndian, uint16(size+3))
+	writeUint16BE(poolBuf, uint16(size+3))
 	tools.AppendRandBytes(poolBuf, size)
 }
 

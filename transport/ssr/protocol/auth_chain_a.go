@@ -210,7 +210,7 @@ func (a *authChainA) EncodePacket(buf *bytes.Buffer, b []byte) error {
 	buf.Write(b)
 	tools.AppendRandBytes(buf, randDataLength)
 	buf.Write(authData)
-	binary.Write(buf, binary.LittleEndian, binary.LittleEndian.Uint32(a.userID[:])^binary.LittleEndian.Uint32(md5Data[:4]))
+	writeUint32LE(buf, binary.LittleEndian.Uint32(a.userID[:])^binary.LittleEndian.Uint32(md5Data[:4]))
 	buf.Write(tools.HmacMD5(a.userKey, buf.Bytes())[:1])
 	return nil
 }
@@ -236,7 +236,7 @@ func (a *authChainA) packAuthData(poolBuf *bytes.Buffer, data []byte) {
 	a.initRC4Cipher()
 	poolBuf.Write(a.lastClientHash[:8])
 	// uid
-	binary.Write(poolBuf, binary.LittleEndian, binary.LittleEndian.Uint32(a.userID[:])^binary.LittleEndian.Uint32(a.lastClientHash[8:12]))
+	writeUint32LE(poolBuf, binary.LittleEndian.Uint32(a.userID[:])^binary.LittleEndian.Uint32(a.lastClientHash[8:12]))
 	// encrypted data
 	err := a.putEncryptedData(poolBuf, a.userKey, [2]int{a.Overhead, 0}, a.salt)
 	if err != nil {
@@ -262,7 +262,7 @@ func (a *authChainA) packData(poolBuf *bytes.Buffer, data []byte) {
 	length := uint16(len(data)) ^ binary.LittleEndian.Uint16(a.lastClientHash[14:16])
 
 	originalLength := poolBuf.Len()
-	binary.Write(poolBuf, binary.LittleEndian, length)
+	writeUint16LE(poolBuf, length)
 	a.putMixedRandDataAndData(poolBuf, data)
 	a.lastClientHash = tools.HmacMD5(macKey, poolBuf.Bytes()[originalLength:])
 	poolBuf.Write(a.lastClientHash[:2])
