@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/metacubex/mihomo/common/net/deadline"
+	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/transport/socks5"
 
 	"github.com/metacubex/jls-quic-go"
@@ -165,10 +166,11 @@ func (a *association) WriteToAddrPort(p []byte, addr netip.AddrPort) (n int, err
 			return 0, err
 		}
 	default:
-		packet, err := EncodeDatagram(id, p)
-		if err != nil {
-			return 0, err
-		}
+		frame := pool.Get(2 + len(p))
+		defer pool.Put(frame)
+		// quic-go copies the datagram before returning, so the pooled frame is
+		// safe to recycle here.
+		packet := encodeDatagramInto(frame, id, p)
 		if err = a.parent.quicConn.SendDatagram(packet); err != nil {
 			return 0, err
 		}

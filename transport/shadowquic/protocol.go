@@ -132,14 +132,10 @@ func ReadUDPControl(r io.Reader) (socks5.Addr, uint16, error) {
 	return addr, id, nil
 }
 
-func EncodeDatagram(id uint16, payload []byte) ([]byte, error) {
-	if len(payload) > maxUDPPacketSize {
-		return nil, errPacketTooLarge
-	}
-	packet := make([]byte, 2+len(payload))
-	binary.BigEndian.PutUint16(packet[:2], id)
-	copy(packet[2:], payload)
-	return packet, nil
+func encodeDatagramInto(dst []byte, id uint16, payload []byte) []byte {
+	binary.BigEndian.PutUint16(dst[:2], id)
+	copy(dst[2:], payload)
+	return dst[:2+len(payload)]
 }
 
 func DecodeDatagram(packet []byte) (uint16, []byte, error) {
