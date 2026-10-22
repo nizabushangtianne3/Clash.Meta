@@ -14,9 +14,10 @@ import (
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/log"
 
+	"maps"
+
 	D "github.com/miekg/dns"
 	"github.com/samber/lo"
-	"golang.org/x/exp/maps"
 )
 
 type dnsClient interface {
@@ -31,12 +32,23 @@ type dnsCache interface {
 	Clear()
 }
 
+type parsedIPCache interface {
+	GetWithExpire(key ipCacheKey) ([]netip.Addr, time.Time, bool)
+	SetWithExpire(key ipCacheKey, value []netip.Addr, expire time.Time)
+	Clear()
+}
+
 // dnsCacheKey identifies a cached answer by question name and type, the same
 // identity Question.String builds, without formatting a fresh string per lookup.
 type dnsCacheKey struct {
 	name   string
 	qtype  uint16
 	qclass uint16
+}
+
+type ipCacheKey struct {
+	host  string
+	qtype uint16
 }
 
 func questionKey(q D.Question) dnsCacheKey {
@@ -58,6 +70,7 @@ type Resolver struct {
 	fallbackLazyQuery     bool
 	group                 singleflight.Group[dnsCacheKey, *D.Msg]
 	cache                 dnsCache
+	ipCache               parsedIPCache
 	policy                []dnsPolicy
 	defaultResolver       *Resolver
 }
@@ -87,6 +100,10 @@ func (r *Resolver) LookupIPPrimaryIPv4(ctx context.Context, host string) (ips []
 }
 
 func (r *Resolver) LookupIP(ctx context.Context, host string) (ips []netip.Addr, err error) {
+	if combined, hit := r.lookupIPFromCachePair(host); hit {
+		return combined, nil
+	}
+
 	ch := make(chan []netip.Addr, 1)
 	go func() {
 		defer close(ch)
@@ -383,18 +400,7 @@ func (r *Resolver) lookupIP(ctx context.Context, host string, dnsType uint16) (i
 	query := &D.Msg{}
 	query.SetQuestion(D.Fqdn(host), dnsType)
 
-	msg, err := r.ExchangeContext(ctx, query)
-	if err != nil {
-		return []netip.Addr{}, err
-	}
-
-	ips = msgToIP(msg)
-	ipLength := len(ips)
-	if ipLength == 0 {
-		return []netip.Addr{}, resolver.ErrIPNotFound
-	}
-
-	return
+	return r.lookupIPCached(ctx, host, dnsType)
 }
 
 func (r *Resolver) asyncExchange(ctx context.Context, client []dnsClient, msg *D.Msg) <-chan *result {
@@ -417,6 +423,9 @@ func (r *Resolver) Invalid() bool {
 func (r *Resolver) ClearCache() {
 	if r != nil && r.cache != nil {
 		r.cache.Clear()
+	}
+	if r != nil && r.ipCache != nil {
+		r.ipCache.Clear()
 	}
 }
 
@@ -521,6 +530,19 @@ func (config Config) newCache() dnsCache {
 	}
 }
 
+func (config Config) newIPCache() parsedIPCache {
+	maxSize := config.CacheMaxSize
+	if maxSize == 0 {
+		maxSize = 4096
+	}
+	switch config.CacheAlgorithm {
+	case "arc":
+		return arc.New(arc.WithSize[ipCacheKey, []netip.Addr](maxSize))
+	default:
+		return lru.New(lru.WithSize[ipCacheKey, []netip.Addr](maxSize))
+	}
+}
+
 type Resolvers struct {
 	*Resolver
 	ProxyResolver  *Resolver
@@ -541,9 +563,10 @@ func (rs Resolvers) ResetConnection() {
 
 func NewResolverFromClient(client dnsClient) *Resolver {
 	return &Resolver{
-		ipv6:  true,
-		main:  []dnsClient{client},
-		cache: Config{}.newCache(),
+		ipv6:    true,
+		main:    []dnsClient{client},
+		cache:   Config{}.newCache(),
+		ipCache: Config{}.newIPCache(),
 	}
 }
 
@@ -551,6 +574,7 @@ func NewResolver(config Config) (rs Resolvers) {
 	defaultResolver := &Resolver{
 		main:        transform(config.Default, nil),
 		cache:       config.newCache(),
+		ipCache:     config.newIPCache(),
 		ipv6Timeout: time.Duration(config.IPv6Timeout) * time.Millisecond,
 	}
 
@@ -622,6 +646,7 @@ func NewResolver(config Config) (rs Resolvers) {
 		ipv6:        config.IPv6,
 		main:        cacheTransform(config.Main),
 		cache:       config.newCache(),
+		ipCache:     config.newIPCache(),
 		ipv6Timeout: time.Duration(config.IPv6Timeout) * time.Millisecond,
 		policy:      makePolicy(config.Policy),
 	}
@@ -633,6 +658,7 @@ func NewResolver(config Config) (rs Resolvers) {
 			ipv6:        config.IPv6,
 			main:        cacheTransform(config.ProxyServer),
 			cache:       config.newCache(),
+			ipCache:     config.newIPCache(),
 			ipv6Timeout: time.Duration(config.IPv6Timeout) * time.Millisecond,
 			policy:      makePolicy(config.ProxyServerPolicy),
 		}
@@ -643,6 +669,7 @@ func NewResolver(config Config) (rs Resolvers) {
 			ipv6:        config.IPv6,
 			main:        cacheTransform(config.DirectServer),
 			cache:       config.newCache(),
+			ipCache:     config.newIPCache(),
 			ipv6Timeout: time.Duration(config.IPv6Timeout) * time.Millisecond,
 		}
 		if config.DirectFollowPolicy {

@@ -3,6 +3,7 @@ package tunnel
 import (
 	"context"
 	"path/filepath"
+	"sync"
 
 	"github.com/metacubex/mihomo/component/process"
 	"github.com/metacubex/mihomo/component/resolver"
@@ -19,7 +20,33 @@ type matchContext struct {
 	attemptProcessLookup bool
 }
 
-func (c *matchContext) resolveIP() {
+var matchContextPool = sync.Pool{
+	New: func() any { return new(matchContext) },
+}
+
+func acquireMatchContext(
+	metadata *C.Metadata,
+	runtimeState *runtimeSnapshot,
+	resolved bool,
+	attemptProcessLookup bool,
+) *matchContext {
+	c := matchContextPool.Get().(*matchContext)
+	c.metadata = metadata
+	c.runtimeState = runtimeState
+	c.resolved = resolved
+	c.attemptProcessLookup = attemptProcessLookup
+	return c
+}
+
+func releaseMatchContext(c *matchContext) {
+	c.metadata = nil
+	c.runtimeState = nil
+	c.resolved = false
+	c.attemptProcessLookup = false
+	matchContextPool.Put(c)
+}
+
+func (c *matchContext) ResolveIP() {
 	if c.resolved || c.metadata.Host == "" || c.metadata.Resolved() {
 		return
 	}
@@ -40,7 +67,7 @@ func (c *matchContext) resolveIP() {
 	c.resolved = true
 }
 
-func (c *matchContext) findProcess() {
+func (c *matchContext) FindProcess() {
 	if !c.attemptProcessLookup {
 		return
 	}
@@ -73,7 +100,7 @@ func (c *matchContext) findProcess() {
 	metadata.Process = pkg
 }
 
-func (c *matchContext) checkPassRule(adapterName string) bool {
+func (c *matchContext) CheckPassRule(adapterName string) bool {
 	adapter, ok := c.runtimeState.proxies[adapterName]
 	if !ok {
 		return false

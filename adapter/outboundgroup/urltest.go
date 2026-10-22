@@ -35,7 +35,7 @@ type URLTest struct {
 	rotateProbe        atomic.Bool
 	probeCursor        atomic.Uint32
 	versionsMu         sync.Mutex
-	knownVersions      []uint32
+	knownVersions      atomic.Pointer[[]uint32]
 }
 
 func (u *URLTest) Now() string {
@@ -171,6 +171,12 @@ func (u *URLTest) shouldReplaceFastNode(fast C.Proxy, fastNotExist bool) bool {
 
 func (u *URLTest) fast(touch bool) C.Proxy {
 	u.dropCacheForProviderSwap()
+	if cached, _, ok := u.fastSingle.Cached(); ok {
+		if touch { // the same recency the cached Do result reports as shared
+			u.Touch()
+		}
+		return cached
+	}
 	elm, _, shared := u.fastSingle.Do(func() (C.Proxy, error) {
 		u.fastMu.Lock()
 		defer u.fastMu.Unlock()
@@ -182,6 +188,11 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 
 		selectedName := u.selectedName()
 		var selectedProxy C.Proxy
+		if selectedName != "" {
+			if proxy, ok := u.indexedProxyByName(selectedName); ok && proxy.AliveForTestUrl(u.testUrl) {
+				selectedProxy = proxy
+			}
+		}
 		var fast C.Proxy
 		var minDelay uint16
 		fastNotExist := true
@@ -200,6 +211,9 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 			}
 			if selectedProxy != nil && aliveCount >= 2 {
 				break
+			}
+			if selectedProxy != nil {
+				continue
 			}
 			delay := proxy.LastDelayForTestUrl(u.testUrl)
 			if fast == nil || delay < minDelay {
@@ -241,13 +255,22 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 // replaced its list underneath it: the cached node may no longer be a member,
 // and its delay says nothing about the members that took its place.
 func (u *URLTest) dropCacheForProviderSwap() {
-	u.versionsMu.Lock()
-	defer u.versionsMu.Unlock()
-	if u.providerVersionsEqual(u.knownVersions) {
+	if u.providerVersionsUnchanged() {
 		return
 	}
-	u.knownVersions = u.providerVersionsNow()
+	u.versionsMu.Lock()
+	defer u.versionsMu.Unlock()
+	if u.providerVersionsUnchanged() {
+		return
+	}
+	versions := u.providerVersionsNow()
+	u.knownVersions.Store(&versions)
 	u.resetFastNode()
+}
+
+func (u *URLTest) providerVersionsUnchanged() bool {
+	known := u.knownVersions.Load()
+	return known != nil && u.providerVersionsEqual(*known)
 }
 
 func (u *URLTest) resetFastNode() {
@@ -256,6 +279,7 @@ func (u *URLTest) resetFastNode() {
 	u.fastNode = nil
 	u.fastSingle.Reset()
 }
+
 // SupportUDP implements C.ProxyAdapter
 func (u *URLTest) SupportUDP() bool {
 	if u.disableUDP {
@@ -271,10 +295,7 @@ func (u *URLTest) IsL3Protocol(metadata *C.Metadata) bool {
 
 // MarshalJSON implements C.ProxyAdapter
 func (u *URLTest) MarshalJSON() ([]byte, error) {
-	all := []string{}
-	for _, proxy := range u.GetProxies(false) {
-		all = append(all, proxy.Name())
-	}
+	all := memberNames(u.GetProxies(false))
 	return json.Marshal(map[string]any{
 		"type":           u.Type().String(),
 		"now":            u.Now(),

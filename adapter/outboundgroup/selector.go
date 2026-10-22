@@ -56,10 +56,7 @@ func (s *Selector) IsL3Protocol(metadata *C.Metadata) bool {
 
 // MarshalJSON implements C.ProxyAdapter
 func (s *Selector) MarshalJSON() ([]byte, error) {
-	all := []string{}
-	for _, proxy := range s.GetProxies(false) {
-		all = append(all, proxy.Name())
-	}
+	all := memberNames(s.GetProxies(false))
 	// When testurl is the default value
 	// do not append a value to ensure that the web dashboard follows the settings of the dashboard
 	var url string
@@ -107,10 +104,35 @@ func (s *Selector) Unwrap(metadata *C.Metadata, touch bool) C.Proxy {
 }
 
 func (s *Selector) selectedProxy(touch bool) C.Proxy {
+	if touch {
+		s.Touch()
+		touch = false
+	}
+
 	s.selectedMu.RLock()
 	selected := s.selected
 	s.selectedMu.RUnlock()
+
+	if selected != "" {
+		if cache := s.providerCache.Load(); cache != nil && s.providerVersionsEqual(cache.versions) {
+			if cache.byName == nil {
+				return s.selectedFromProxies(cache.proxies, selected)
+			}
+			if proxy, ok := cache.byName[selected]; ok {
+				return proxy
+			}
+			if len(cache.proxies) != 0 {
+				return cache.proxies[0]
+			}
+			return s.EmptyFallback()
+		}
+	}
+
 	proxies := s.GetProxies(touch)
+	return s.selectedFromProxies(proxies, selected)
+}
+
+func (s *Selector) selectedFromProxies(proxies []C.Proxy, selected string) C.Proxy {
 	for _, proxy := range proxies {
 		if proxy.Name() == selected {
 			return proxy
