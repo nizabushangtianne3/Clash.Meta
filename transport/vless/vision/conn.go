@@ -133,8 +133,10 @@ func (vc *Conn) ReadBuffer(buffer *buf.Buffer) error {
 			vc.readRemainingPadding = int(binary.BigEndian.Uint16(header[3:]))
 			vc.readRemainingContent = int(binary.BigEndian.Uint16(header[1:]))
 			vc.readLastCommand.Store(uint32(header[0]))
-			log.Debugln("XTLS Vision read padding: command=%d, payloadLen=%d, paddingLen=%d",
-				vc.readLastCommand.Load(), vc.readRemainingContent, vc.readRemainingPadding)
+			if log.DebugEnabled() {
+				log.Debugln("XTLS Vision read padding: command=%d, payloadLen=%d, paddingLen=%d",
+					vc.readLastCommand.Load(), vc.readRemainingContent, vc.readRemainingPadding)
+			}
 			return vc.ReadBuffer(buffer)
 			//}
 		case commandPaddingEnd:
@@ -236,9 +238,6 @@ func (vc *Conn) WriteBuffer(buffer *buf.Buffer) (err error) {
 		}
 		return err
 	}
-	/*if vc.writeDirect {
-		log.Debugln("XTLS Vision Direct write, payloadLen=%d", buffer.Len())
-	}*/
 	return vc.ExtendedWriter.WriteBuffer(buffer)
 }
 

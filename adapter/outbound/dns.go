@@ -31,7 +31,9 @@ func (d *Dns) DialContext(ctx context.Context, metadata *C.Metadata) (C.Conn, er
 
 // ListenPacketContext implements C.ProxyAdapter
 func (d *Dns) ListenPacketContext(ctx context.Context, metadata *C.Metadata) (C.PacketConn, error) {
-	log.Debugln("[DNS] hijack udp:%s from %s", metadata.RemoteAddress(), metadata.SourceAddrPort())
+	if log.DebugEnabled() {
+		log.Debugln("[DNS] hijack udp:%s from %s", metadata.RemoteAddress(), metadata.SourceAddrPort())
+	}
 	if err := d.ResolveUDP(ctx, metadata); err != nil {
 		return nil, err
 	}

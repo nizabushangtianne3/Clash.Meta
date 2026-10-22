@@ -161,7 +161,9 @@ start:
 		}
 	}
 	if err := c.handleIncomingProxiedPacket(data); err != nil {
-		log.Debugln("dropping proxied packet: %s", err)
+		if log.DebugEnabled() {
+			log.Debugln("dropping proxied packet: %s", err)
+		}
 		goto start
 	}
 	return data, nil
@@ -192,7 +194,9 @@ func (c *h2IpConn) handleIncomingProxiedPacket(data []byte) error {
 func (c *h2IpConn) WritePacket(b []byte) (icmp []byte, err error) {
 	data, err := c.composeDatagram(b)
 	if err != nil {
-		log.Debugln("dropping proxied packet (%d bytes) that can't be proxied: %s", len(b), err)
+		if log.DebugEnabled() {
+			log.Debugln("dropping proxied packet (%d bytes) that can't be proxied: %s", len(b), err)
+		}
 		return nil, nil
 	}
 	if err := c.str.SendDatagram(data); err != nil {

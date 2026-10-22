@@ -57,7 +57,9 @@ func (c *matchContext) ResolveIP() {
 	defer cancel()
 	ip, err := resolver.ResolveIP(ctx, c.metadata.Host)
 	if err != nil {
-		log.Debugln("[DNS] resolve %s error: %s", c.metadata.Host, err.Error())
+		if log.DebugEnabled() {
+			log.Debugln("[DNS] resolve %s error: %s", c.metadata.Host, err.Error())
+		}
 	} else {
 		if log.DebugEnabled() {
 			log.Debugln("[DNS] %s --> %s", c.metadata.Host, ip.String())
@@ -80,7 +82,9 @@ func (c *matchContext) FindProcess() {
 			int(metadata.SrcPort),
 		)
 		if err != nil {
-			log.Debugln("[Process] find process error for %s: %v", metadata.String(), err)
+			if log.DebugEnabled() {
+				log.Debugln("[Process] find process error for %s: %v", metadata.String(), err)
+			}
 			return
 		}
 		metadata.Process = filepath.Base(path)
@@ -94,7 +98,9 @@ func (c *matchContext) FindProcess() {
 
 	pkg, err := process.FindPackageName(metadata)
 	if err != nil {
-		log.Debugln("[Process] find process error for %s: %v", metadata.String(), err)
+		if log.DebugEnabled() {
+			log.Debugln("[Process] find process error for %s: %v", metadata.String(), err)
+		}
 		return
 	}
 	metadata.Process = pkg
