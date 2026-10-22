@@ -304,7 +304,8 @@ func (c *relayPacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
 		return n, c.raddr, err
 	}
 
-	buf := make([]byte, packetLen)
+	buf := pool.Get(packetLen)
+	defer pool.Put(buf)
 	if _, err := io.ReadFull(c.conn, buf); err != nil {
 		return 0, nil, err
 	}
