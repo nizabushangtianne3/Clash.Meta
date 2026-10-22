@@ -3,8 +3,11 @@ package sudoku
 import (
 	"bytes"
 	"encoding/binary"
+	"io"
+	"net"
 	"net/netip"
 	"testing"
+	"time"
 
 	"github.com/metacubex/mihomo/common/pool"
 	"github.com/stretchr/testify/require"
@@ -65,4 +68,41 @@ func TestReadDatagramDropsADomainFieldWithoutBreakingFraming(t *testing.T) {
 	require.Equal(t, target, gotTarget)
 	require.Equal(t, []byte{0xaa}, gotPayload)
 	_ = pool.Put(gotPayload)
+}
+
+type discardConn struct{}
+
+func (discardConn) Read([]byte) (int, error)         { return 0, io.EOF }
+func (discardConn) Write(b []byte) (int, error)      { return len(b), nil }
+func (discardConn) Close() error                     { return nil }
+func (discardConn) LocalAddr() net.Addr              { return nil }
+func (discardConn) RemoteAddr() net.Addr             { return nil }
+func (discardConn) SetDeadline(time.Time) error      { return nil }
+func (discardConn) SetReadDeadline(time.Time) error  { return nil }
+func (discardConn) SetWriteDeadline(time.Time) error { return nil }
+
+// The reply path held an AddrPort and materialised a net.UDPAddr for the
+// net.PacketConn entry point on every datagram.
+func BenchmarkUoTWriteBack(b *testing.B) {
+	conn := NewUoTPacketConn(discardConn{})
+	addr := netip.MustParseAddrPort("1.2.3.4:53")
+	payload := []byte("reply")
+
+	b.Run("addrport", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			if _, err := conn.WriteToAddrPort(payload, addr); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("net-addr", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			if _, err := conn.WriteTo(payload, net.UDPAddrFromAddrPort(addr)); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }

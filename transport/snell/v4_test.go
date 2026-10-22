@@ -6,9 +6,11 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/netip"
 	"testing"
 	"time"
 
+	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/transport/shadowsocks/shadowaead"
 	"github.com/metacubex/mihomo/transport/socks5"
 )
@@ -345,9 +347,9 @@ func TestSnellReadReplyErrorResponse(t *testing.T) {
 	}
 }
 
-func TestWritePacketResponseUsesSocksAddrParser(t *testing.T) {
+func TestWritePacketResponseWritesTheAddrPort(t *testing.T) {
 	var buf bytes.Buffer
-	n, err := WritePacketResponse(&buf, dummyAddr("127.0.0.1:53"), []byte("ok"))
+	n, err := WritePacketResponse(&buf, netip.MustParseAddrPort("127.0.0.1:53"), []byte("ok"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -359,6 +361,58 @@ func TestWritePacketResponseUsesSocksAddrParser(t *testing.T) {
 	if !bytes.Equal(buf.Bytes(), want) {
 		t.Fatalf("packet = %x, want %x", buf.Bytes(), want)
 	}
+}
+
+func TestWritePacketResponseRejectsAnInvalidAddrPort(t *testing.T) {
+	if _, err := WritePacketResponse(&bytes.Buffer{}, netip.AddrPort{}, []byte("ok")); err == nil {
+		t.Fatal("expected an error for an empty address")
+	}
+}
+
+// The reply path used to format the destination into a socks address and write
+// it from there, which allocated on every datagram.
+func TestWritePacketResponseAllocatesNothing(t *testing.T) {
+	addr := netip.MustParseAddrPort("127.0.0.1:53")
+	payload := []byte("ok")
+
+	allocations := testing.AllocsPerRun(100, func() {
+		if _, err := WritePacketResponse(io.Discard, addr, payload); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if allocations != 0 {
+		t.Fatalf("allocations = %v, want 0", allocations)
+	}
+}
+
+// The reply used to be framed from a socks address built out of the net.Addr on
+// every datagram.
+func BenchmarkWritePacketResponse(b *testing.B) {
+	addr := netip.MustParseAddrPort("1.2.3.4:53")
+	payload := []byte("reply")
+
+	b.Run("addrport", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			if _, err := WritePacketResponse(io.Discard, addr, payload); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("socks-addr", func(b *testing.B) {
+		addrNet := net.UDPAddrFromAddrPort(addr)
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			buf := pool.GetBuffer()
+			socksAddr := socks5.ParseAddrToSocksAddr(addrNet)
+			buf.WriteByte(0x04)
+			buf.Write(socksAddr[1 : 1+net.IPv4len+2])
+			buf.Write(payload)
+			_, _ = io.Discard.Write(buf.Bytes())
+			pool.PutBuffer(buf)
+		}
+	})
 }
 
 type bufferConn struct {

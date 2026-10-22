@@ -1,0 +1,52 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/transport/sudoku
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkUoTWriteBack/addrport-16         	31657256	        41.63 ns/op	      24 B/op	       1 allocs/op
+BenchmarkUoTWriteBack/addrport-16         	30594138	        40.10 ns/op	      24 B/op	       1 allocs/op
+BenchmarkUoTWriteBack/addrport-16         	26852004	        40.47 ns/op	      24 B/op	       1 allocs/op
+BenchmarkUoTWriteBack/addrport-16         	31862354	        39.15 ns/op	      24 B/op	       1 allocs/op
+BenchmarkUoTWriteBack/addrport-16         	29543115	        39.70 ns/op	      24 B/op	       1 allocs/op
+BenchmarkUoTWriteBack/addrport-16         	31804423	        39.27 ns/op	      24 B/op	       1 allocs/op
+BenchmarkUoTWriteBack/addrport-16         	30313287	        39.97 ns/op	      24 B/op	       1 allocs/op
+BenchmarkUoTWriteBack/addrport-16         	30663010	        38.95 ns/op	      24 B/op	       1 allocs/op
+BenchmarkUoTWriteBack/addrport-16         	30128799	        38.25 ns/op	      24 B/op	       1 allocs/op
+BenchmarkUoTWriteBack/addrport-16         	27912818	        39.14 ns/op	      24 B/op	       1 allocs/op
+BenchmarkUoTWriteBack/net-addr-16         	15972632	        83.73 ns/op	      76 B/op	       3 allocs/op
+BenchmarkUoTWriteBack/net-addr-16         	15603666	        79.49 ns/op	      76 B/op	       3 allocs/op
+BenchmarkUoTWriteBack/net-addr-16         	14813113	        78.23 ns/op	      76 B/op	       3 allocs/op
+BenchmarkUoTWriteBack/net-addr-16         	15901958	        87.49 ns/op	      76 B/op	       3 allocs/op
+BenchmarkUoTWriteBack/net-addr-16         	13862302	        80.43 ns/op	      76 B/op	       3 allocs/op
+BenchmarkUoTWriteBack/net-addr-16         	14823598	       136.6 ns/op	      76 B/op	       3 allocs/op
+BenchmarkUoTWriteBack/net-addr-16         	14195017	        86.18 ns/op	      76 B/op	       3 allocs/op
+BenchmarkUoTWriteBack/net-addr-16         	12627484	        82.43 ns/op	      76 B/op	       3 allocs/op
+BenchmarkUoTWriteBack/net-addr-16         	15641965	        80.00 ns/op	      76 B/op	       3 allocs/op
+BenchmarkUoTWriteBack/net-addr-16         	15056480	        80.06 ns/op	      76 B/op	       3 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/transport/sudoku	27.459s
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/transport/snell
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkWritePacketResponse/addrport-16         	31165592	        35.79 ns/op	       0 B/op	       0 allocs/op
+BenchmarkWritePacketResponse/addrport-16         	30601315	        36.27 ns/op	       0 B/op	       0 allocs/op
+BenchmarkWritePacketResponse/addrport-16         	33440248	        35.88 ns/op	       0 B/op	       0 allocs/op
+BenchmarkWritePacketResponse/addrport-16         	38001741	        35.08 ns/op	       0 B/op	       0 allocs/op
+BenchmarkWritePacketResponse/addrport-16         	32886081	        38.88 ns/op	       0 B/op	       0 allocs/op
+BenchmarkWritePacketResponse/addrport-16         	31714065	        36.50 ns/op	       0 B/op	       0 allocs/op
+BenchmarkWritePacketResponse/addrport-16         	33400162	        35.49 ns/op	       0 B/op	       0 allocs/op
+BenchmarkWritePacketResponse/addrport-16         	31197192	        36.74 ns/op	       0 B/op	       0 allocs/op
+BenchmarkWritePacketResponse/addrport-16         	33853358	        35.47 ns/op	       0 B/op	       0 allocs/op
+BenchmarkWritePacketResponse/addrport-16         	38203906	        35.54 ns/op	       0 B/op	       0 allocs/op
+BenchmarkWritePacketResponse/socks-addr-16       	28064397	        44.98 ns/op	       8 B/op	       1 allocs/op
+BenchmarkWritePacketResponse/socks-addr-16       	28750640	        43.27 ns/op	       8 B/op	       1 allocs/op
+BenchmarkWritePacketResponse/socks-addr-16       	27409900	        45.07 ns/op	       8 B/op	       1 allocs/op
+BenchmarkWritePacketResponse/socks-addr-16       	29822554	        42.34 ns/op	       8 B/op	       1 allocs/op
+BenchmarkWritePacketResponse/socks-addr-16       	28534197	        51.91 ns/op	       8 B/op	       1 allocs/op
+BenchmarkWritePacketResponse/socks-addr-16       	12536708	       109.4 ns/op	       8 B/op	       1 allocs/op
+BenchmarkWritePacketResponse/socks-addr-16       	15144592	        91.28 ns/op	       8 B/op	       1 allocs/op
+BenchmarkWritePacketResponse/socks-addr-16       	31106697	        45.14 ns/op	       8 B/op	       1 allocs/op
+BenchmarkWritePacketResponse/socks-addr-16       	29763454	        54.60 ns/op	       8 B/op	       1 allocs/op
+BenchmarkWritePacketResponse/socks-addr-16       	23070090	        57.78 ns/op	       8 B/op	       1 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/transport/snell	27.826s

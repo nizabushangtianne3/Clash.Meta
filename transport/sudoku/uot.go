@@ -129,17 +129,24 @@ func (c *UoTPacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
 	}
 }
 
+// WriteToAddrPort writes one datagram to an AddrPort destination. The
+// net.PacketConn interface hands its address as a net.Addr through WriteTo, so
+// a caller that already holds the AddrPort skips that conversion.
+func (c *UoTPacketConn) WriteToAddrPort(p []byte, addr netip.AddrPort) (int, error) {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	if err := WriteDatagram(c.conn, addr, p); err != nil {
+		return 0, err
+	}
+	return len(p), nil
+}
+
 func (c *UoTPacketConn) WriteTo(p []byte, addr net.Addr) (int, error) {
 	udpAddr, ok := addr.(*net.UDPAddr)
 	if !ok || udpAddr == nil {
 		return 0, fmt.Errorf("unsupported address %T", addr)
 	}
-	c.writeMu.Lock()
-	defer c.writeMu.Unlock()
-	if err := WriteDatagram(c.conn, udpAddr.AddrPort(), p); err != nil {
-		return 0, err
-	}
-	return len(p), nil
+	return c.WriteToAddrPort(p, udpAddr.AddrPort())
 }
 
 func (c *UoTPacketConn) Close() error {

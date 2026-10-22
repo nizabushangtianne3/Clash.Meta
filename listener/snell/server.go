@@ -448,7 +448,7 @@ func (p *udpPacket) Data() []byte {
 func (p *udpPacket) WriteBack(b []byte, addr netip.AddrPort) (int, error) {
 	p.writeMu.Lock()
 	defer p.writeMu.Unlock()
-	return snell.WritePacketResponse(p.conn, net.UDPAddrFromAddrPort(addr), b)
+	return snell.WritePacketResponse(p.conn, addr, b)
 }
 
 func (p *udpPacket) Drop() {
