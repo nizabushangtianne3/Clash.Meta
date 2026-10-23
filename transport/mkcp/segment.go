@@ -30,17 +30,20 @@ type segment interface {
 }
 
 type dataSegment struct {
-	conv        uint16
-	option      segmentOption
-	timestamp   uint32
-	number      uint32
-	sendingNext uint32
-	payload     []byte
-	timeout     uint32
-	transmit    uint32
-	flushRefs   int
-	retired     bool
-	recycled    bool
+	conv         uint16
+	option       segmentOption
+	timestamp    uint32
+	number       uint32
+	sendingNext  uint32
+	payload      []byte
+	timeout      uint32
+	transmit     uint32
+	flushRefs    int
+	retired      bool
+	recycled     bool
+	recvOwned    bool
+	recvReleased bool
+	recvPool     *sync.Pool
 }
 
 var ackSegmentPool = sync.Pool{
@@ -128,7 +131,7 @@ func (s *cmdOnlySegment) serialize(b []byte) {
 // slice of b rather than a copy, so the caller must keep b owned and unmodified
 // for as long as the segment is alive: both receive loops hand it a fresh copy
 // of the datagram.
-func readSegment(b []byte) (segment, []byte) {
+func readSegment(b []byte, dataPool *sync.Pool) (segment, []byte) {
 	if len(b) < 4 {
 		return nil, nil
 	}
@@ -145,13 +148,15 @@ func readSegment(b []byte) (segment, []byte) {
 		if len(b) < 14+dataLen {
 			return nil, nil
 		}
-		seg := &dataSegment{
+		seg := dataPool.Get().(*dataSegment)
+		*seg = dataSegment{
 			conv:        conv,
 			option:      opt,
 			timestamp:   binary.BigEndian.Uint32(b),
 			number:      binary.BigEndian.Uint32(b[4:]),
 			sendingNext: binary.BigEndian.Uint32(b[8:]),
 			payload:     b[14 : 14+dataLen],
+			recvPool:    dataPool,
 		}
 		return seg, b[14+dataLen:]
 	case commandACK:
@@ -194,6 +199,14 @@ func readSegment(b []byte) (segment, []byte) {
 func releaseReadSegment(item segment) {
 	switch seg := item.(type) {
 	case *dataSegment:
+		if seg.recvOwned || seg.recvReleased {
+			return
+		}
+		seg.payload = nil
+		seg.recvReleased = true
+		if seg.recvPool != nil {
+			seg.recvPool.Put(seg)
+		}
 	case *ackSegment:
 		clear(seg.numberList)
 		seg.numberList = seg.numberList[:0]

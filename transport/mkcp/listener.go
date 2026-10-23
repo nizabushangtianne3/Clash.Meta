@@ -29,9 +29,10 @@ func newListenerCore(cfg Config, localAddr net.Addr, closer io.Closer) (listener
 	if err != nil {
 		return listenerCore{}, err
 	}
+	dataPool := &sync.Pool{New: func() any { return new(dataSegment) }}
 	return listenerCore{
 		cfg:    cfg,
-		reader: packetReader{security: security, header: cfg.packetHeader()},
+		reader: packetReader{security: security, header: cfg.packetHeader(), dataPool: dataPool},
 		securityWriter: func(w ioWriter) packetWriter {
 			return packetWriter{security: security, header: cfg.packetHeader(), writer: w}
 		},

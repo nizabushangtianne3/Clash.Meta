@@ -2,6 +2,7 @@ package mkcp
 
 import (
 	"encoding/binary"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -10,6 +11,12 @@ import (
 const benchDataPayloadSize = 1350
 
 type discardWriter struct{}
+
+func newTestPacketReader() packetReader {
+	return packetReader{dataPool: &sync.Pool{
+		New: func() any { return new(dataSegment) },
+	}}
+}
 
 func (discardWriter) Write(p []byte) (int, error) {
 	return len(p), nil
@@ -40,10 +47,9 @@ func buildAckPacket(count int) []byte {
 	return b
 }
 
-// A parsed data payload aliases the datagram buffer the caller already owns,
-// so the reader only pays for the segment and the result slice.
+// A parsed data payload aliases the datagram buffer the caller already owns.
 func TestReadSegmentDoesNotCopyTheDataPayload(t *testing.T) {
-	reader := packetReader{}
+	reader := newTestPacketReader()
 	packet := buildDataPacket(benchDataPayloadSize)
 	var segments []segment
 
@@ -57,11 +63,11 @@ func TestReadSegmentDoesNotCopyTheDataPayload(t *testing.T) {
 		}
 		clear(segments)
 	})
-	require.EqualValues(t, 1, allocations)
+	require.Zero(t, allocations)
 }
 
 func BenchmarkReadDataSegment(b *testing.B) {
-	reader := packetReader{}
+	reader := newTestPacketReader()
 	packet := buildDataPacket(benchDataPayloadSize)
 	var segments []segment
 	b.ReportAllocs()
@@ -119,7 +125,7 @@ func BenchmarkWriteDataSegment(b *testing.B) {
 }
 
 func BenchmarkReadAckSegment(b *testing.B) {
-	reader := packetReader{}
+	reader := newTestPacketReader()
 	packet := buildAckPacket(3)
 	var segments []segment
 	b.ReportAllocs()

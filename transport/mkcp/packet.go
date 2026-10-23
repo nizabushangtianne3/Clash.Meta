@@ -4,6 +4,7 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"io"
+	"sync"
 
 	"github.com/metacubex/mihomo/common/pool"
 )
@@ -11,6 +12,7 @@ import (
 type packetReader struct {
 	security cipher.AEAD
 	header   packetHeader
+	dataPool *sync.Pool
 }
 
 // read parses every segment into the caller's slice. Segment payloads alias b,
@@ -37,7 +39,7 @@ func (r packetReader) read(b []byte, segments []segment) []segment {
 		b = out
 	}
 	for len(b) > 0 {
-		seg, extra := readSegment(b)
+		seg, extra := readSegment(b, r.dataPool)
 		if seg == nil {
 			break
 		}

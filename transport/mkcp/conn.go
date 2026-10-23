@@ -101,7 +101,8 @@ func Dial(ctx context.Context, raw net.Conn, cfg Config) (*Conn, error) {
 	}
 	conv := uint16(atomic.AddUint32(&globalConv, 1))
 	conn := newConn(raw.LocalAddr(), raw.RemoteAddr(), conv, packetWriter{security: security, header: cfg.packetHeader(), writer: raw}, raw, cfg)
-	reader := packetReader{security: security, header: cfg.packetHeader()}
+	dataPool := &sync.Pool{New: func() any { return new(dataSegment) }}
+	reader := packetReader{security: security, header: cfg.packetHeader(), dataPool: dataPool}
 	go func() {
 		cache := make(chan []byte, 1024)
 		go func() {
@@ -374,6 +375,7 @@ func (c *Conn) Input(segments []segment) {
 				c.ackList = append(c.ackList, ackItem{number: s.number, timestamp: s.timestamp})
 				c.ackDirty = true
 				if _, ok := c.recvCache[s.number]; !ok {
+					s.recvOwned = true
 					c.recvCache[s.number] = s
 				}
 			}
@@ -450,6 +452,8 @@ func (c *Conn) deliverLocked() {
 		delete(c.recvCache, c.recvNext)
 		c.recvNext++
 		c.readBuf = append(c.readBuf, seg.payload...)
+		seg.recvOwned = false
+		releaseReadSegment(seg)
 		delivered = true
 	}
 	if delivered {
@@ -831,14 +835,17 @@ func (c *Conn) setStateLocked(state connState) {
 		c.signalWriteLocked()
 	case stateTerminating:
 		c.clearSendWindowLocked()
+		c.clearRecvCacheLocked()
 		c.signalReadLocked()
 		c.signalWriteLocked()
 	case statePeerTerminating:
 		c.clearSendWindowLocked()
+		c.clearRecvCacheLocked()
 		c.signalReadLocked()
 		c.signalWriteLocked()
 	case stateTerminated:
 		c.clearSendWindowLocked()
+		c.clearRecvCacheLocked()
 		c.signalReadLocked()
 		c.signalWriteLocked()
 	}
@@ -850,6 +857,14 @@ func (c *Conn) clearSendWindowLocked() {
 	}
 	clear(c.sendWindow)
 	c.sendWindow = nil
+}
+
+func (c *Conn) clearRecvCacheLocked() {
+	for _, seg := range c.recvCache {
+		seg.recvOwned = false
+		releaseReadSegment(seg)
+	}
+	clear(c.recvCache)
 }
 
 func (c *Conn) updateRTTLocked(rtt uint32, current uint32) {

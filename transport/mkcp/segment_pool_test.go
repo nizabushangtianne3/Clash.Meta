@@ -124,11 +124,15 @@ func TestOutOfOrderReceiveSegmentsStayOwnedUntilDelivery(t *testing.T) {
 	third := &dataSegment{conv: 7, number: 3, payload: []byte("three")}
 	conn.Input([]segment{third})
 	require.Same(t, third, conn.recvCache[3])
+	require.True(t, third.recvOwned)
+	require.False(t, third.recvReleased)
 
 	second := &dataSegment{conv: 7, number: 2, payload: []byte("two")}
 	conn.Input([]segment{second})
 	require.Empty(t, conn.recvCache)
 	require.Equal(t, []byte("twothree"), conn.readBuf)
+	require.True(t, second.recvReleased)
+	require.True(t, third.recvReleased)
 }
 
 func TestFlushControlSegmentsStayAllocationFree(t *testing.T) {
