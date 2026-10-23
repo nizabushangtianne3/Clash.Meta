@@ -44,6 +44,7 @@ type dataSegment struct {
 	recvOwned    bool
 	recvReleased bool
 	recvPool     *sync.Pool
+	recvBuffer   *receiveBuffer
 }
 
 var ackSegmentPool = sync.Pool{
@@ -129,9 +130,9 @@ func (s *cmdOnlySegment) serialize(b []byte) {
 
 // readSegment parses one segment out of b. A data payload is returned as a
 // slice of b rather than a copy, so the caller must keep b owned and unmodified
-// for as long as the segment is alive: both receive loops hand it a fresh copy
-// of the datagram.
-func readSegment(b []byte, dataPool *sync.Pool) (segment, []byte) {
+// for as long as the segment is alive. The packet reader owns that receive
+// buffer until every data segment releases its reference.
+func readSegment(b []byte, dataPool *sync.Pool, buffer *receiveBuffer) (segment, []byte) {
 	if len(b) < 4 {
 		return nil, nil
 	}
@@ -157,7 +158,9 @@ func readSegment(b []byte, dataPool *sync.Pool) (segment, []byte) {
 			sendingNext: binary.BigEndian.Uint32(b[8:]),
 			payload:     b[14 : 14+dataLen],
 			recvPool:    dataPool,
+			recvBuffer:  buffer,
 		}
+		buffer.refs++
 		return seg, b[14+dataLen:]
 	case commandACK:
 		if len(b) < 13 {
@@ -204,6 +207,7 @@ func releaseReadSegment(item segment) {
 		}
 		seg.payload = nil
 		seg.recvReleased = true
+		seg.recvBuffer.release()
 		seg.recvPool.Put(seg)
 	case *ackSegment:
 		clear(seg.numberList)

@@ -13,9 +13,10 @@ const benchDataPayloadSize = 1350
 type discardWriter struct{}
 
 func newTestPacketReader() packetReader {
-	return packetReader{dataPool: &sync.Pool{
-		New: func() any { return new(dataSegment) },
-	}}
+	return packetReader{
+		dataPool:   &sync.Pool{New: func() any { return new(dataSegment) }},
+		bufferPool: &sync.Pool{New: func() any { return new(receiveBuffer) }},
+	}
 }
 
 func (discardWriter) Write(p []byte) (int, error) {
@@ -59,7 +60,9 @@ func TestReadSegmentDoesNotCopyTheDataPayload(t *testing.T) {
 	var segments []segment
 
 	allocations := testing.AllocsPerRun(1000, func() {
-		segments = reader.read(packet, segments[:0])
+		buffer := reader.newReceiveBuffer(len(packet))
+		copy(buffer.data, packet)
+		segments = reader.read(buffer.data, buffer, segments[:0])
 		if len(segments) != 1 {
 			t.Fatal("bad parse")
 		}
@@ -71,6 +74,48 @@ func TestReadSegmentDoesNotCopyTheDataPayload(t *testing.T) {
 	require.Zero(t, allocations)
 }
 
+func TestReadReleasesControlOnlyReceiveBuffer(t *testing.T) {
+	reader := newTestPacketReader()
+	packet := buildAckPacket(3)
+	buffer := reader.newReceiveBuffer(len(packet))
+	copy(buffer.data, packet)
+
+	segments := reader.read(buffer.data, buffer, nil)
+
+	require.Len(t, segments, 1)
+	require.Zero(t, buffer.refs)
+	require.Nil(t, buffer.data)
+	releaseReadSegment(segments[0])
+}
+
+func TestReadSharesReceiveBufferWithDataSegments(t *testing.T) {
+	reader := newTestPacketReader()
+	packet := append(
+		buildDataPacketWithNumber(1, "one"),
+		buildDataPacketWithNumber(2, "two")...,
+	)
+	buffer := reader.newReceiveBuffer(len(packet))
+	copy(buffer.data, packet)
+
+	segments := reader.read(buffer.data, buffer, nil)
+
+	require.Len(t, segments, 2)
+	require.EqualValues(t, 2, buffer.refs)
+	releaseReadSegment(segments[0])
+	require.EqualValues(t, 1, buffer.refs)
+	require.NotNil(t, buffer.data)
+	releaseReadSegment(segments[1])
+	require.Zero(t, buffer.refs)
+	require.Nil(t, buffer.data)
+}
+
+func TestWriterOverheadIncludesTheAEADNonce(t *testing.T) {
+	security, err := Config{Seed: "mihomo-mkcp-test-seed"}.security()
+	require.NoError(t, err)
+
+	require.EqualValues(t, 28, packetWriter{security: security}.overhead())
+}
+
 func BenchmarkReadDataSegment(b *testing.B) {
 	reader := newTestPacketReader()
 	packet := buildDataPacket(benchDataPayloadSize)
@@ -79,7 +124,9 @@ func BenchmarkReadDataSegment(b *testing.B) {
 	b.SetBytes(int64(len(packet)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		segments = reader.read(packet, segments[:0])
+		buffer := reader.newReceiveBuffer(len(packet))
+		copy(buffer.data, packet)
+		segments = reader.read(buffer.data, buffer, segments[:0])
 		if len(segments) != 1 {
 			b.Fatal("bad parse")
 		}
@@ -136,7 +183,9 @@ func BenchmarkReadAckSegment(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		segments = reader.read(packet, segments[:0])
+		buffer := reader.newReceiveBuffer(len(packet))
+		copy(buffer.data, packet)
+		segments = reader.read(buffer.data, buffer, segments[:0])
 		if len(segments) != 1 {
 			b.Fatal("bad parse")
 		}
