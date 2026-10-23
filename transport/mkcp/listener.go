@@ -25,8 +25,13 @@ type ioWriter interface {
 }
 
 type sessionID struct {
-	addr any
+	addr sessionAddressKey
 	conv uint16
+}
+
+type sessionAddressKey struct {
+	udp    netip.AddrPort
+	custom net.Addr
 }
 
 type packetPayload struct {
@@ -175,12 +180,15 @@ func (w *packetConnWriter) Write(b []byte) (int, error) {
 	return w.pc.WriteTo(b, w.addr)
 }
 
-func sessionAddress(addr net.Addr) any {
+func sessionAddress(addr net.Addr) sessionAddressKey {
+	var key sessionAddressKey
 	if udpAddr, ok := addr.(*net.UDPAddr); ok {
 		addrPort := udpAddr.AddrPort()
-		return netip.AddrPortFrom(addrPort.Addr().Unmap(), addrPort.Port())
+		key.udp = netip.AddrPortFrom(addrPort.Addr().Unmap(), addrPort.Port())
+		return key
 	}
-	return addr
+	key.custom = addr
+	return key
 }
 
 func (w *packetConnWriter) Close() error {

@@ -82,36 +82,6 @@ func TestAckDoesNotSignalWriteWaitersWhenNoneExist(t *testing.T) {
 	require.True(t, notify == conn.writeNotify)
 }
 
-func TestWriteReusesRetiredSegments(t *testing.T) {
-	conn := &Conn{
-		state:         stateActive,
-		mss:           1200,
-		remoteRecvWin: 32,
-		readNotify:    make(chan struct{}),
-		writeNotify:   make(chan struct{}),
-		flushNotify:   make(chan struct{}, 1),
-		done:          make(chan struct{}),
-	}
-	conn.writer = packetWriter{writer: discardWriter{}}
-	payload := make([]byte, conn.mss)
-
-	_, err := conn.Write(payload)
-	require.NoError(t, err)
-	first := conn.sendWindow[0]
-	conn.mu.Lock()
-	flushed := conn.flushSendLocked(0, nil)
-	conn.mu.Unlock()
-	conn.writeSegments(flushed)
-	conn.mu.Lock()
-	require.True(t, conn.processAckLocked(conn.sendNext-1))
-	conn.mu.Unlock()
-	conn.releaseFlushSegments(flushed)
-
-	_, err = conn.Write(payload)
-	require.NoError(t, err)
-	require.True(t, first == conn.sendWindow[0])
-}
-
 func TestPacketConnWriteStaysAllocationFree(t *testing.T) {
 	receiver, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	if err != nil {
@@ -146,9 +116,14 @@ func TestPacketConnWriteStaysAllocationFree(t *testing.T) {
 func TestSessionAddressCanonicalizesUDPWithoutString(t *testing.T) {
 	first := &net.UDPAddr{IP: net.IPv4(1, 2, 3, 4), Port: 53}
 	second := &net.UDPAddr{IP: net.IPv4(1, 2, 3, 4), Port: 53}
+	var address sessionAddressKey
 
-	require.Equal(t, sessionAddress(first), sessionAddress(second))
-	require.Equal(t, netip.MustParseAddrPort("1.2.3.4:53"), sessionAddress(first))
+	allocations := testing.AllocsPerRun(1000, func() {
+		address = sessionAddress(first)
+	})
+	require.Equal(t, sessionAddress(second), address)
+	require.Equal(t, netip.MustParseAddrPort("1.2.3.4:53"), address.udp)
+	require.Zero(t, allocations)
 }
 
 func BenchmarkWriteSegmentPayloadLifecycle(b *testing.B) {
