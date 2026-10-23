@@ -35,6 +35,8 @@ type dataSegment struct {
 	payload     []byte
 	timeout     uint32
 	transmit    uint32
+	flushRefs   int
+	retired     bool
 }
 
 func (s *dataSegment) conversation() uint16 { return s.conv }

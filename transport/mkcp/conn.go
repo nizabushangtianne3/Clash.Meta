@@ -9,6 +9,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/metacubex/mihomo/common/pool"
 )
 
 var globalConv uint32 = uint32(uint16(rand.Int63() >> 47))
@@ -172,7 +174,8 @@ func (c *Conn) Write(b []byte) (int, error) {
 		if end > len(b) {
 			end = len(b)
 		}
-		payload := append([]byte(nil), b[written:end]...)
+		payload := pool.Get(end - written)
+		copy(payload, b[written:end])
 		for {
 			c.mu.Lock()
 			if c.state != stateActive {
@@ -421,13 +424,18 @@ func (c *Conn) processSendingNextLocked(next uint32) {
 
 func (c *Conn) processReceivingNextLocked(next uint32) {
 	changed := false
+	window := c.sendWindow
 	filtered := c.sendWindow[:0]
-	for _, seg := range c.sendWindow {
+	for _, seg := range window {
 		if seg.number < next {
 			changed = true
+			c.retireSegmentLocked(seg)
 			continue
 		}
 		filtered = append(filtered, seg)
+	}
+	for i := len(filtered); i < len(window); i++ {
+		window[i] = nil
 	}
 	c.sendWindow = filtered
 	c.findFirstUnackedLocked()
@@ -445,6 +453,7 @@ func (c *Conn) processAckLocked(number uint32) bool {
 			if c.totalInFlightSize > 0 {
 				c.totalInFlightSize--
 			}
+			c.retireSegmentLocked(seg)
 			copy(c.sendWindow[i:], c.sendWindow[i+1:])
 			c.sendWindow[len(c.sendWindow)-1] = nil
 			c.sendWindow = c.sendWindow[:len(c.sendWindow)-1]
@@ -454,6 +463,36 @@ func (c *Conn) processAckLocked(number uint32) bool {
 		}
 	}
 	return false
+}
+
+func (c *Conn) retireSegmentLocked(seg *dataSegment) {
+	if seg.retired {
+		return
+	}
+	seg.retired = true
+	c.recycleSegmentLocked(seg)
+}
+
+func (c *Conn) recycleSegmentLocked(seg *dataSegment) {
+	if !seg.retired || seg.flushRefs != 0 {
+		return
+	}
+	_ = pool.Put(seg.payload)
+	seg.payload = nil
+}
+
+func (c *Conn) releaseFlushSegments(segments []segment) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	for _, item := range segments {
+		seg, ok := item.(*dataSegment)
+		if !ok {
+			continue
+		}
+		seg.flushRefs--
+		c.recycleSegmentLocked(seg)
+	}
 }
 
 func (c *Conn) handleFastAckLocked(number uint32) {
@@ -543,6 +582,7 @@ func (c *Conn) flush() {
 		}
 		c.mu.Unlock()
 		c.writeSegments(segments)
+		c.releaseFlushSegments(segments)
 		if terminate {
 			c.terminate()
 		}
@@ -564,6 +604,7 @@ func (c *Conn) flush() {
 	c.mu.Unlock()
 
 	c.writeSegments(segments)
+	c.releaseFlushSegments(segments)
 	if terminate {
 		c.terminate()
 	}
@@ -649,6 +690,7 @@ func (c *Conn) flushSendLocked(current uint32) []segment {
 			seg.option = segmentOptionClose
 		}
 		seg.transmit++
+		seg.flushRefs++
 		timeout := c.rto
 		if timeout < c.cfg.tti() {
 			timeout = c.cfg.tti()
@@ -720,21 +762,29 @@ func (c *Conn) setStateLocked(state connState) {
 		c.signalReadLocked()
 		c.signalWriteLocked()
 	case statePeerClosed:
-		c.sendWindow = nil
+		c.clearSendWindowLocked()
 		c.signalWriteLocked()
 	case stateTerminating:
-		c.sendWindow = nil
+		c.clearSendWindowLocked()
 		c.signalReadLocked()
 		c.signalWriteLocked()
 	case statePeerTerminating:
-		c.sendWindow = nil
+		c.clearSendWindowLocked()
 		c.signalReadLocked()
 		c.signalWriteLocked()
 	case stateTerminated:
-		c.sendWindow = nil
+		c.clearSendWindowLocked()
 		c.signalReadLocked()
 		c.signalWriteLocked()
 	}
+}
+
+func (c *Conn) clearSendWindowLocked() {
+	for _, seg := range c.sendWindow {
+		c.retireSegmentLocked(seg)
+	}
+	clear(c.sendWindow)
+	c.sendWindow = nil
 }
 
 func (c *Conn) updateRTTLocked(rtt uint32, current uint32) {
