@@ -22,6 +22,11 @@ type receiveBuffer struct {
 	owner *sync.Pool
 }
 
+func receiveSize(cfg Config, security cipher.AEAD) int {
+	// V2Ray counts the AEAD nonce outside its configured MTU.
+	return int(cfg.mtu()) + security.NonceSize()
+}
+
 func (r packetReader) newReceiveBuffer(size int) *receiveBuffer {
 	buffer := r.bufferPool.Get().(*receiveBuffer)
 	buffer.data = pool.Get(size)
