@@ -217,7 +217,10 @@ func (sd *Dispatcher) sniffDomain(conn *N.BufferedConn, metadata *C.Metadata) (s
 	}
 	// Keep the configured order while discarding protocols that cannot apply to
 	// this connection. The remaining entries carry their own OverrideDest policy.
-	candidates := make([]candidate, 0, len(sd.sniffers))
+	// The set is compacted in place below and never grows past this filter, so a
+	// stack array holds every sniffer the config can wire; a larger set spills.
+	var candidateBuf [4]candidate
+	candidates := candidateBuf[:0]
 	for _, current := range sd.sniffers {
 		if current.supportsNetwork(C.TCP) && current.SupportPort(metadata.DstPort) {
 			candidates = append(candidates, candidate{configuredSniffer: current, want: 1})
