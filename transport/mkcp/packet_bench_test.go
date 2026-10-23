@@ -45,25 +45,37 @@ func buildAckPacket(count int) []byte {
 func TestReadSegmentDoesNotCopyTheDataPayload(t *testing.T) {
 	reader := packetReader{}
 	packet := buildDataPacket(benchDataPayloadSize)
+	var segments []segment
 
 	allocations := testing.AllocsPerRun(1000, func() {
-		if segments := reader.read(packet); len(segments) != 1 {
+		segments = reader.read(packet, segments[:0])
+		if len(segments) != 1 {
 			t.Fatal("bad parse")
 		}
+		for _, item := range segments {
+			releaseReadSegment(item)
+		}
+		clear(segments)
 	})
-	require.LessOrEqual(t, int(allocations), 2)
+	require.EqualValues(t, 1, allocations)
 }
 
 func BenchmarkReadDataSegment(b *testing.B) {
 	reader := packetReader{}
 	packet := buildDataPacket(benchDataPayloadSize)
+	var segments []segment
 	b.ReportAllocs()
 	b.SetBytes(int64(len(packet)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if segments := reader.read(packet); len(segments) != 1 {
+		segments = reader.read(packet, segments[:0])
+		if len(segments) != 1 {
 			b.Fatal("bad parse")
 		}
+		for _, item := range segments {
+			releaseReadSegment(item)
+		}
+		clear(segments)
 	}
 }
 
@@ -109,11 +121,17 @@ func BenchmarkWriteDataSegment(b *testing.B) {
 func BenchmarkReadAckSegment(b *testing.B) {
 	reader := packetReader{}
 	packet := buildAckPacket(3)
+	var segments []segment
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if segments := reader.read(packet); len(segments) != 1 {
+		segments = reader.read(packet, segments[:0])
+		if len(segments) != 1 {
 			b.Fatal("bad parse")
 		}
+		for _, item := range segments {
+			releaseReadSegment(item)
+		}
+		clear(segments)
 	}
 }

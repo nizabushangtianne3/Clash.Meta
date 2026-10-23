@@ -119,8 +119,11 @@ func Dial(ctx context.Context, raw net.Conn, cfg Config) (*Conn, error) {
 			}
 		}()
 
+		var segments []segment
 		for payload := range cache {
-			conn.Input(reader.read(payload))
+			segments = reader.read(payload, segments)
+			conn.Input(segments)
+			clear(segments)
 		}
 	}()
 	return conn, nil
@@ -358,7 +361,8 @@ func (c *Conn) Input(segments []segment) {
 	c.lastIncoming = current
 	for _, seg := range segments {
 		if seg.conversation() != c.conv {
-			break
+			releaseReadSegment(seg)
+			continue
 		}
 		switch s := seg.(type) {
 		case *dataSegment:
@@ -381,7 +385,7 @@ func (c *Conn) Input(segments []segment) {
 			}
 			c.processReceivingNextLocked(s.receivingNext)
 			if len(s.numberList) == 0 {
-				continue
+				break
 			}
 			var maxack uint32
 			maxackRemoved := false
@@ -420,6 +424,7 @@ func (c *Conn) Input(segments []segment) {
 				c.signalWriteLocked()
 			}
 		}
+		releaseReadSegment(seg)
 	}
 }
 

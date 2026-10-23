@@ -1,6 +1,9 @@
 package mkcp
 
-import "encoding/binary"
+import (
+	"encoding/binary"
+	"sync"
+)
 
 type command byte
 
@@ -38,6 +41,14 @@ type dataSegment struct {
 	flushRefs   int
 	retired     bool
 	recycled    bool
+}
+
+var ackSegmentPool = sync.Pool{
+	New: func() any { return new(ackSegment) },
+}
+
+var cmdSegmentPool = sync.Pool{
+	New: func() any { return new(cmdOnlySegment) },
 }
 
 func (s *dataSegment) conversation() uint16 { return s.conv }
@@ -143,17 +154,17 @@ func readSegment(b []byte) (segment, []byte) {
 		if len(b) < 13+count*4 {
 			return nil, nil
 		}
-		seg := &ackSegment{
-			conv:            conv,
-			option:          opt,
-			receivingWindow: binary.BigEndian.Uint32(b),
-			receivingNext:   binary.BigEndian.Uint32(b[4:]),
-			timestamp:       binary.BigEndian.Uint32(b[8:]),
-			numberList:      make([]uint32, count),
-		}
 		p := b[13:]
+		seg := ackSegmentPool.Get().(*ackSegment)
+		numberList := seg.numberList[:0]
+		seg.conv = conv
+		seg.option = opt
+		seg.receivingWindow = binary.BigEndian.Uint32(b)
+		seg.receivingNext = binary.BigEndian.Uint32(b[4:])
+		seg.timestamp = binary.BigEndian.Uint32(b[8:])
+		seg.numberList = numberList
 		for i := 0; i < count; i++ {
-			seg.numberList[i] = binary.BigEndian.Uint32(p)
+			seg.numberList = append(seg.numberList, binary.BigEndian.Uint32(p))
 			p = p[4:]
 		}
 		return seg, p
@@ -161,14 +172,25 @@ func readSegment(b []byte) (segment, []byte) {
 		if len(b) < 12 {
 			return nil, nil
 		}
-		seg := &cmdOnlySegment{
-			conv:          conv,
-			cmd:           cmd,
-			option:        opt,
-			sendingNext:   binary.BigEndian.Uint32(b),
-			receivingNext: binary.BigEndian.Uint32(b[4:]),
-			peerRTO:       binary.BigEndian.Uint32(b[8:]),
-		}
+		seg := cmdSegmentPool.Get().(*cmdOnlySegment)
+		seg.conv = conv
+		seg.cmd = cmd
+		seg.option = opt
+		seg.sendingNext = binary.BigEndian.Uint32(b)
+		seg.receivingNext = binary.BigEndian.Uint32(b[4:])
+		seg.peerRTO = binary.BigEndian.Uint32(b[8:])
 		return seg, b[12:]
+	}
+}
+
+func releaseReadSegment(item segment) {
+	switch seg := item.(type) {
+	case *dataSegment:
+	case *ackSegment:
+		clear(seg.numberList)
+		seg.numberList = seg.numberList[:0]
+		ackSegmentPool.Put(seg)
+	case *cmdOnlySegment:
+		cmdSegmentPool.Put(seg)
 	}
 }

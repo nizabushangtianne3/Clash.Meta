@@ -13,13 +13,14 @@ type packetReader struct {
 	header   packetHeader
 }
 
-// read parses every segment in b. Segment payloads alias b, so b must stay
-// owned by the caller for as long as the returned segments live.
-func (r packetReader) read(b []byte) []segment {
+// read parses every segment into the caller's slice. Segment payloads alias b,
+// so b must stay owned and unmodified until every returned segment is released.
+func (r packetReader) read(b []byte, segments []segment) []segment {
+	segments = segments[:0]
 	if r.header != nil {
 		headerSize := r.header.size()
 		if len(b) <= headerSize {
-			return nil
+			return segments
 		}
 		b = b[headerSize:]
 	}
@@ -27,15 +28,14 @@ func (r packetReader) read(b []byte) []segment {
 		nonceSize := r.security.NonceSize()
 		overhead := r.security.Overhead()
 		if len(b) <= nonceSize+overhead {
-			return nil
+			return segments
 		}
 		out, err := r.security.Open(b[nonceSize:nonceSize], b[:nonceSize], b[nonceSize:], nil)
 		if err != nil {
-			return nil
+			return segments
 		}
 		b = out
 	}
-	var segments []segment
 	for len(b) > 0 {
 		seg, extra := readSegment(b)
 		if seg == nil {

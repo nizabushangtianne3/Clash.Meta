@@ -142,18 +142,20 @@ func (l *UDPListener) readLoop() {
 }
 
 func (l *UDPListener) packetLoop() {
+	var segments []segment
 	for {
 		select {
 		case packet := <-l.packets:
-			l.onPacket(packet)
+			segments = l.reader.read(packet.payload, segments)
+			l.onPacket(packet, segments)
+			clear(segments)
 		case <-l.closed:
 			return
 		}
 	}
 }
 
-func (l *UDPListener) onPacket(packet udpPacket) {
-	segments := l.reader.read(packet.payload)
+func (l *UDPListener) onPacket(packet udpPacket, segments []segment) {
 	if len(segments) == 0 {
 		return
 	}
@@ -276,18 +278,20 @@ func (l *VirtualListener) readLoop() {
 }
 
 func (l *VirtualListener) packetLoop() {
+	var segments []segment
 	for {
 		select {
 		case packet := <-l.packets:
-			l.onPacket(packet)
+			segments = l.reader.read(packet.payload, segments)
+			l.onPacket(packet, segments)
+			clear(segments)
 		case <-l.closed:
 			return
 		}
 	}
 }
 
-func (l *VirtualListener) onPacket(packet virtualPacket) {
-	segments := l.reader.read(packet.payload)
+func (l *VirtualListener) onPacket(packet virtualPacket, segments []segment) {
 	if len(segments) == 0 {
 		return
 	}

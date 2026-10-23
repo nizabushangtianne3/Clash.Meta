@@ -109,6 +109,28 @@ func TestWaitNotifyWithDeadlineStaysAllocationFree(t *testing.T) {
 	require.Zero(t, allocations)
 }
 
+func TestOutOfOrderReceiveSegmentsStayOwnedUntilDelivery(t *testing.T) {
+	conn := &Conn{
+		state:       stateActive,
+		cfg:         Config{},
+		conv:        7,
+		recvNext:    2,
+		recvCache:   make(map[uint32]*dataSegment),
+		readNotify:  make(chan struct{}),
+		writeNotify: make(chan struct{}),
+		flushNotify: make(chan struct{}, 1),
+		done:        make(chan struct{}),
+	}
+	third := &dataSegment{conv: 7, number: 3, payload: []byte("three")}
+	conn.Input([]segment{third})
+	require.Same(t, third, conn.recvCache[3])
+
+	second := &dataSegment{conv: 7, number: 2, payload: []byte("two")}
+	conn.Input([]segment{second})
+	require.Empty(t, conn.recvCache)
+	require.Equal(t, []byte("twothree"), conn.readBuf)
+}
+
 func TestUDPPacketWriteStaysAllocationFree(t *testing.T) {
 	receiver, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	if err != nil {
