@@ -137,18 +137,32 @@ func TestOutOfOrderReceiveSegmentsStayOwnedUntilDelivery(t *testing.T) {
 		flushNotify: make(chan struct{}, 1),
 		done:        make(chan struct{}),
 	}
-	third := &dataSegment{conv: 7, number: 3, payload: []byte("three")}
-	conn.Input([]segment{third})
+	reader := newTestPacketReader()
+	thirdPacket := buildDataPacketWithNumber(3, "three")
+	thirdBuffer := reader.newReceiveBuffer(len(thirdPacket))
+	copy(thirdBuffer.data, thirdPacket)
+	thirdSegments := reader.read(thirdBuffer.data, thirdBuffer, nil)
+	third := thirdSegments[0].(*dataSegment)
+	conn.Input(thirdSegments)
 	require.Same(t, third, conn.recvCache[3])
+	require.EqualValues(t, 1, thirdBuffer.refs)
 	require.True(t, third.recvOwned)
 	require.False(t, third.recvReleased)
 
-	second := &dataSegment{conv: 7, number: 2, payload: []byte("two")}
-	conn.Input([]segment{second})
+	secondPacket := buildDataPacketWithNumber(2, "two")
+	secondBuffer := reader.newReceiveBuffer(len(secondPacket))
+	copy(secondBuffer.data, secondPacket)
+	secondSegments := reader.read(secondBuffer.data, secondBuffer, nil)
+	second := secondSegments[0].(*dataSegment)
+	conn.Input(secondSegments)
 	require.Empty(t, conn.recvCache)
 	require.Equal(t, []byte("twothree"), conn.readBuf)
 	require.True(t, second.recvReleased)
 	require.True(t, third.recvReleased)
+	require.Zero(t, secondBuffer.refs)
+	require.Nil(t, secondBuffer.data)
+	require.Zero(t, thirdBuffer.refs)
+	require.Nil(t, thirdBuffer.data)
 }
 
 func TestReadReusesTheReadBufferCapacity(t *testing.T) {

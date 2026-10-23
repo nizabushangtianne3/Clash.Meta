@@ -102,28 +102,37 @@ func Dial(ctx context.Context, raw net.Conn, cfg Config) (*Conn, error) {
 	conv := uint16(atomic.AddUint32(&globalConv, 1))
 	conn := newConn(raw.LocalAddr(), raw.RemoteAddr(), conv, packetWriter{security: security, header: cfg.packetHeader(), writer: raw}, raw, cfg)
 	dataPool := &sync.Pool{New: func() any { return new(dataSegment) }}
-	reader := packetReader{security: security, header: cfg.packetHeader(), dataPool: dataPool}
+	bufferPool := &sync.Pool{New: func() any { return new(receiveBuffer) }}
+	reader := packetReader{
+		security:   security,
+		header:     cfg.packetHeader(),
+		dataPool:   dataPool,
+		bufferPool: bufferPool,
+	}
+	readSize := int(cfg.mtu())
 	go func() {
-		cache := make(chan []byte, 1024)
+		cache := make(chan *receiveBuffer, 1024)
 		go func() {
 			defer close(cache)
-			buf := make([]byte, 64*1024)
 			for {
-				n, err := raw.Read(buf)
+				buffer := reader.newReceiveBuffer(readSize)
+				n, err := raw.Read(buffer.data)
 				if err != nil {
+					buffer.release()
 					return
 				}
-				payload := append([]byte(nil), buf[:n]...)
+				buffer.data = buffer.data[:n]
 				select {
-				case cache <- payload:
+				case cache <- buffer:
 				default:
+					buffer.release()
 				}
 			}
 		}()
 
 		var segments []segment
-		for payload := range cache {
-			segments = reader.read(payload, segments)
+		for buffer := range cache {
+			segments = reader.read(buffer.data, buffer, segments)
 			conn.Input(segments)
 			clear(segments)
 		}
