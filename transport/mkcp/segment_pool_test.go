@@ -82,6 +82,22 @@ func TestAckDoesNotSignalWriteWaitersWhenNoneExist(t *testing.T) {
 	require.True(t, notify == conn.writeNotify)
 }
 
+func TestReadSignalDoesNotReplaceTheChannelWithoutWaiters(t *testing.T) {
+	conn := &Conn{
+		state:       stateActive,
+		readNotify:  make(chan struct{}),
+		writeNotify: make(chan struct{}),
+		flushNotify: make(chan struct{}, 1),
+		done:        make(chan struct{}),
+	}
+	notify := conn.readNotify
+
+	allocations := testing.AllocsPerRun(1000, conn.signalReadLocked)
+	conn.signalReadLocked()
+	require.True(t, notify == conn.readNotify)
+	require.Zero(t, allocations)
+}
+
 func TestPacketConnWriteStaysAllocationFree(t *testing.T) {
 	receiver, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	if err != nil {

@@ -68,6 +68,7 @@ type Conn struct {
 	firstUnackedWasUpdated bool
 
 	readNotify   chan struct{}
+	readWaiters  int
 	writeNotify  chan struct{}
 	writeWaiters int
 	flushNotify  chan struct{}
@@ -163,8 +164,13 @@ func (c *Conn) Read(b []byte) (int, error) {
 		}
 		ch := c.readNotify
 		deadline := c.readDeadline
+		c.readWaiters++
 		c.mu.Unlock()
-		if err := waitNotify(ch, deadline); err != nil {
+		err := waitNotify(ch, deadline)
+		c.mu.Lock()
+		c.readWaiters--
+		c.mu.Unlock()
+		if err != nil {
 			return 0, err
 		}
 	}
@@ -539,6 +545,9 @@ func (c *Conn) findFirstUnackedLocked() {
 }
 
 func (c *Conn) signalReadLocked() {
+	if c.readWaiters == 0 {
+		return
+	}
 	close(c.readNotify)
 	c.readNotify = make(chan struct{})
 }
