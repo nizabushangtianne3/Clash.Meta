@@ -131,6 +131,44 @@ func TestOutOfOrderReceiveSegmentsStayOwnedUntilDelivery(t *testing.T) {
 	require.Equal(t, []byte("twothree"), conn.readBuf)
 }
 
+func TestFlushControlSegmentsStayAllocationFree(t *testing.T) {
+	if raceEnabled {
+		t.Skip("allocation counts include race instrumentation")
+	}
+
+	conn := &Conn{
+		state:       stateActive,
+		cfg:         Config{},
+		readNotify:  make(chan struct{}),
+		writeNotify: make(chan struct{}),
+		flushNotify: make(chan struct{}, 1),
+		done:        make(chan struct{}),
+		ackList: []ackItem{
+			{number: 1, timestamp: 1},
+			{number: 2, timestamp: 2},
+		},
+		ackDirty: true,
+	}
+	conn.writer = packetWriter{writer: discardWriter{}}
+	var flushed []segment
+
+	allocations := testing.AllocsPerRun(1000, func() {
+		conn.ackList[0].nextFlush = 0
+		conn.ackList[1].nextFlush = 0
+		conn.ackDirty = true
+		conn.mu.Lock()
+		flushed = conn.flushAcksLocked(1, conn.flushBatch[:0])
+		flushed = append(flushed, conn.pingSegmentLocked(commandPing, 1))
+		flushed = conn.flushSendLocked(1, flushed)
+		conn.mu.Unlock()
+		conn.writeSegments(flushed)
+		conn.releaseFlushSegments(flushed)
+		clear(flushed)
+		conn.flushBatch = flushed[:0]
+	})
+	require.Zero(t, allocations)
+}
+
 func TestUDPPacketWriteStaysAllocationFree(t *testing.T) {
 	receiver, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	if err != nil {

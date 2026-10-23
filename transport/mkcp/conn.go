@@ -68,6 +68,7 @@ type Conn struct {
 	recvNext      uint32
 	ackList       []ackItem
 	ackDirty      bool
+	ackCandidates []uint32
 	sendWindow    []*dataSegment
 	sendNext      uint32
 	firstUnacked  uint32
@@ -537,12 +538,17 @@ func (c *Conn) releaseFlushSegments(segments []segment) {
 	defer c.mu.Unlock()
 
 	for _, item := range segments {
-		seg, ok := item.(*dataSegment)
-		if !ok {
-			continue
+		switch seg := item.(type) {
+		case *dataSegment:
+			seg.flushRefs--
+			c.recycleSegmentLocked(seg)
+		case *ackSegment:
+			clear(seg.numberList)
+			seg.numberList = seg.numberList[:0]
+			sendAckSegmentPool.Put(seg)
+		case *cmdOnlySegment:
+			sendCmdSegmentPool.Put(seg)
 		}
-		seg.flushRefs--
-		c.recycleSegmentLocked(seg)
 	}
 }
 
@@ -675,7 +681,7 @@ func (c *Conn) flushAcksLocked(current uint32, segments []segment) []segment {
 	if len(c.ackList) == 0 {
 		return segments
 	}
-	candidates := make([]uint32, 0, 128)
+	candidates := c.ackCandidates[:0]
 	ack := c.newAckSegmentLocked()
 	for i := range c.ackList {
 		item := &c.ackList[i]
@@ -710,6 +716,7 @@ func (c *Conn) flushAcksLocked(current uint32, segments []segment) []segment {
 		segments = append(segments, ack)
 		c.ackDirty = false
 	}
+	c.ackCandidates = candidates
 	return segments
 }
 
@@ -784,11 +791,11 @@ func (c *Conn) writeSegments(segments []segment) {
 }
 
 func (c *Conn) newAckSegmentLocked() *ackSegment {
-	ack := &ackSegment{
-		conv:            c.conv,
-		receivingNext:   c.recvNext,
-		receivingWindow: c.recvNext + c.cfg.receivingInFlightSize(),
-	}
+	ack := sendAckSegmentPool.Get().(*ackSegment)
+	ack.conv = c.conv
+	ack.receivingNext = c.recvNext
+	ack.receivingWindow = c.recvNext + c.cfg.receivingInFlightSize()
+	ack.numberList = ack.numberList[:0]
 	if c.state == stateReadyToClose {
 		ack.option = segmentOptionClose
 	}
@@ -796,13 +803,12 @@ func (c *Conn) newAckSegmentLocked() *ackSegment {
 }
 
 func (c *Conn) pingSegmentLocked(cmd command, current uint32) *cmdOnlySegment {
-	seg := &cmdOnlySegment{
-		conv:          c.conv,
-		cmd:           cmd,
-		receivingNext: c.recvNext,
-		sendingNext:   c.firstUnacked,
-		peerRTO:       c.rto,
-	}
+	seg := sendCmdSegmentPool.Get().(*cmdOnlySegment)
+	seg.conv = c.conv
+	seg.cmd = cmd
+	seg.receivingNext = c.recvNext
+	seg.sendingNext = c.firstUnacked
+	seg.peerRTO = c.rto
 	if c.state == stateReadyToClose {
 		seg.option = segmentOptionClose
 	}

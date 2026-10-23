@@ -51,6 +51,14 @@ var cmdSegmentPool = sync.Pool{
 	New: func() any { return new(cmdOnlySegment) },
 }
 
+var sendAckSegmentPool = sync.Pool{
+	New: func() any { return new(ackSegment) },
+}
+
+var sendCmdSegmentPool = sync.Pool{
+	New: func() any { return new(cmdOnlySegment) },
+}
+
 func (s *dataSegment) conversation() uint16 { return s.conv }
 func (*dataSegment) command() command       { return commandData }
 func (s *dataSegment) byteSize() int        { return dataSegmentOverhead + len(s.payload) }
