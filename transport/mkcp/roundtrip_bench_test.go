@@ -17,7 +17,7 @@ func BenchmarkRoundTrip(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	ln, err := Listen(ctx, pc, Config{})
+	ln, err := ListenUDP(ctx, pc, Config{})
 	if err != nil {
 		b.Fatal(err)
 	}

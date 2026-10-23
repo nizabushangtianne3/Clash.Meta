@@ -115,11 +115,7 @@ func dialH2(ctx context.Context, rt http.RoundTripper, template *uritemplate.Tem
 		return nil, rsp, fmt.Errorf("connect-ip: server responded with %d", rsp.StatusCode)
 	}
 
-	stream := &h2DatagramStream{
-		requestBody:  pw,
-		responseBody: rsp.Body,
-		cancel:       cancel,
-	}
+	stream := newH2DatagramStream(pw, rsp.Body, cancel)
 	return &h2IpConn{
 		str:       stream,
 		closeChan: make(chan struct{}),
@@ -283,13 +279,23 @@ type h2DatagramStream struct {
 	writeMu sync.Mutex
 }
 
+func newH2DatagramStream(
+	requestBody *io.PipeWriter,
+	responseBody io.ReadCloser,
+	cancel context.CancelFunc,
+) *h2DatagramStream {
+	return &h2DatagramStream{
+		requestBody:   requestBody,
+		responseBody:  responseBody,
+		cancel:        cancel,
+		receiveReader: quicvarint.NewReader(bufio.NewReaderSize(responseBody, 16)),
+	}
+}
+
 func (s *h2DatagramStream) ReceiveDatagram(_ context.Context) ([]byte, error) {
 	s.readMu.Lock()
 	defer s.readMu.Unlock()
 
-	if s.receiveReader == nil {
-		s.receiveReader = quicvarint.NewReader(bufio.NewReaderSize(s.responseBody, 16))
-	}
 	reader := s.receiveReader
 	for {
 		capsuleType, err := quicvarint.Read(reader)

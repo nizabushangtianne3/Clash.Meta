@@ -129,17 +129,29 @@ func TestPacketConnWriteStaysAllocationFree(t *testing.T) {
 	require.Zero(t, allocations)
 }
 
-func TestSessionAddressCanonicalizesUDPWithoutString(t *testing.T) {
+func TestUDPAddressKeyCanonicalizesWithoutString(t *testing.T) {
 	first := &net.UDPAddr{IP: net.IPv4(1, 2, 3, 4), Port: 53}
 	second := &net.UDPAddr{IP: net.IPv4(1, 2, 3, 4), Port: 53}
 	var address sessionAddressKey
 
 	allocations := testing.AllocsPerRun(1000, func() {
-		address = sessionAddress(first)
+		address = udpAddressKey(first)
 	})
-	require.Equal(t, sessionAddress(second), address)
+	require.Equal(t, udpAddressKey(second), address)
 	require.Equal(t, netip.MustParseAddrPort("1.2.3.4:53"), address.udp)
 	require.Zero(t, allocations)
+}
+
+func TestVirtualAddressKeyUsesAddressIdentity(t *testing.T) {
+	type virtualAddr struct {
+		net.Addr
+		id int
+	}
+
+	first := &virtualAddr{id: 1}
+	second := &virtualAddr{id: 2}
+	require.Equal(t, virtualAddressKey(first), virtualAddressKey(first))
+	require.NotEqual(t, virtualAddressKey(first), virtualAddressKey(second))
 }
 
 func BenchmarkWriteSegmentPayloadLifecycle(b *testing.B) {

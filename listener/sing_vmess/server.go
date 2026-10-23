@@ -251,7 +251,7 @@ func New(config LC.VmessServer, lc C.InboundListenConfig, tunnel C.Tunnel, addit
 			if err != nil {
 				return nil, err
 			}
-			l, err = mkcp.Listen(context.Background(), pc, config.MKCPConfig.Build())
+			l, err = mkcp.ListenUDP(context.Background(), pc, config.MKCPConfig.Build())
 			if err != nil {
 				_ = pc.Close()
 				return nil, err

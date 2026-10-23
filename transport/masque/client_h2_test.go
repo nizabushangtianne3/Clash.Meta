@@ -29,7 +29,7 @@ func (r *resettableReader) Close() error {
 
 func TestH2DatagramStreamSendDatagramStaysAllocationFree(t *testing.T) {
 	reader, writer := io.Pipe()
-	stream := &h2DatagramStream{requestBody: writer}
+	stream := newH2DatagramStream(writer, nil, nil)
 	copied := make(chan error, 1)
 	go func() {
 		_, err := io.Copy(io.Discard, reader)
@@ -51,7 +51,7 @@ func TestH2DatagramStreamReceiveDatagramReusesTheReader(t *testing.T) {
 	body := quicvarint.Append(nil, h2DatagramCapsuleType)
 	body = append(body, 0)
 	responseBody := &resettableReader{data: body}
-	stream := &h2DatagramStream{responseBody: responseBody}
+	stream := newH2DatagramStream(nil, responseBody, nil)
 
 	var data []byte
 	var err error
@@ -68,7 +68,7 @@ func BenchmarkH2DatagramStreamReceiveDatagram(b *testing.B) {
 	body := quicvarint.Append(nil, h2DatagramCapsuleType)
 	body = append(body, 0)
 	responseBody := &resettableReader{data: body}
-	stream := &h2DatagramStream{responseBody: responseBody}
+	stream := newH2DatagramStream(nil, responseBody, nil)
 	ctx := context.Background()
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -82,7 +82,7 @@ func BenchmarkH2DatagramStreamReceiveDatagram(b *testing.B) {
 
 func BenchmarkH2DatagramStreamSendDatagram(b *testing.B) {
 	reader, writer := io.Pipe()
-	stream := &h2DatagramStream{requestBody: writer}
+	stream := newH2DatagramStream(writer, nil, nil)
 	done := make(chan struct{})
 	go func() {
 		_, _ = io.Copy(io.Discard, reader)

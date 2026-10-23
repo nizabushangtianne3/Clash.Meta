@@ -12,6 +12,7 @@ type Listener struct {
 	cfg            Config
 	reader         packetReader
 	securityWriter func(ioWriter) packetWriter
+	addressKey     func(net.Addr) sessionAddressKey
 	mu             sync.Mutex
 	sessions       map[sessionID]*Conn
 	packets        chan packetPayload
@@ -30,8 +31,8 @@ type sessionID struct {
 }
 
 type sessionAddressKey struct {
-	udp    netip.AddrPort
-	custom net.Addr
+	udp     netip.AddrPort
+	virtual net.Addr
 }
 
 type packetPayload struct {
@@ -39,19 +40,33 @@ type packetPayload struct {
 	addr    net.Addr
 }
 
-func Listen(ctx context.Context, pc net.PacketConn, cfg Config) (*Listener, error) {
+func ListenUDP(ctx context.Context, pc net.PacketConn, cfg Config) (*Listener, error) {
+	return newListener(ctx, pc, cfg, udpAddressKey)
+}
+
+func ListenVirtual(ctx context.Context, pc net.PacketConn, cfg Config) (*Listener, error) {
+	return newListener(ctx, pc, cfg, virtualAddressKey)
+}
+
+func newListener(
+	ctx context.Context,
+	pc net.PacketConn,
+	cfg Config,
+	addressKey func(net.Addr) sessionAddressKey,
+) (*Listener, error) {
 	security, err := cfg.security()
 	if err != nil {
 		return nil, err
 	}
 	l := &Listener{
-		pc:       pc,
-		cfg:      cfg,
-		reader:   packetReader{security: security, header: cfg.packetHeader()},
-		sessions: make(map[sessionID]*Conn),
-		packets:  make(chan packetPayload, 1024),
-		accept:   make(chan net.Conn, 1024),
-		closed:   make(chan struct{}),
+		pc:         pc,
+		cfg:        cfg,
+		reader:     packetReader{security: security, header: cfg.packetHeader()},
+		addressKey: addressKey,
+		sessions:   make(map[sessionID]*Conn),
+		packets:    make(chan packetPayload, 1024),
+		accept:     make(chan net.Conn, 1024),
+		closed:     make(chan struct{}),
 	}
 	l.securityWriter = func(w ioWriter) packetWriter {
 		return packetWriter{security: security, header: cfg.packetHeader(), writer: w}
@@ -103,7 +118,7 @@ func (l *Listener) onReceive(payload []byte, addr net.Addr) {
 		return
 	}
 	conv := segments[0].conversation()
-	id := sessionID{addr: sessionAddress(addr), conv: conv}
+	id := sessionID{addr: l.addressKey(addr), conv: conv}
 
 	l.mu.Lock()
 	if l.sessions == nil {
@@ -180,21 +195,19 @@ func (w *packetConnWriter) Write(b []byte) (int, error) {
 	return w.pc.WriteTo(b, w.addr)
 }
 
-func sessionAddress(addr net.Addr) sessionAddressKey {
-	var key sessionAddressKey
-	if udpAddr, ok := addr.(*net.UDPAddr); ok {
-		addrPort := udpAddr.AddrPort()
-		key.udp = netip.AddrPortFrom(addrPort.Addr().Unmap(), addrPort.Port())
-		return key
+func udpAddressKey(addr net.Addr) sessionAddressKey {
+	addrPort := addr.(*net.UDPAddr).AddrPort()
+	return sessionAddressKey{
+		udp: netip.AddrPortFrom(addrPort.Addr().Unmap(), addrPort.Port()),
 	}
-	key.custom = addr
-	return key
+}
+
+func virtualAddressKey(addr net.Addr) sessionAddressKey {
+	return sessionAddressKey{virtual: addr}
 }
 
 func (w *packetConnWriter) Close() error {
-	if w.remove != nil {
-		w.remove()
-	}
+	w.remove()
 	return nil
 }
 
