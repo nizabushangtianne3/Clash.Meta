@@ -19,6 +19,16 @@ var segmentPool = sync.Pool{
 	New: func() any { return new(dataSegment) },
 }
 
+var waitTimerPool = sync.Pool{
+	New: func() any {
+		timer := time.NewTimer(0)
+		if !timer.Stop() {
+			<-timer.C
+		}
+		return timer
+	},
+}
+
 type connState int32
 
 const (
@@ -229,14 +239,31 @@ func waitNotify(ch <-chan struct{}, deadline time.Time) error {
 	if timeout <= 0 {
 		return os.ErrDeadlineExceeded
 	}
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
+	timer := acquireWaitTimer(timeout)
+	fired := false
+	defer func() {
+		releaseWaitTimer(timer, fired)
+	}()
 	select {
 	case <-ch:
 		return nil
 	case <-timer.C:
+		fired = true
 		return os.ErrDeadlineExceeded
 	}
+}
+
+func acquireWaitTimer(timeout time.Duration) *time.Timer {
+	timer := waitTimerPool.Get().(*time.Timer)
+	timer.Reset(timeout)
+	return timer
+}
+
+func releaseWaitTimer(timer *time.Timer, fired bool) {
+	if !timer.Stop() && !fired {
+		<-timer.C
+	}
+	waitTimerPool.Put(timer)
 }
 
 func (c *Conn) Close() error {

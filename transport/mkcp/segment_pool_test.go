@@ -3,6 +3,7 @@ package mkcp
 import (
 	"net"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -94,6 +95,17 @@ func TestReadSignalDoesNotReplaceTheChannelWithoutWaiters(t *testing.T) {
 	allocations := testing.AllocsPerRun(1000, conn.signalReadLocked)
 	conn.signalReadLocked()
 	require.True(t, notify == conn.readNotify)
+	require.Zero(t, allocations)
+}
+
+func TestWaitNotifyWithDeadlineStaysAllocationFree(t *testing.T) {
+	notify := make(chan struct{})
+	close(notify)
+	deadline := time.Now().Add(time.Minute)
+
+	allocations := testing.AllocsPerRun(1000, func() {
+		require.NoError(t, waitNotify(notify, deadline))
+	})
 	require.Zero(t, allocations)
 }
 
