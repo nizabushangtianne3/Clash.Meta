@@ -16,7 +16,7 @@ func TestRoundTrip(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+	pc, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	require.NoError(t, err)
 	ln, err := ListenUDP(ctx, pc, Config{})
 	require.NoError(t, err)
@@ -57,7 +57,7 @@ func TestRoundTripWithSeed(t *testing.T) {
 	defer cancel()
 
 	cfg := Config{Seed: "mihomo-mkcp-test-seed"}
-	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+	pc, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	require.NoError(t, err)
 	ln, err := ListenUDP(ctx, pc, cfg)
 	require.NoError(t, err)
@@ -95,7 +95,7 @@ func TestFullDuplex(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+	pc, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	require.NoError(t, err)
 	ln, err := ListenUDP(ctx, pc, Config{})
 	require.NoError(t, err)
@@ -156,7 +156,7 @@ func TestRoundTripHeaders(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+			pc, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 			require.NoError(t, err)
 			ln, err := ListenUDP(ctx, pc, Config{Header: header})
 			require.NoError(t, err)

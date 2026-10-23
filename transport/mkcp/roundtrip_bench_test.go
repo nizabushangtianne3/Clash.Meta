@@ -13,7 +13,7 @@ func BenchmarkRoundTrip(b *testing.B) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+	pc, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	if err != nil {
 		b.Fatal(err)
 	}

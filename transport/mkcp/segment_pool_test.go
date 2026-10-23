@@ -2,7 +2,6 @@ package mkcp
 
 import (
 	"net"
-	"net/netip"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -98,7 +97,7 @@ func TestReadSignalDoesNotReplaceTheChannelWithoutWaiters(t *testing.T) {
 	require.Zero(t, allocations)
 }
 
-func TestPacketConnWriteStaysAllocationFree(t *testing.T) {
+func TestUDPPacketWriteStaysAllocationFree(t *testing.T) {
 	receiver, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	if err != nil {
 		t.Fatal(err)
@@ -118,7 +117,10 @@ func TestPacketConnWriteStaysAllocationFree(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer sender.Close()
-	writer := &packetConnWriter{pc: sender, addr: receiver.LocalAddr()}
+	writer := &udpPacketConnWriter{
+		udp:  sender,
+		addr: receiver.LocalAddr().(*net.UDPAddr).AddrPort(),
+	}
 	payload := make([]byte, 128)
 
 	allocations := testing.AllocsPerRun(1000, func() {
@@ -127,31 +129,6 @@ func TestPacketConnWriteStaysAllocationFree(t *testing.T) {
 		}
 	})
 	require.Zero(t, allocations)
-}
-
-func TestUDPAddressKeyCanonicalizesWithoutString(t *testing.T) {
-	first := &net.UDPAddr{IP: net.IPv4(1, 2, 3, 4), Port: 53}
-	second := &net.UDPAddr{IP: net.IPv4(1, 2, 3, 4), Port: 53}
-	var address sessionAddressKey
-
-	allocations := testing.AllocsPerRun(1000, func() {
-		address = udpAddressKey(first)
-	})
-	require.Equal(t, udpAddressKey(second), address)
-	require.Equal(t, netip.MustParseAddrPort("1.2.3.4:53"), address.udp)
-	require.Zero(t, allocations)
-}
-
-func TestVirtualAddressKeyUsesAddressIdentity(t *testing.T) {
-	type virtualAddr struct {
-		net.Addr
-		id int
-	}
-
-	first := &virtualAddr{id: 1}
-	second := &virtualAddr{id: 2}
-	require.Equal(t, virtualAddressKey(first), virtualAddressKey(first))
-	require.NotEqual(t, virtualAddressKey(first), virtualAddressKey(second))
 }
 
 func BenchmarkWriteSegmentPayloadLifecycle(b *testing.B) {

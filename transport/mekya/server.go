@@ -19,7 +19,7 @@ import (
 type Listener struct {
 	outer      net.Listener
 	packetConn *wrappedPacketConn
-	mkcp       *mkcp.Listener
+	mkcp       *mkcp.VirtualListener
 	server     *http.Server
 	done       chan struct{}
 	once       sync.Once
