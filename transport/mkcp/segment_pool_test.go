@@ -10,17 +10,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestWriteSegmentReleasesItsPayloadAfterAck(t *testing.T) {
+func newTestConn() *Conn {
 	conn := &Conn{
-		state:         stateActive,
-		mss:           1200,
-		remoteRecvWin: 32,
-		readNotify:    make(chan struct{}),
-		writeNotify:   make(chan struct{}),
-		flushNotify:   make(chan struct{}, 1),
-		done:          make(chan struct{}),
+		state:       stateActive,
+		cfg:         Config{},
+		flushNotify: make(chan struct{}, 1),
+		done:        make(chan struct{}),
 	}
 	conn.writer = packetWriter{writer: discardWriter{}}
+	conn.readNotify = newWaitSignal(&conn.mu)
+	conn.writeNotify = newWaitSignal(&conn.mu)
+	return conn
+}
+
+func TestWriteSegmentReleasesItsPayloadAfterAck(t *testing.T) {
+	conn := newTestConn()
+	conn.mss = 1200
+	conn.remoteRecvWin = 32
 	payload := make([]byte, conn.mss)
 
 	var flushed []segment
@@ -45,98 +51,69 @@ func TestWriteSegmentReleasesItsPayloadAfterAck(t *testing.T) {
 	require.Zero(t, allocations)
 }
 
-func TestWriteDoesNotSignalWriteWaitersWhenQueueing(t *testing.T) {
-	conn := &Conn{
-		state:         stateActive,
-		mss:           1200,
-		remoteRecvWin: 32,
-		readNotify:    make(chan struct{}),
-		writeNotify:   make(chan struct{}),
-		flushNotify:   make(chan struct{}, 1),
-		done:          make(chan struct{}),
-	}
-	conn.writer = packetWriter{writer: discardWriter{}}
-	notify := conn.writeNotify
+func TestReadWriteSignalsStayAllocationFree(t *testing.T) {
+	conn := newTestConn()
 
-	_, err := conn.Write(make([]byte, conn.mss))
-	require.NoError(t, err)
-	require.True(t, notify == conn.writeNotify)
+	allocations := testing.AllocsPerRun(1000, func() {
+		conn.signalReadLocked()
+		conn.signalWriteLocked()
+	})
+	require.Zero(t, allocations)
 }
 
-func TestAckDoesNotSignalWriteWaitersWhenNoneExist(t *testing.T) {
-	conn := &Conn{
-		state:         stateActive,
-		mss:           1200,
-		remoteRecvWin: 32,
-		readNotify:    make(chan struct{}),
-		writeNotify:   make(chan struct{}),
-		flushNotify:   make(chan struct{}, 1),
-		done:          make(chan struct{}),
-	}
-	conn.writer = packetWriter{writer: discardWriter{}}
-	notify := conn.writeNotify
+func TestReadWakesEveryConcurrentWaiter(t *testing.T) {
+	conn := newTestConn()
+	results := make(chan byte, 2)
 
-	_, err := conn.Write(make([]byte, conn.mss))
-	require.NoError(t, err)
+	for i := 0; i < 2; i++ {
+		go func() {
+			buffer := make([]byte, 1)
+			_, err := conn.Read(buffer)
+			if err != nil {
+				return
+			}
+			results <- buffer[0]
+		}()
+	}
+
+	time.Sleep(10 * time.Millisecond)
 	conn.mu.Lock()
-	require.True(t, conn.processAckLocked(conn.sendNext-1))
-	conn.mu.Unlock()
-	require.True(t, notify == conn.writeNotify)
-}
-
-func TestReadSignalDoesNotReplaceTheChannelWithoutWaiters(t *testing.T) {
-	conn := &Conn{
-		state:       stateActive,
-		readNotify:  make(chan struct{}),
-		writeNotify: make(chan struct{}),
-		flushNotify: make(chan struct{}, 1),
-		done:        make(chan struct{}),
-	}
-	notify := conn.readNotify
-
-	allocations := testing.AllocsPerRun(1000, conn.signalReadLocked)
+	conn.readBuf = append(conn.readBuf, 'a', 'b')
 	conn.signalReadLocked()
-	require.True(t, notify == conn.readNotify)
-	require.Zero(t, allocations)
+	conn.mu.Unlock()
+
+	require.Equal(t, []byte{'a', 'b'}, []byte{<-results, <-results})
 }
 
-func TestWaitNotifyWithDeadlineStaysAllocationFree(t *testing.T) {
-	notify := make(chan struct{})
-	close(notify)
-	deadline := time.Now().Add(time.Minute)
+func TestReadWriteDeadlinesExpire(t *testing.T) {
+	readConn := newTestConn()
+	require.NoError(t, readConn.SetReadDeadline(time.Now().Add(50*time.Microsecond)))
+	_, err := readConn.Read(make([]byte, 1))
+	require.ErrorIs(t, err, os.ErrDeadlineExceeded)
 
-	allocations := testing.AllocsPerRun(1000, func() {
-		require.NoError(t, waitNotify(notify, deadline))
-	})
-	require.Zero(t, allocations)
+	writeConn := newTestConn()
+	writeConn.cfg.WriteBuffer = 1350
+	writeConn.sendWindow = append(writeConn.sendWindow, &dataSegment{})
+	require.NoError(t, writeConn.SetWriteDeadline(time.Now().Add(50*time.Microsecond)))
+	_, err = writeConn.Write([]byte{1})
+	require.ErrorIs(t, err, os.ErrDeadlineExceeded)
 }
 
-func TestWaitNotifyTimeoutStaysAllocationFree(t *testing.T) {
-	if raceEnabled {
-		t.Skip("allocation counts include race instrumentation")
-	}
+func TestReadDeadlineCanBeCleared(t *testing.T) {
+	conn := newTestConn()
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(time.Second)))
+	require.NoError(t, conn.SetReadDeadline(time.Time{}))
 
-	notify := make(chan struct{})
-
-	allocations := testing.AllocsPerRun(1000, func() {
-		deadline := time.Now().Add(50 * time.Microsecond)
-		require.ErrorIs(t, waitNotify(notify, deadline), os.ErrDeadlineExceeded)
-	})
-	require.Zero(t, allocations)
+	conn.mu.Lock()
+	require.True(t, conn.readNotify.deadline.IsZero())
+	conn.mu.Unlock()
 }
 
 func TestOutOfOrderReceiveSegmentsStayOwnedUntilDelivery(t *testing.T) {
-	conn := &Conn{
-		state:       stateActive,
-		cfg:         Config{},
-		conv:        7,
-		recvNext:    2,
-		recvCache:   make(map[uint32]*dataSegment),
-		readNotify:  make(chan struct{}),
-		writeNotify: make(chan struct{}),
-		flushNotify: make(chan struct{}, 1),
-		done:        make(chan struct{}),
-	}
+	conn := newTestConn()
+	conn.conv = 7
+	conn.recvNext = 2
+	conn.recvCache = make(map[uint32]*dataSegment)
 	reader := newTestPacketReader()
 	thirdPacket := buildDataPacketWithNumber(3, "three")
 	thirdBuffer := reader.newReceiveBuffer(len(thirdPacket))
@@ -166,13 +143,7 @@ func TestOutOfOrderReceiveSegmentsStayOwnedUntilDelivery(t *testing.T) {
 }
 
 func TestReadReusesTheReadBufferCapacity(t *testing.T) {
-	conn := &Conn{
-		state:       stateActive,
-		readNotify:  make(chan struct{}),
-		writeNotify: make(chan struct{}),
-		flushNotify: make(chan struct{}, 1),
-		done:        make(chan struct{}),
-	}
+	conn := newTestConn()
 	conn.readBuf = append(make([]byte, 0, 64), bytes.Repeat([]byte{7}, 64)...)
 	capacity := cap(conn.readBuf)
 	output := make([]byte, 64)
@@ -190,20 +161,12 @@ func TestFlushControlSegmentsStayAllocationFree(t *testing.T) {
 		t.Skip("allocation counts include race instrumentation")
 	}
 
-	conn := &Conn{
-		state:       stateActive,
-		cfg:         Config{},
-		readNotify:  make(chan struct{}),
-		writeNotify: make(chan struct{}),
-		flushNotify: make(chan struct{}, 1),
-		done:        make(chan struct{}),
-		ackList: []ackItem{
-			{number: 1, timestamp: 1},
-			{number: 2, timestamp: 2},
-		},
-		ackDirty: true,
+	conn := newTestConn()
+	conn.ackList = []ackItem{
+		{number: 1, timestamp: 1},
+		{number: 2, timestamp: 2},
 	}
-	conn.writer = packetWriter{writer: discardWriter{}}
+	conn.ackDirty = true
 	var flushed []segment
 
 	allocations := testing.AllocsPerRun(1000, func() {
@@ -258,16 +221,9 @@ func TestUDPPacketWriteStaysAllocationFree(t *testing.T) {
 }
 
 func BenchmarkWriteSegmentPayloadLifecycle(b *testing.B) {
-	conn := &Conn{
-		state:         stateActive,
-		mss:           1200,
-		remoteRecvWin: 32,
-		readNotify:    make(chan struct{}),
-		writeNotify:   make(chan struct{}),
-		flushNotify:   make(chan struct{}, 1),
-		done:          make(chan struct{}),
-	}
-	conn.writer = packetWriter{writer: discardWriter{}}
+	conn := newTestConn()
+	conn.mss = 1200
+	conn.remoteRecvWin = 32
 	payload := make([]byte, conn.mss)
 	b.ReportAllocs()
 	b.ResetTimer()
