@@ -168,7 +168,8 @@ func (c *Conn) Read(b []byte) (int, error) {
 		c.mu.Lock()
 		if len(c.readBuf) > 0 {
 			n := copy(b, c.readBuf)
-			c.readBuf = c.readBuf[n:]
+			remaining := copy(c.readBuf, c.readBuf[n:])
+			c.readBuf = c.readBuf[:remaining]
 			c.mu.Unlock()
 			c.wakeFlush()
 			return n, nil

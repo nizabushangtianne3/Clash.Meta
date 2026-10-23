@@ -1,6 +1,7 @@
 package mkcp
 
 import (
+	"bytes"
 	"net"
 	"testing"
 	"time"
@@ -133,6 +134,26 @@ func TestOutOfOrderReceiveSegmentsStayOwnedUntilDelivery(t *testing.T) {
 	require.Equal(t, []byte("twothree"), conn.readBuf)
 	require.True(t, second.recvReleased)
 	require.True(t, third.recvReleased)
+}
+
+func TestReadReusesTheReadBufferCapacity(t *testing.T) {
+	conn := &Conn{
+		state:       stateActive,
+		readNotify:  make(chan struct{}),
+		writeNotify: make(chan struct{}),
+		flushNotify: make(chan struct{}, 1),
+		done:        make(chan struct{}),
+	}
+	conn.readBuf = append(make([]byte, 0, 64), bytes.Repeat([]byte{7}, 64)...)
+	capacity := cap(conn.readBuf)
+	output := make([]byte, 64)
+
+	n, err := conn.Read(output)
+	require.NoError(t, err)
+	require.Equal(t, 64, n)
+	require.Equal(t, bytes.Repeat([]byte{7}, 64), output)
+	require.Empty(t, conn.readBuf)
+	require.Equal(t, capacity, cap(conn.readBuf))
 }
 
 func TestFlushControlSegmentsStayAllocationFree(t *testing.T) {
