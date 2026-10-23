@@ -3,6 +3,7 @@ package mkcp
 import (
 	"bytes"
 	"net"
+	"os"
 	"testing"
 	"time"
 
@@ -106,6 +107,20 @@ func TestWaitNotifyWithDeadlineStaysAllocationFree(t *testing.T) {
 
 	allocations := testing.AllocsPerRun(1000, func() {
 		require.NoError(t, waitNotify(notify, deadline))
+	})
+	require.Zero(t, allocations)
+}
+
+func TestWaitNotifyTimeoutStaysAllocationFree(t *testing.T) {
+	if raceEnabled {
+		t.Skip("allocation counts include race instrumentation")
+	}
+
+	notify := make(chan struct{})
+
+	allocations := testing.AllocsPerRun(1000, func() {
+		deadline := time.Now().Add(50 * time.Microsecond)
+		require.ErrorIs(t, waitNotify(notify, deadline), os.ErrDeadlineExceeded)
 	})
 	require.Zero(t, allocations)
 }

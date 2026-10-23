@@ -7,8 +7,9 @@ Environment: Windows `amd64`, Intel Core i9-9900, Go `1.27.1`. The benchmark is
 
 `waitNotify` no longer constructs a `time.Timer` for every blocked read or write.
 It acquires a stopped timer from a pool, resets it, and returns it after draining
-any pending firing. The timer-fired result is tracked so a consumed timer channel
-is not drained twice.
+any pending firing. Each return path releases the timer directly, and the
+timer-fired result is tracked so a consumed timer channel is not drained twice.
+The focused timeout test keeps that path allocation-free as well.
 
 | Metric | Before | After | Result |
 | --- | ---: | ---: | --- |

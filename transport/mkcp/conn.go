@@ -246,15 +246,12 @@ func waitNotify(ch <-chan struct{}, deadline time.Time) error {
 		return os.ErrDeadlineExceeded
 	}
 	timer := acquireWaitTimer(timeout)
-	fired := false
-	defer func() {
-		releaseWaitTimer(timer, fired)
-	}()
 	select {
 	case <-ch:
+		releaseWaitTimer(timer, false)
 		return nil
 	case <-timer.C:
-		fired = true
+		releaseWaitTimer(timer, true)
 		return os.ErrDeadlineExceeded
 	}
 }
