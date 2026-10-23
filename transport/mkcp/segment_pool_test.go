@@ -1,6 +1,8 @@
 package mkcp
 
 import (
+	"net"
+	"net/netip"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -108,6 +110,45 @@ func TestWriteReusesRetiredSegments(t *testing.T) {
 	_, err = conn.Write(payload)
 	require.NoError(t, err)
 	require.True(t, first == conn.sendWindow[0])
+}
+
+func TestPacketConnWriteStaysAllocationFree(t *testing.T) {
+	receiver, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer receiver.Close()
+	go func() {
+		buffer := make([]byte, 1500)
+		for {
+			if _, _, err := receiver.ReadFromUDP(buffer); err != nil {
+				return
+			}
+		}
+	}()
+
+	sender, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sender.Close()
+	writer := &packetConnWriter{pc: sender, addr: receiver.LocalAddr()}
+	payload := make([]byte, 128)
+
+	allocations := testing.AllocsPerRun(1000, func() {
+		if _, err := writer.Write(payload); err != nil {
+			t.Fatal(err)
+		}
+	})
+	require.Zero(t, allocations)
+}
+
+func TestSessionAddressCanonicalizesUDPWithoutString(t *testing.T) {
+	first := &net.UDPAddr{IP: net.IPv4(1, 2, 3, 4), Port: 53}
+	second := &net.UDPAddr{IP: net.IPv4(1, 2, 3, 4), Port: 53}
+
+	require.Equal(t, sessionAddress(first), sessionAddress(second))
+	require.Equal(t, netip.MustParseAddrPort("1.2.3.4:53"), sessionAddress(first))
 }
 
 func BenchmarkWriteSegmentPayloadLifecycle(b *testing.B) {

@@ -3,6 +3,7 @@ package mkcp
 import (
 	"context"
 	"net"
+	"net/netip"
 	"sync"
 )
 
@@ -24,7 +25,7 @@ type ioWriter interface {
 }
 
 type sessionID struct {
-	addr string
+	addr any
 	conv uint16
 }
 
@@ -97,7 +98,7 @@ func (l *Listener) onReceive(payload []byte, addr net.Addr) {
 		return
 	}
 	conv := segments[0].conversation()
-	id := sessionID{addr: addr.String(), conv: conv}
+	id := sessionID{addr: sessionAddress(addr), conv: conv}
 
 	l.mu.Lock()
 	if l.sessions == nil {
@@ -172,6 +173,14 @@ type packetConnWriter struct {
 
 func (w *packetConnWriter) Write(b []byte) (int, error) {
 	return w.pc.WriteTo(b, w.addr)
+}
+
+func sessionAddress(addr net.Addr) any {
+	if udpAddr, ok := addr.(*net.UDPAddr); ok {
+		addrPort := udpAddr.AddrPort()
+		return netip.AddrPortFrom(addrPort.Addr().Unmap(), addrPort.Port())
+	}
+	return addr
 }
 
 func (w *packetConnWriter) Close() error {
