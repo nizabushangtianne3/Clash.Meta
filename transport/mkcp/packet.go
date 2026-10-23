@@ -4,6 +4,8 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"io"
+
+	"github.com/metacubex/mihomo/common/pool"
 )
 
 type packetReader struct {
@@ -66,15 +68,17 @@ func (w packetWriter) overhead() int {
 }
 
 func (w packetWriter) writeSegment(seg segment) error {
-	payload := make([]byte, seg.byteSize())
+	payload := pool.Get(seg.byteSize())
 	seg.serialize(payload)
+	defer pool.Put(payload)
 
 	headerSize := 0
 	if w.header != nil {
 		headerSize = w.header.size()
 	}
 
-	out := make([]byte, headerSize, headerSize+len(payload)+w.securityOverhead()+3)
+	frame := pool.Get(headerSize + len(payload) + w.securityOverhead() + 3)
+	out := frame[:headerSize]
 	if headerSize > 0 {
 		w.header.serialize(out[:headerSize])
 	}
@@ -92,6 +96,7 @@ func (w packetWriter) writeSegment(seg segment) error {
 	}
 
 	_, err := w.writer.Write(out)
+	_ = pool.Put(frame)
 	return err
 }
 

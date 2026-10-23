@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/metacubex/mihomo/common/httputils"
+	"github.com/metacubex/mihomo/common/pool"
 	tlsC "github.com/metacubex/mihomo/component/tls"
 	"github.com/metacubex/mihomo/transport/mkcp"
 
@@ -433,8 +434,10 @@ func (s *requestClientSession) writePacket(requestBody *bytes.Buffer, packet []b
 		return false
 	}
 	if err := writePacketBundle(requestBody, packet); err != nil {
+		_ = pool.Put(packet)
 		return false
 	}
+	_ = pool.Put(packet)
 	return true
 }
 
@@ -464,6 +467,7 @@ func (s *requestClientSession) roundTrip(body []byte) {
 		}
 		select {
 		case <-s.ctx.Done():
+			_ = pool.Put(packet)
 			return
 		case s.readerChan <- packet:
 		}
@@ -477,16 +481,21 @@ func (s *requestClientSession) Read(p []byte) (int, error) {
 	case <-s.deadlines.read.Wait():
 		return 0, os.ErrDeadlineExceeded
 	case packet := <-s.readerChan:
-		return copy(p, packet), nil
+		n := copy(p, packet)
+		_ = pool.Put(packet)
+		return n, nil
 	}
 }
 
 func (s *requestClientSession) Write(p []byte) (int, error) {
-	packet := append([]byte(nil), p...)
+	packet := pool.Get(len(p))
+	copy(packet, p)
 	select {
 	case <-s.ctx.Done():
+		_ = pool.Put(packet)
 		return 0, s.ctx.Err()
 	case <-s.deadlines.write.Wait():
+		_ = pool.Put(packet)
 		return 0, os.ErrDeadlineExceeded
 	case s.writerChan <- packet:
 		return len(p), nil

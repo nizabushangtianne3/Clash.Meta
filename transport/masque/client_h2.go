@@ -3,6 +3,7 @@ package masque
 // copy and modify from: https://github.com/Diniboy1123/connect-ip-go/blob/8d7bb0a858a2674046a7cb5538749e4c826c3538/client_h2.go
 
 import (
+	"bufio"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -13,6 +14,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/log"
 
 	"github.com/metacubex/http"
@@ -275,6 +277,8 @@ type h2DatagramStream struct {
 	responseBody io.ReadCloser
 	cancel       context.CancelFunc
 
+	receiveReader quicvarint.Reader
+
 	readMu  sync.Mutex
 	writeMu sync.Mutex
 }
@@ -283,7 +287,10 @@ func (s *h2DatagramStream) ReceiveDatagram(_ context.Context) ([]byte, error) {
 	s.readMu.Lock()
 	defer s.readMu.Unlock()
 
-	reader := quicvarint.NewReader(s.responseBody)
+	if s.receiveReader == nil {
+		s.receiveReader = quicvarint.NewReader(bufio.NewReaderSize(s.responseBody, 16))
+	}
+	reader := s.receiveReader
 	for {
 		capsuleType, err := quicvarint.Read(reader)
 		if err != nil {
@@ -306,7 +313,7 @@ func (s *h2DatagramStream) ReceiveDatagram(_ context.Context) ([]byte, error) {
 }
 
 func (s *h2DatagramStream) SendDatagram(data []byte) error {
-	frame := make([]byte, 0, quicvarint.Len(h2DatagramCapsuleType)+quicvarint.Len(uint64(len(data)))+len(data))
+	frame := pool.Get(quicvarint.Len(h2DatagramCapsuleType) + quicvarint.Len(uint64(len(data))) + len(data))[:0]
 	frame = quicvarint.Append(frame, h2DatagramCapsuleType)
 	frame = quicvarint.Append(frame, uint64(len(data)))
 	frame = append(frame, data...)
@@ -314,6 +321,7 @@ func (s *h2DatagramStream) SendDatagram(data []byte) error {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	_, err := s.requestBody.Write(frame)
+	_ = pool.Put(frame)
 	if err != nil {
 		return fmt.Errorf("connect-ip: failed to send datagram capsule: %w", err)
 	}

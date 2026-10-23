@@ -53,13 +53,6 @@ func (c Config) writeBuffer() uint32 {
 	return c.WriteBuffer
 }
 
-func (c Config) readBuffer() uint32 {
-	if c.ReadBuffer == 0 {
-		return 2 * 1024 * 1024
-	}
-	return c.ReadBuffer
-}
-
 func (c Config) sendingInFlightSize() uint32 {
 	size := c.uplinkCapacity() * 1024 * 1024 / c.mtu() / (1000 / c.tti())
 	if size < 8 {
@@ -78,10 +71,6 @@ func (c Config) receivingInFlightSize() uint32 {
 
 func (c Config) sendingBufferSize() uint32 {
 	return c.writeBuffer() / c.mtu()
-}
-
-func (c Config) receivingBufferSize() uint32 {
-	return c.readBuffer() / c.mtu()
 }
 
 func (c Config) security() (cipher.AEAD, error) {
