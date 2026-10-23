@@ -15,6 +15,10 @@ import (
 
 var globalConv uint32 = uint32(uint16(rand.Int63() >> 47))
 
+var segmentPool = sync.Pool{
+	New: func() any { return new(dataSegment) },
+}
+
 type connState int32
 
 const (
@@ -63,11 +67,13 @@ type Conn struct {
 	controlWindow          uint32
 	firstUnackedWasUpdated bool
 
-	readNotify  chan struct{}
-	writeNotify chan struct{}
-	flushNotify chan struct{}
-	done        chan struct{}
-	once        sync.Once
+	readNotify   chan struct{}
+	writeNotify  chan struct{}
+	writeWaiters int
+	flushNotify  chan struct{}
+	flushBatch   []segment
+	done         chan struct{}
+	once         sync.Once
 }
 
 type ackItem struct {
@@ -183,7 +189,8 @@ func (c *Conn) Write(b []byte) (int, error) {
 				return written, io.ErrClosedPipe
 			}
 			if uint32(len(c.sendWindow)) <= c.cfg.sendingBufferSize() {
-				seg := &dataSegment{number: c.sendNext, payload: payload}
+				seg := segmentPool.Get().(*dataSegment)
+				*seg = dataSegment{number: c.sendNext, payload: payload}
 				c.sendNext++
 				c.sendWindow = append(c.sendWindow, seg)
 				c.mu.Unlock()
@@ -193,8 +200,13 @@ func (c *Conn) Write(b []byte) (int, error) {
 			}
 			ch := c.writeNotify
 			deadline := c.writeDeadline
+			c.writeWaiters++
 			c.mu.Unlock()
-			if err := waitNotify(ch, deadline); err != nil {
+			err := waitNotify(ch, deadline)
+			c.mu.Lock()
+			c.writeWaiters--
+			c.mu.Unlock()
+			if err != nil {
 				return written, err
 			}
 		}
@@ -473,11 +485,13 @@ func (c *Conn) retireSegmentLocked(seg *dataSegment) {
 }
 
 func (c *Conn) recycleSegmentLocked(seg *dataSegment) {
-	if !seg.retired || seg.flushRefs != 0 {
+	if !seg.retired || seg.flushRefs != 0 || seg.recycled {
 		return
 	}
 	_ = pool.Put(seg.payload)
 	seg.payload = nil
+	seg.recycled = true
+	segmentPool.Put(seg)
 }
 
 func (c *Conn) releaseFlushSegments(segments []segment) {
@@ -530,6 +544,9 @@ func (c *Conn) signalReadLocked() {
 }
 
 func (c *Conn) signalWriteLocked() {
+	if c.writeWaiters == 0 {
+		return
+	}
 	close(c.writeNotify)
 	c.writeNotify = make(chan struct{})
 }
@@ -557,7 +574,11 @@ func (c *Conn) flushLoop() {
 }
 
 func (c *Conn) flush() {
-	var segments []segment
+	segments := c.flushBatch[:0]
+	defer func() {
+		clear(segments)
+		c.flushBatch = segments[:0]
+	}()
 	var terminate bool
 
 	c.mu.Lock()
@@ -594,8 +615,8 @@ func (c *Conn) flush() {
 		c.setStateLocked(stateTerminating)
 	}
 
-	segments = append(segments, c.flushAcksLocked(current)...)
-	segments = append(segments, c.flushSendLocked(current)...)
+	segments = c.flushAcksLocked(current, segments)
+	segments = c.flushSendLocked(current, segments)
 	if current-c.lastPing >= 3000 {
 		segments = append(segments, c.pingSegmentLocked(commandPing, current))
 	}
@@ -609,11 +630,10 @@ func (c *Conn) flush() {
 	}
 }
 
-func (c *Conn) flushAcksLocked(current uint32) []segment {
+func (c *Conn) flushAcksLocked(current uint32, segments []segment) []segment {
 	if len(c.ackList) == 0 {
-		return nil
+		return segments
 	}
-	segments := make([]segment, 0, 1)
 	candidates := make([]uint32, 0, 128)
 	ack := c.newAckSegmentLocked()
 	for i := range c.ackList {
@@ -652,15 +672,14 @@ func (c *Conn) flushAcksLocked(current uint32) []segment {
 	return segments
 }
 
-func (c *Conn) flushSendLocked(current uint32) []segment {
+func (c *Conn) flushSendLocked(current uint32, segments []segment) []segment {
 	if len(c.sendWindow) == 0 {
 		if c.firstUnackedWasUpdated {
 			c.firstUnackedWasUpdated = false
-			return []segment{c.pingSegmentLocked(commandPing, current)}
+			return append(segments, c.pingSegmentLocked(commandPing, current))
 		}
-		return nil
+		return segments
 	}
-	segments := make([]segment, 0, len(c.sendWindow))
 	cwnd := c.cfg.sendingInFlightSize()
 	if remoteWindow := c.remoteRecvWin - c.firstUnacked; cwnd > remoteWindow {
 		cwnd = remoteWindow

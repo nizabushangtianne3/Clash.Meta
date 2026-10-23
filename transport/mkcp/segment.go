@@ -37,6 +37,7 @@ type dataSegment struct {
 	transmit    uint32
 	flushRefs   int
 	retired     bool
+	recycled    bool
 }
 
 func (s *dataSegment) conversation() uint16 { return s.conv }
