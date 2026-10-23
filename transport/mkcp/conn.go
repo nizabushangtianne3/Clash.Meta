@@ -186,7 +186,6 @@ func (c *Conn) Write(b []byte) (int, error) {
 				seg := &dataSegment{number: c.sendNext, payload: payload}
 				c.sendNext++
 				c.sendWindow = append(c.sendWindow, seg)
-				c.signalWriteLocked()
 				c.mu.Unlock()
 				c.wakeFlush()
 				written = end

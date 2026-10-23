@@ -39,7 +39,25 @@ func TestWriteSegmentReleasesItsPayloadAfterAck(t *testing.T) {
 	last, ok := flushed[0].(*dataSegment)
 	require.True(t, ok)
 	require.Nil(t, last.payload)
-	require.LessOrEqual(t, int(allocations), 4)
+	require.LessOrEqual(t, int(allocations), 3)
+}
+
+func TestWriteDoesNotSignalWriteWaitersWhenQueueing(t *testing.T) {
+	conn := &Conn{
+		state:         stateActive,
+		mss:           1200,
+		remoteRecvWin: 32,
+		readNotify:    make(chan struct{}),
+		writeNotify:   make(chan struct{}),
+		flushNotify:   make(chan struct{}, 1),
+		done:          make(chan struct{}),
+	}
+	conn.writer = packetWriter{writer: discardWriter{}}
+	notify := conn.writeNotify
+
+	_, err := conn.Write(make([]byte, conn.mss))
+	require.NoError(t, err)
+	require.True(t, notify == conn.writeNotify)
 }
 
 func BenchmarkWriteSegmentPayloadLifecycle(b *testing.B) {
