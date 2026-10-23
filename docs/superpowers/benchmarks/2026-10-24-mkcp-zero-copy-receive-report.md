@@ -7,14 +7,14 @@ Environment: Windows `amd64`, Intel Core i9-9900, Go `1.27.1`. The comparison is
 
 ## Change
 
-Receive loops now read into pooled MTU-sized buffers and data segments retain
-references to those buffers. Control-only datagrams are released immediately,
+Receive loops now read into pooled MTU-plus-AEAD-nonce buffers and data segments
+retain references to those buffers. Control-only datagrams are released immediately,
 multi-segment datagrams are released by their final data segment, and out-of-order
 segments keep the buffer until delivery or connection cleanup. Listener shutdown
 and full client queues release unparsed buffers instead of leaking them.
 
-The GCM writer overhead now includes its nonce. Without that correction, a seeded
-mKCP packet exceeds the configured MTU and an MTU-sized receive buffer truncates it.
+The GCM writer overhead includes its nonce, while the receive buffer covers a V2Ray
+peer that counts that nonce outside its configured MTU.
 
 | Metric | Before | After | Result |
 | --- | ---: | ---: | --- |
@@ -25,6 +25,8 @@ mKCP packet exceeds the configured MTU and an MTU-sized receive buffer truncates
 ## Verification
 
 - Plain, seeded-AEAD, and all header round trips: green.
+- V2Ray seeded mKCP interoperability: green after sizing receive buffers to 1362
+  bytes for the default 1350-byte MTU.
 - Shared-buffer, control-only release, and out-of-order ownership tests: green.
 - `go test ./transport/mkcp -count=1`: green.
 - `staticcheck ./transport/mkcp`: green.

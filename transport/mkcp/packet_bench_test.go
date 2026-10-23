@@ -116,6 +116,13 @@ func TestWriterOverheadIncludesTheAEADNonce(t *testing.T) {
 	require.EqualValues(t, 28, packetWriter{security: security}.overhead())
 }
 
+func TestReceiveSizeCoversThePeerAEADNonce(t *testing.T) {
+	security, err := Config{Seed: "mihomo-mkcp-test-seed"}.security()
+	require.NoError(t, err)
+
+	require.EqualValues(t, 1362, receiveSize(Config{}, security))
+}
+
 func BenchmarkReadDataSegment(b *testing.B) {
 	reader := newTestPacketReader()
 	packet := buildDataPacket(benchDataPayloadSize)

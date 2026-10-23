@@ -109,7 +109,7 @@ func Dial(ctx context.Context, raw net.Conn, cfg Config) (*Conn, error) {
 		dataPool:   dataPool,
 		bufferPool: bufferPool,
 	}
-	readSize := int(cfg.mtu())
+	readSize := receiveSize(cfg, security)
 	go func() {
 		cache := make(chan *receiveBuffer, 1024)
 		go func() {

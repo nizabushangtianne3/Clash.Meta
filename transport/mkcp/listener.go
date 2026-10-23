@@ -131,7 +131,7 @@ func ListenUDP(ctx context.Context, udp *net.UDPConn, cfg Config) (*UDPListener,
 }
 
 func (l *UDPListener) readLoop() {
-	readSize := int(l.cfg.mtu())
+	readSize := receiveSize(l.cfg, l.reader.security)
 	for {
 		buffer := l.reader.newReceiveBuffer(readSize)
 		n, addr, err := l.udp.ReadFromUDPAddrPort(buffer.data)
@@ -278,7 +278,7 @@ func ListenVirtual(ctx context.Context, pc net.PacketConn, cfg Config) (*Virtual
 }
 
 func (l *VirtualListener) readLoop() {
-	readSize := int(l.cfg.mtu())
+	readSize := receiveSize(l.cfg, l.reader.security)
 	for {
 		buffer := l.reader.newReceiveBuffer(readSize)
 		n, addr, err := l.pc.ReadFrom(buffer.data)
