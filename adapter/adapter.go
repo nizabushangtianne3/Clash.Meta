@@ -85,11 +85,7 @@ func (p *Proxy) ListenPacketContext(ctx context.Context, metadata *C.Metadata) (
 // DelayHistory implements C.Proxy
 func (p *Proxy) DelayHistory() []C.DelayHistory {
 	queueM := p.history.Copy()
-	histories := []C.DelayHistory{}
-	for _, item := range queueM {
-		histories = append(histories, item)
-	}
-	return histories
+	return append([]C.DelayHistory{}, queueM...)
 }
 
 // DelayHistoryForTestUrl implements C.Proxy
@@ -99,11 +95,7 @@ func (p *Proxy) DelayHistoryForTestUrl(url string) []C.DelayHistory {
 	if state, ok := p.extra.Load(url); ok {
 		queueM = state.history.Copy()
 	}
-	histories := []C.DelayHistory{}
-	for _, item := range queueM {
-		histories = append(histories, item)
-	}
-	return histories
+	return append([]C.DelayHistory{}, queueM...)
 }
 
 // ExtraDelayHistories return all delay histories for each test URL
@@ -116,11 +108,7 @@ func (p *Proxy) ExtraDelayHistories() map[string]C.ProxyState {
 		state := v
 
 		queueM := state.history.Copy()
-		var history []C.DelayHistory
-
-		for _, item := range queueM {
-			history = append(history, item)
-		}
+		history := append([]C.DelayHistory(nil), queueM...)
 
 		histories[testUrl] = C.ProxyState{
 			Alive:   state.alive.Load(),

@@ -15,7 +15,6 @@ import (
 	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/common/utils"
 	"github.com/metacubex/mihomo/constant"
-	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/constant/sniffer"
 
 	"github.com/metacubex/quic-go/quicvarint"
@@ -117,7 +116,7 @@ func NewQUICSniffer(snifferConfig SnifferConfig) (*QUICSniffer, error) {
 		ports = utils.IntRanges[uint16]{utils.NewRange[uint16](443, 443)}
 	}
 	return &QUICSniffer{
-		BaseSniffer: NewBaseSniffer(ports, C.UDP),
+		BaseSniffer: NewBaseSniffer(ports, constant.UDP),
 	}, nil
 }
 
@@ -125,8 +124,8 @@ func (sniffer *QUICSniffer) Protocol() string {
 	return "quic"
 }
 
-func (sniffer *QUICSniffer) SupportNetwork() C.NetWork {
-	return C.UDP
+func (sniffer *QUICSniffer) SupportNetwork() constant.NetWork {
+	return constant.UDP
 }
 
 func (sniffer *QUICSniffer) SniffData(b []byte) (string, error) {

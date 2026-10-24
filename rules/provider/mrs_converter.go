@@ -25,10 +25,7 @@ func ConvertToMrs(buf []byte, behavior P.RuleBehavior, format P.RuleFormat, w io
 		if format == P.MrsRule { // export to TextRule
 			_strategy.DumpMrs(func(key string) bool {
 				_, err = fmt.Fprintln(w, key)
-				if err != nil {
-					return false
-				}
-				return true
+				return err == nil
 			})
 			return nil
 		}

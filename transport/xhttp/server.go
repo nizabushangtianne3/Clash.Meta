@@ -175,12 +175,6 @@ func (h *requestHandler) deleteSession(sessionID string) {
 	}
 }
 
-func (h *requestHandler) getSession(sessionID string) *httpSession {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.sessions[sessionID]
-}
-
 func (h *requestHandler) normalizedMode() string {
 	if h.config.Mode == "" {
 		return "auto"
@@ -496,17 +490,6 @@ func (h *requestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.NotFound(w, r)
-}
-
-func splitNonEmpty(s string) []string {
-	raw := strings.Split(s, "/")
-	out := make([]string, 0, len(raw))
-	for _, v := range raw {
-		if v != "" {
-			out = append(out, v)
-		}
-	}
-	return out
 }
 
 func equalHost(a, b string) bool {

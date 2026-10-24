@@ -45,10 +45,6 @@ func (s *server) routes() http.Handler {
 	return r
 }
 
-func (s *server) handle(w http.ResponseWriter, r *http.Request) {
-	s.routes().ServeHTTP(w, r)
-}
-
 func (s *server) checkRealmToken(r *http.Request) bool {
 	expected := s.realmToken
 	return expected != "" && bearer(r) == expected
