@@ -112,22 +112,21 @@ func (w packetWriter) overhead() int {
 }
 
 func (w packetWriter) writeSegment(seg segment) error {
-	payload := pool.Get(seg.byteSize())
-	seg.serialize(payload)
-	defer pool.Put(payload)
-
 	headerSize := 0
 	if w.header != nil {
 		headerSize = w.header.size()
 	}
+	segmentSize := seg.byteSize()
 
-	frame := pool.Get(headerSize + len(payload) + w.securityOverhead() + 3)
+	frame := pool.Get(headerSize + segmentSize + w.securityOverhead() + 3)
 	out := frame[:headerSize]
 	if headerSize > 0 {
 		w.header.serialize(out[:headerSize])
 	}
 
 	if w.security != nil {
+		payload := pool.Get(segmentSize)
+		seg.serialize(payload)
 		nonceSize := w.security.NonceSize()
 		out = out[:headerSize+nonceSize]
 		if nonceSize > 0 {
@@ -135,10 +134,14 @@ func (w packetWriter) writeSegment(seg segment) error {
 		}
 		sealed := w.security.Seal(out[headerSize+nonceSize:headerSize+nonceSize], out[headerSize:headerSize+nonceSize], payload, nil)
 		out = append(out[:headerSize+nonceSize], sealed...)
-	} else {
-		out = append(out, payload...)
+		_ = pool.Put(payload)
+		_, err := w.writer.Write(out)
+		_ = pool.Put(frame)
+		return err
 	}
 
+	seg.serialize(frame[headerSize : headerSize+segmentSize])
+	out = frame[:headerSize+segmentSize]
 	_, err := w.writer.Write(out)
 	_ = pool.Put(frame)
 	return err
