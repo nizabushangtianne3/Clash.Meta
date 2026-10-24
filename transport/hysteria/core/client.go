@@ -170,8 +170,8 @@ func (c *Client) openStreamWithReconnect(dialer utils.PacketDialer) (*quic.Conn,
 		return c.quicSession, &wrappedQUICStream{stream}, nil
 	}
 	// Something is wrong
-	if nErr, ok := err.(net.Error); ok && nErr.Temporary() {
-		// Temporary error, just return
+	if nErr, ok := err.(net.Error); ok && nErr.Timeout() {
+		// Timeout error, just return
 		return nil, nil, err
 	}
 	// Permanent error, need to reconnect

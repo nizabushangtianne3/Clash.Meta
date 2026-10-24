@@ -1213,7 +1213,7 @@ func (c *Client) readServerKeyMethodFrom(ctx context.Context, conn pushReadConn)
 			c.leftoverTLS = append([]byte(nil), buf[consumed:]...)
 			return record, nil
 		}
-		if !errors.Is(parseErr, errKeyMethodPacketTooShort) && !errors.Is(parseErr, ioStringEOF) {
+		if !errors.Is(parseErr, errKeyMethodPacketTooShort) && !errors.Is(parseErr, errStringTruncated) {
 			return nil, parseErr
 		}
 		if readErr != nil {
