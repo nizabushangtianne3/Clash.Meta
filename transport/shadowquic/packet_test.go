@@ -45,8 +45,7 @@ func BenchmarkWriteBackDestinationKey(b *testing.B) {
 		sendIDs := map[string]uint16{string(socks5.ParseAddrToSocksAddr(net.UDPAddrFromAddrPort(addrPort))): 7}
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			key := string(socks5.ParseAddrToSocksAddr(net.UDPAddrFromAddrPort(addrPort)))
-			if _, ok := sendIDs[key]; !ok {
+			if _, ok := sendIDs[string(socks5.ParseAddrToSocksAddr(net.UDPAddrFromAddrPort(addrPort)))]; !ok {
 				b.Fatal("miss")
 			}
 		}

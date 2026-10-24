@@ -69,7 +69,7 @@ func TestTableLocalConnLockLifecycle(t *testing.T) {
 	cond, loaded = table.GetOrCreateLockForLocalConn(lAddr, rAddr)
 	require.NotNil(t, cond)
 	assert.False(t, loaded, "the first lock is created")
-	cond.L.Lock()
+	require.NotPanics(t, cond.L.Lock)
 	cond.L.Unlock()
 
 	// the second request hands back the same lock

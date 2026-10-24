@@ -292,7 +292,7 @@ func TestGetAndMove(t *testing.T) {
 		[]int{5, 1, 2, 4, 6, 7, 8, 3},
 		[]any{"28", "bar", 28, "baz", "100", "baz", "baz", 100})
 
-	value, err = om.GetAndMoveToBack(100)
+	_, err = om.GetAndMoveToBack(100)
 	assert.Equal(t, &KeyNotFoundError[int]{100}, err)
 }
 

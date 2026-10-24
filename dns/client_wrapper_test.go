@@ -89,7 +89,7 @@ func TestWrapClientWithDisableTypesFilters(test *testing.T) {
 	assert.Equal(test, 0, inner.calls)
 
 	// an untouched question passes through
-	msg, err = wrapped.ExchangeContext(context.Background(), questionMsg("example.com", D.TypeMX))
+	_, err = wrapped.ExchangeContext(context.Background(), questionMsg("example.com", D.TypeMX))
 	require.NoError(test, err)
 	assert.Equal(test, 1, inner.calls)
 
