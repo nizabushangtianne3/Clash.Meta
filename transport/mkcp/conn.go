@@ -797,15 +797,7 @@ func (c *Conn) flushSendLocked(current uint32, segments []segment) []segment {
 
 func (c *Conn) writeSegments(segments []segment) {
 	for _, seg := range segments {
-		var err error
-		for i := 0; i < 5; i++ {
-			err = c.writer.writeSegment(seg)
-			if err == nil {
-				break
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
-		_ = err
+		_ = c.writer.writeSegment(seg)
 	}
 }
 
