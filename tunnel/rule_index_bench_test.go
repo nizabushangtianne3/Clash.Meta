@@ -222,6 +222,55 @@ func BenchmarkMatchLargeDomainSuffixMiss(b *testing.B) {
 	}
 }
 
+// A real rule list leads with rules the index cannot answer for, so the scan
+// walks them before it reaches a rule it can look up.
+func BenchmarkMatchPlainRulesBeforeIndexedHit(b *testing.B) {
+	for _, plainCount := range []int{1000, 5000} {
+		b.Run(fmt.Sprintf("plain=%d", plainCount), func(b *testing.B) {
+			oldRuntime := loadRuntime()
+			configMux.Lock()
+			currentRuntime.Store(&runtimeSnapshot{
+				proxies: map[string]C.Proxy{"DIRECT": directTestProxy{}},
+				mode:    Rule,
+			})
+			configMux.Unlock()
+			b.Cleanup(func() {
+				configMux.Lock()
+				currentRuntime.Store(oldRuntime)
+				invalidateAllProxies()
+				configMux.Unlock()
+			})
+
+			rules := make([]C.Rule, 0, plainCount+1)
+			for range plainCount {
+				port, err := rulesCommon.NewPort("12345", "DIRECT", C.DstPort)
+				if err != nil {
+					b.Fatal(err)
+				}
+				rules = append(rules, port)
+			}
+			rules = append(rules, rulesCommon.NewDomainSuffix("target.example.com", "DIRECT"))
+			UpdateRules(rules, nil, nil)
+
+			metadata := &C.Metadata{
+				NetWork: C.TCP,
+				Type:    C.HTTP,
+				Host:    "www.target.example.com",
+				DstPort: 443,
+			}
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_, _, err := match(metadata, loadRuntime(), false, false)
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
 func BenchmarkMatchLargeIPRules(b *testing.B) {
 	for _, ruleCount := range []int{100, 1000, 5000} {
 		b.Run(fmt.Sprintf("rules=%d", ruleCount), func(b *testing.B) {

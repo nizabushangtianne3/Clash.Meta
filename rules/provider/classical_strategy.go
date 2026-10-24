@@ -22,26 +22,39 @@ func (c *classicalStrategy) Behavior() P.RuleBehavior {
 
 func (c *classicalStrategy) Match(metadata *C.Metadata, helper C.RuleMatchHelper) bool {
 	host := metadata.RuleHost()
-	for position := 0; position < len(c.rules); {
-		segment := c.index.segment(position)
-		if segment.exact != nil || segment.suffix != nil {
-			hit := c.index.next(position, host)
-			if hit < segment.end {
-				if matched, _ := c.rules[hit].Match(metadata, helper); matched {
-					return true
-				}
-			}
-			position = segment.end
-			continue
-		}
-
-		for ; position < segment.end; position++ {
-			if matched, _ := c.rules[position].Match(metadata, helper); matched {
+	index := c.index
+	if index == nil {
+		for _, rule := range c.rules {
+			if matched, _ := rule.Match(metadata, helper); matched {
 				return true
 			}
 		}
+		return false
 	}
-	return false
+
+	// The rules the index cannot answer for come out of an ascending list, so
+	// walking a run of them costs one comparison each and the index is
+	// consulted once per candidate it actually produces.
+	position, plain, indexed := -1, 0, -1
+	for {
+		if indexed <= position {
+			indexed = index.nextIndexed(position+1, host)
+		}
+		for plain < len(index.plainPositions) && index.plainPositions[plain] <= position {
+			plain++
+		}
+		next := indexed
+		if plain < len(index.plainPositions) && index.plainPositions[plain] < next {
+			next = index.plainPositions[plain]
+		}
+		if next >= len(c.rules) {
+			return false
+		}
+		if matched, _ := c.rules[next].Match(metadata, helper); matched {
+			return true
+		}
+		position = next
+	}
 }
 
 func (c *classicalStrategy) Count() int {

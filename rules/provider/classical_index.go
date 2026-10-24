@@ -7,15 +7,17 @@ import (
 	"github.com/metacubex/mihomo/rules/common"
 )
 
+// classicalRuleIndex answers "which rule could match this host next" without
+// walking the rule list. Exact domains live in a map and suffixes in a trie,
+// both spanning the whole list, and every rule neither can answer for sits in
+// an ascending position list. The scan resumes at the smallest candidate at or
+// after its cursor, so rule order survives however the rule kinds interleave.
 type classicalRuleIndex struct {
-	segments          []classicalRuleSegment
-	segmentOfPosition []int
-}
+	ruleCount int
+	exact     map[string][]int
+	suffix    *classicalSuffixNode
 
-type classicalRuleSegment struct {
-	end    int
-	exact  map[string]int
-	suffix *classicalSuffixNode
+	plainPositions []int
 }
 
 type classicalSuffixNode struct {
@@ -28,47 +30,49 @@ func buildClassicalRuleIndex(rules []C.Rule) *classicalRuleIndex {
 		return nil
 	}
 
-	index := &classicalRuleIndex{
-		segments:          make([]classicalRuleSegment, 0, 8),
-		segmentOfPosition: make([]int, len(rules)),
-	}
-	for position := 0; position < len(rules); {
-		_, _, indexable := classicalIndexedRule(rules[position])
-		if !indexable {
-			for position < len(rules) {
-				if _, _, ok := classicalIndexedRule(rules[position]); ok {
-					break
-				}
-				index.segmentOfPosition[position] = len(index.segments)
-				position++
-			}
-			index.segments = append(index.segments, classicalRuleSegment{end: position})
+	index := &classicalRuleIndex{ruleCount: len(rules)}
+	for position, rule := range rules {
+		domain, exact, ok := classicalIndexedRule(rule)
+		if !ok {
+			index.plainPositions = append(index.plainPositions, position)
 			continue
 		}
-
-		segment := classicalRuleSegment{
-			exact:  make(map[string]int),
-			suffix: &classicalSuffixNode{},
-		}
-		for position < len(rules) {
-			domain, exact, ok := classicalIndexedRule(rules[position])
-			if !ok {
-				break
+		if exact {
+			if index.exact == nil {
+				index.exact = make(map[string][]int)
 			}
-			if exact {
-				if _, exists := segment.exact[domain]; !exists {
-					segment.exact[domain] = position
-				}
-			} else {
-				insertClassicalSuffix(segment.suffix, domain, position)
-			}
-			index.segmentOfPosition[position] = len(index.segments)
-			position++
+			index.exact[domain] = append(index.exact[domain], position)
+			continue
 		}
-		segment.end = position
-		index.segments = append(index.segments, segment)
+		if index.suffix == nil {
+			index.suffix = &classicalSuffixNode{}
+		}
+		insertClassicalSuffix(index.suffix, domain, position)
 	}
 	return index
+}
+
+// nextIndexed returns the first position at or after position whose rule the
+// index can answer for, or the length of the rule list when none is left.
+func (index *classicalRuleIndex) nextIndexed(position int, host string) int {
+	if position >= index.ruleCount {
+		return position
+	}
+
+	candidate := index.ruleCount
+	if index.exact != nil || index.suffix != nil {
+		if positions, ok := index.exact[host]; ok {
+			if hit := positionAtOrAfter(positions, position); hit >= 0 && hit < candidate {
+				candidate = hit
+			}
+		}
+		if index.suffix != nil {
+			if hit := index.suffix.match(host, position); hit >= 0 && hit < candidate {
+				candidate = hit
+			}
+		}
+	}
+	return candidate
 }
 
 func classicalIndexedRule(rule C.Rule) (payload string, exact bool, ok bool) {
@@ -85,31 +89,6 @@ func classicalIndexedRule(rule C.Rule) (payload string, exact bool, ok bool) {
 func indexableSuffixPayload(suffix string) bool {
 	return suffix != "" && !strings.Contains(suffix, "..") &&
 		!strings.HasPrefix(suffix, ".") && !strings.HasSuffix(suffix, ".")
-}
-
-func (index *classicalRuleIndex) segment(position int) classicalRuleSegment {
-	if index == nil || position < 0 || position >= len(index.segmentOfPosition) {
-		return classicalRuleSegment{}
-	}
-	return index.segments[index.segmentOfPosition[position]]
-}
-
-func (index *classicalRuleIndex) next(position int, host string) int {
-	segment := index.segment(position)
-	if segment.exact == nil && segment.suffix == nil {
-		return position
-	}
-
-	candidate := segment.end
-	if hit, ok := segment.exact[host]; ok && hit >= position && hit < candidate {
-		candidate = hit
-	}
-	if segment.suffix != nil {
-		if hit := segment.suffix.match(host, position); hit >= 0 && hit < candidate {
-			candidate = hit
-		}
-	}
-	return candidate
 }
 
 func insertClassicalSuffix(root *classicalSuffixNode, suffix string, position int) {

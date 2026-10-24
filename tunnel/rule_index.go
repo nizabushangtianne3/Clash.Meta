@@ -9,11 +9,11 @@ import (
 )
 
 // ruleIndex answers "which rule could match this connection next" without
-// walking the rule list. Domain rules live in an exact map and a suffix trie,
-// address rules in two prefix tries, and every rule those structures cannot
-// answer for in an ascending position list. The scan always resumes at the
-// smallest candidate at or after its cursor, so rule order survives no matter
-// how the rule kinds interleave.
+// walking the whole rule list. Domain rules live in an exact map and a suffix
+// trie, address rules in two prefix tries, all spanning the entire list, and
+// every rule those structures cannot answer for sits in an ascending position
+// list. Rule order survives however the kinds interleave because the scan
+// always takes the smallest candidate.
 type ruleIndex struct {
 	exact  map[string][]int
 	suffix *suffixNode
@@ -21,7 +21,7 @@ type ruleIndex struct {
 	ipSrc  *ipRuleTrie
 
 	// plainPositions holds rules without an indexable payload. ipPositions
-	// holds the address rules, which join the scan as plain rules while
+	// holds the address rules, which the scan takes as plain rules while
 	// neither address is known so each of them still resolves the host
 	// through its own match helper.
 	plainPositions []int
@@ -78,18 +78,78 @@ func buildRuleIndex(rules []C.Rule) *ruleIndex {
 	return index
 }
 
-// next returns the first position at or after position whose rule could match
-// the metadata, or the length of the rule list when none of them can.
-func (index *ruleIndex) next(position int, metadata *C.Metadata) int {
-	if index == nil || position >= len(index.usesHelper) {
+// ruleScan walks one rule list for one connection. The rules the index cannot
+// answer for come out of an ascending list, so walking a run of them costs one
+// comparison each; the index is consulted only when the scan is about to hand
+// out a rule it produced, which keeps a host lookup off the path of every rule
+// that walks past no candidate at all.
+type ruleScan struct {
+	index     *ruleIndex
+	metadata  *C.Metadata
+	ruleCount int
+
+	cursor  int
+	indexed int
+	plain   int
+}
+
+func newRuleScan(index *ruleIndex, ruleCount int, metadata *C.Metadata) ruleScan {
+	scan := ruleScan{
+		index:     index,
+		metadata:  metadata,
+		ruleCount: ruleCount,
+		cursor:    -1,
+		indexed:   -1,
+	}
+	return scan
+}
+
+// next hands out the next rule position, or the rule count when the list is
+// exhausted.
+func (scan *ruleScan) next() int {
+	if scan.index == nil {
+		scan.cursor++
+		return scan.cursor
+	}
+
+	// The next candidate is computed only once the scan is past the one it
+	// holds, so a rule that settles the connection costs one lookup, not two.
+	if scan.indexed <= scan.cursor {
+		if scan.cursor >= scan.ruleCount {
+			return scan.cursor
+		}
+		scan.indexed = scan.index.nextIndexed(scan.cursor+1, scan.metadata)
+	}
+
+	next := scan.indexed
+	if len(scan.index.plainPositions) > 0 {
+		for scan.plain < len(scan.index.plainPositions) &&
+			scan.index.plainPositions[scan.plain] <= scan.cursor {
+			scan.plain++
+		}
+		if scan.plain < len(scan.index.plainPositions) &&
+			scan.index.plainPositions[scan.plain] < next {
+			next = scan.index.plainPositions[scan.plain]
+		}
+	}
+	scan.cursor = next
+	return next
+}
+
+// nextIndexed returns the first position at or after position whose rule the
+// index can answer for, or the length of the rule list when none is left.
+func (index *ruleIndex) nextIndexed(position int, metadata *C.Metadata) int {
+	if position >= len(index.usesHelper) {
 		return position
 	}
 
 	candidate := len(index.usesHelper)
 	if index.exact != nil || index.suffix != nil {
 		host := metadata.RuleHost()
-		if hit := positionAtOrAfter(index.exact[host], position); hit >= 0 && hit < candidate {
-			candidate = hit
+		if positions, ok := index.exact[host]; ok {
+			if hit := positionAtOrAfter(positions, position); hit >= 0 && hit < candidate {
+				candidate = hit
+			}
 		}
 		if index.suffix != nil {
 			if hit := index.suffix.match(host, position); hit >= 0 && hit < candidate {
@@ -100,33 +160,24 @@ func (index *ruleIndex) next(position int, metadata *C.Metadata) int {
 	// Every address rule records its position in ipPositions, so a nil slice
 	// keeps lists without them from paying for the address checks below.
 	if index.ipPositions != nil {
-		if index.ipDst != nil && metadata.DstIP.IsValid() {
+		destination, source := metadata.DstIP.IsValid(), metadata.SrcIP.IsValid()
+		if index.ipDst != nil && destination {
 			if hit := index.ipDst.lookup(metadata.DstIP, position); hit >= 0 && hit < candidate {
 				candidate = hit
 			}
 		}
-		if index.ipSrc != nil && metadata.SrcIP.IsValid() {
+		if index.ipSrc != nil && source {
 			if hit := index.ipSrc.lookup(metadata.SrcIP, position); hit >= 0 && hit < candidate {
 				candidate = hit
 			}
 		}
-		if !metadata.DstIP.IsValid() && !metadata.SrcIP.IsValid() {
+		if !destination && !source {
 			if hit := positionAtOrAfter(index.ipPositions, position); hit >= 0 && hit < candidate {
 				candidate = hit
 			}
 		}
 	}
-	if len(index.plainPositions) > 0 {
-		if hit := positionAtOrAfter(index.plainPositions, position); hit >= 0 && hit < candidate {
-			candidate = hit
-		}
-	}
 	return candidate
-}
-
-// after resumes the scan past a rule that did not settle the connection.
-func (index *ruleIndex) after(position int, metadata *C.Metadata) int {
-	return index.next(position+1, metadata)
 }
 
 // usesHelperAt reports whether the rule at position needs the match helper.

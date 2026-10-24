@@ -1,12 +1,53 @@
 package provider
 
 import (
+	"fmt"
+	"net/netip"
 	"testing"
 
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/rules/common"
 	"github.com/stretchr/testify/require"
 )
+
+// A rule set writes its domain lines and its address lines one after another,
+// so a real list never looks like the contiguous blocks below.
+func benchmarkClassicalMixedRules(b *testing.B, ruleCount int) {
+	b.Helper()
+
+	rules := make([]C.Rule, 0, 2*ruleCount)
+	for index := range ruleCount {
+		rules = append(rules, common.NewDomainSuffix(
+			fmt.Sprintf("d-%d.example.com", index), "unused"))
+		ipCidr, err := common.NewIPCIDR("10.0.0.0/8", "unused")
+		if err != nil {
+			b.Fatal(err)
+		}
+		rules = append(rules, ipCidr)
+	}
+	strategy := newClassicalTestStrategy(b, rules)
+	b.Cleanup(func() { strategy.Reset() })
+
+	metadata := &C.Metadata{
+		Host:  fmt.Sprintf("www.d-%d.example.com", ruleCount-1),
+		DstIP: netip.MustParseAddr("198.51.100.7"),
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if !strategy.Match(metadata, C.RuleMatchHelper{}) {
+			b.Fatal("classical index match mismatch")
+		}
+	}
+}
+
+func BenchmarkClassicalIndexMixed(b *testing.B) {
+	for _, ruleCount := range []int{150, 300} {
+		b.Run(fmt.Sprintf("rules=%d", ruleCount), func(b *testing.B) {
+			benchmarkClassicalMixedRules(b, ruleCount)
+		})
+	}
+}
 
 type classicalStubRule struct {
 	adapter string

@@ -160,7 +160,7 @@ func TestMatchIPRunSkipsSourceAndDestinationIndependently(t *testing.T) {
 	require.Equal(t, C.Rule(destinationRule), rule)
 }
 
-func TestRuleIndexNextIPRunWithUnresolvedAddressesScansLinearly(t *testing.T) {
+func TestRuleScanVisitsAddressRulesInOrderWithoutAddresses(t *testing.T) {
 	first, err := rulesCommon.NewIPCIDR("10.0.0.0/8", "DIRECT")
 	require.NoError(t, err)
 	second, err := rulesCommon.NewIPCIDR("203.0.113.0/24", "DIRECT")
@@ -168,13 +168,15 @@ func TestRuleIndexNextIPRunWithUnresolvedAddressesScansLinearly(t *testing.T) {
 	rules := []C.Rule{first, second}
 	index := buildRuleIndex(rules)
 	metadata := &C.Metadata{NetWork: C.UDP}
+	scan := newRuleScan(index, len(rules), metadata)
 
-	require.Equal(t, 0, index.next(0, metadata),
-		"an unresolved address must scan the run from its start")
-	require.Equal(t, 1, index.next(1, metadata))
+	require.Equal(t, 0, scan.next(),
+		"an unresolved address must scan the rule from its start")
+	require.Equal(t, 1, scan.next())
+	require.Equal(t, len(rules), scan.next())
 }
 
-func TestRuleIndexIPRunSkipsToItsEndWhenNothingMatches(t *testing.T) {
+func TestRuleScanSkipsAddressRulesOnceTheAddressMisses(t *testing.T) {
 	first, err := rulesCommon.NewIPCIDR("10.0.0.0/8", "DIRECT")
 	require.NoError(t, err)
 	second, err := rulesCommon.NewIPCIDR("203.0.113.0/24", "DIRECT")
@@ -187,9 +189,11 @@ func TestRuleIndexIPRunSkipsToItsEndWhenNothingMatches(t *testing.T) {
 		NetWork: C.TCP,
 		DstIP:   netip.MustParseAddr("8.8.8.8"),
 	}
+	scan := newRuleScan(index, len(rules), metadata)
 
-	require.Equal(t, 2, index.next(0, metadata),
-		"a run with no matching rule must be skipped whole")
+	require.Equal(t, 2, scan.next(),
+		"address rules the address misses are skipped whole")
+	require.Equal(t, len(rules), scan.next())
 }
 
 func TestMatchFallsThroughADisabledIndexedRule(t *testing.T) {

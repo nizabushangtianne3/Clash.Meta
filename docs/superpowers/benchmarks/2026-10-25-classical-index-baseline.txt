@@ -1,0 +1,36 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/rules/provider
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkClassicalIndexMixed/rules=150-16         	   20000	      9332 ns/op
+BenchmarkClassicalIndexMixed/rules=150-16         	   20000	      9899 ns/op
+BenchmarkClassicalIndexMixed/rules=150-16         	   20000	      9843 ns/op
+BenchmarkClassicalIndexMixed/rules=150-16         	   20000	      9380 ns/op
+BenchmarkClassicalIndexMixed/rules=150-16         	   20000	     10667 ns/op
+BenchmarkClassicalIndexMixed/rules=300-16         	   20000	     20086 ns/op
+BenchmarkClassicalIndexMixed/rules=300-16         	   20000	     19944 ns/op
+BenchmarkClassicalIndexMixed/rules=300-16         	   20000	     19925 ns/op
+BenchmarkClassicalIndexMixed/rules=300-16         	   20000	     20024 ns/op
+BenchmarkClassicalIndexMixed/rules=300-16         	   20000	     20129 ns/op
+BenchmarkClassicalIndexExactHit-16                	   20000	        34.74 ns/op
+BenchmarkClassicalIndexExactHit-16                	   20000	        25.29 ns/op
+BenchmarkClassicalIndexExactHit-16                	   20000	        22.20 ns/op
+BenchmarkClassicalIndexExactHit-16                	   20000	        22.20 ns/op
+BenchmarkClassicalIndexExactHit-16                	   20000	        24.70 ns/op
+BenchmarkClassicalIndexExactMiss-16               	   20000	        20.88 ns/op
+BenchmarkClassicalIndexExactMiss-16               	   20000	        23.46 ns/op
+BenchmarkClassicalIndexExactMiss-16               	   20000	        23.70 ns/op
+BenchmarkClassicalIndexExactMiss-16               	   20000	        20.89 ns/op
+BenchmarkClassicalIndexExactMiss-16               	   20000	        32.38 ns/op
+BenchmarkClassicalIndexSuffixHit-16               	   20000	        64.06 ns/op
+BenchmarkClassicalIndexSuffixHit-16               	   20000	        70.71 ns/op
+BenchmarkClassicalIndexSuffixHit-16               	   20000	        66.68 ns/op
+BenchmarkClassicalIndexSuffixHit-16               	   20000	        66.57 ns/op
+BenchmarkClassicalIndexSuffixHit-16               	   20000	        64.83 ns/op
+BenchmarkClassicalIndexSuffixMiss-16              	   20000	        21.00 ns/op
+BenchmarkClassicalIndexSuffixMiss-16              	   20000	        20.86 ns/op
+BenchmarkClassicalIndexSuffixMiss-16              	   20000	        21.41 ns/op
+BenchmarkClassicalIndexSuffixMiss-16              	   20000	        21.30 ns/op
+BenchmarkClassicalIndexSuffixMiss-16              	   20000	        35.22 ns/op
+PASS
+ok  	github.com/metacubex/mihomo/rules/provider	4.302s

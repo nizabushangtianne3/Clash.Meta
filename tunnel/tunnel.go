@@ -623,7 +623,8 @@ func match(
 		var rematchProxy C.Proxy
 		var rematchRule C.Rule
 		rules, index := getRules(metadata, runtimeState)
-		cursor := index.next(0, metadata)
+    scan := newRuleScan(index, len(rules), metadata)
+    cursor := scan.next()
 	NextRule:
 		for cursor < len(rules) {
 			rule := rules[cursor]
@@ -640,7 +641,7 @@ func match(
 			if matched, ada := rule.Match(metadata, helper); matched {
 				adapter, ok := runtimeState.proxies[ada]
 				if !ok {
-					cursor = index.after(cursor, metadata)
+          cursor = scan.next()
 					continue NextRule
 				}
 
@@ -648,7 +649,7 @@ func match(
 				for adapter := adapter; adapter != nil; adapter = adapter.Unwrap(metadata, false) {
 					if adapter.Type() == C.Pass {
 						log.Debugln("%s match Pass rule", adapter.Name())
-						cursor = index.after(cursor, metadata)
+            cursor = scan.next()
 						continue NextRule
 					}
 					if adapter.Type() == C.Rematch {
@@ -661,13 +662,13 @@ func match(
 
 				if metadata.NetWork == C.UDP && !adapter.SupportUDP() {
 					log.Debugln("%s UDP is not supported", adapter.Name())
-					cursor = index.after(cursor, metadata)
+          cursor = scan.next()
 					continue NextRule
 				}
 
 				return adapter, rule, nil
 			}
-			cursor = index.after(cursor, metadata)
+      cursor = scan.next()
 		}
 		if rematchProxy != nil {
 			if slices.Contains(rematchChain, rematchProxy.Name()) {
