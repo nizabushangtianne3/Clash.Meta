@@ -4,23 +4,10 @@ import (
 	"crypto/cipher"
 	"encoding/binary"
 	"errors"
-)
-
-const (
-	fnv32Offset = 2166136261
-	fnv32Prime  = 16777619
+	"hash/fnv"
 )
 
 type simpleAuthenticator struct{}
-
-func fnv32a(data []byte) uint32 {
-	hash := uint32(fnv32Offset)
-	for _, item := range data {
-		hash ^= uint32(item)
-		hash *= fnv32Prime
-	}
-	return hash
-}
 
 func newSimpleAuthenticator() cipher.AEAD {
 	return &simpleAuthenticator{}
@@ -39,7 +26,9 @@ func (*simpleAuthenticator) Seal(dst, nonce, plain, extra []byte) []byte {
 	binary.BigEndian.PutUint16(dst[4:], uint16(len(plain)))
 	dst = append(dst, plain...)
 
-	binary.BigEndian.PutUint32(dst[:4], fnv32a(dst[4:]))
+	h := fnv.New32a()
+	_, _ = h.Write(dst[4:])
+	binary.BigEndian.PutUint32(dst[:4], h.Sum32())
 
 	dstLen := len(dst)
 	if extra := 4 - dstLen%4; extra != 4 {
@@ -65,7 +54,9 @@ func (*simpleAuthenticator) Open(dst, nonce, ciphertext, extra []byte) ([]byte, 
 	if len(dst) < 6 {
 		return nil, errors.New("mkcp: invalid auth")
 	}
-	if binary.BigEndian.Uint32(dst[:4]) != fnv32a(dst[4:]) {
+	h := fnv.New32a()
+	_, _ = h.Write(dst[4:])
+	if binary.BigEndian.Uint32(dst[:4]) != h.Sum32() {
 		return nil, errors.New("mkcp: invalid auth")
 	}
 	length := int(binary.BigEndian.Uint16(dst[4:6]))

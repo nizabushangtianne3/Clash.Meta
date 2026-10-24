@@ -1,26 +1,10 @@
 package mkcp
 
 import (
-	"hash/fnv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
-
-func TestFNV32aMatchesTheReferenceHash(t *testing.T) {
-	inputs := [][]byte{
-		nil,
-		[]byte("a"),
-		[]byte("mihomo mkcp segment"),
-		make([]byte, 1350),
-	}
-	for i, input := range inputs {
-		reference := fnv.New32a()
-		_, _ = reference.Write(input)
-
-		require.Equal(t, reference.Sum32(), fnv32a(input), "input %d", i)
-	}
-}
 
 func TestSimpleAuthenticatorRoundTripStaysAllocationFree(t *testing.T) {
 	auth := newSimpleAuthenticator()
