@@ -352,14 +352,15 @@ func (lb *LoadBalance) MarshalJSON() ([]byte, error) {
 	for _, proxy := range lb.GetProxies(false) {
 		all = append(all, proxy.Name())
 	}
-	return json.Marshal(map[string]any{
-		"type":           lb.Type().String(),
-		"all":            all,
-		"testUrl":        lb.testUrl,
-		"expectedStatus": lb.expectedStatus,
-		"hidden":         lb.Hidden(),
-		"icon":           lb.Icon(),
-		"emptyFallback":  lb.EmptyFallback().Name(),
+	return json.Marshal(loadBalanceView{
+		Type:           lb.Type().String(),
+		Name:           lb.Name(),
+		All:            all,
+		TestURL:        lb.testUrl,
+		ExpectedStatus: lb.expectedStatus,
+		Hidden:         lb.Hidden(),
+		Icon:           lb.Icon(),
+		EmptyFallback:  lb.EmptyFallback().Name(),
 	})
 }
 

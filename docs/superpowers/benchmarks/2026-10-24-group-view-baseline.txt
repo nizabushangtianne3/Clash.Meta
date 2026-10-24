@@ -1,0 +1,26 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/adapter/outboundgroup
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkGroupViewMarshalOnly/members=20-16         	   20000	      3500 ns/op	    1364 B/op	      26 allocs/op
+BenchmarkGroupViewMarshalOnly/members=20-16         	   20000	      3608 ns/op	    1364 B/op	      26 allocs/op
+BenchmarkGroupViewMarshalOnly/members=20-16         	   20000	      3435 ns/op	    1363 B/op	      26 allocs/op
+BenchmarkGroupViewMarshalOnly/members=20-16         	   20000	      3370 ns/op	    1363 B/op	      26 allocs/op
+BenchmarkGroupViewMarshalOnly/members=20-16         	   20000	      3259 ns/op	    1363 B/op	      26 allocs/op
+BenchmarkGroupViewMarshalOnly/members=200-16        	   20000	     11489 ns/op	    6857 B/op	      26 allocs/op
+BenchmarkGroupViewMarshalOnly/members=200-16        	   20000	     11108 ns/op	    6858 B/op	      26 allocs/op
+BenchmarkGroupViewMarshalOnly/members=200-16        	   20000	     11175 ns/op	    6855 B/op	      26 allocs/op
+BenchmarkGroupViewMarshalOnly/members=200-16        	   20000	     11353 ns/op	    6854 B/op	      26 allocs/op
+BenchmarkGroupViewMarshalOnly/members=200-16        	   20000	     13046 ns/op	    6854 B/op	      26 allocs/op
+BenchmarkGroupViewEncodedPayload/members=20-16      	   20000	      6790 ns/op	    2197 B/op	      35 allocs/op
+BenchmarkGroupViewEncodedPayload/members=20-16      	   20000	      6284 ns/op	    2197 B/op	      35 allocs/op
+BenchmarkGroupViewEncodedPayload/members=20-16      	   20000	     12409 ns/op	    2197 B/op	      35 allocs/op
+BenchmarkGroupViewEncodedPayload/members=20-16      	   20000	      9719 ns/op	    2197 B/op	      35 allocs/op
+BenchmarkGroupViewEncodedPayload/members=20-16      	   20000	      5235 ns/op	    2197 B/op	      35 allocs/op
+BenchmarkGroupViewEncodedPayload/members=200-16     	   20000	     17677 ns/op	    9997 B/op	      35 allocs/op
+BenchmarkGroupViewEncodedPayload/members=200-16     	   20000	     20360 ns/op	   10002 B/op	      35 allocs/op
+BenchmarkGroupViewEncodedPayload/members=200-16     	   20000	     16583 ns/op	   10000 B/op	      35 allocs/op
+BenchmarkGroupViewEncodedPayload/members=200-16     	   20000	     16791 ns/op	   10000 B/op	      35 allocs/op
+BenchmarkGroupViewEncodedPayload/members=200-16     	   20000	     18309 ns/op	   10000 B/op	      35 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/adapter/outboundgroup	5.890s

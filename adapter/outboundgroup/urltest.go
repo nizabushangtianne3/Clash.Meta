@@ -296,16 +296,17 @@ func (u *URLTest) IsL3Protocol(metadata *C.Metadata) bool {
 // MarshalJSON implements C.ProxyAdapter
 func (u *URLTest) MarshalJSON() ([]byte, error) {
 	all := memberNames(u.GetProxies(false))
-	return json.Marshal(map[string]any{
-		"type":           u.Type().String(),
-		"now":            u.Now(),
-		"all":            all,
-		"testUrl":        u.testUrl,
-		"expectedStatus": u.expectedStatus,
-		"fixed":          u.selectedName(),
-		"hidden":         u.Hidden(),
-		"icon":           u.Icon(),
-		"emptyFallback":  u.EmptyFallback().Name(),
+	return json.Marshal(probedView{
+		Type:           u.Type().String(),
+		Name:           u.Name(),
+		Now:            u.Now(),
+		All:            all,
+		TestURL:        u.testUrl,
+		ExpectedStatus: u.expectedStatus,
+		Fixed:          u.selectedName(),
+		Hidden:         u.Hidden(),
+		Icon:           u.Icon(),
+		EmptyFallback:  u.EmptyFallback().Name(),
 	})
 }
 

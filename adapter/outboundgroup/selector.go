@@ -64,14 +64,15 @@ func (s *Selector) MarshalJSON() ([]byte, error) {
 		url = s.testUrl
 	}
 
-	return json.Marshal(map[string]any{
-		"type":          s.Type().String(),
-		"now":           s.Now(),
-		"all":           all,
-		"testUrl":       url,
-		"hidden":        s.Hidden(),
-		"icon":          s.Icon(),
-		"emptyFallback": s.EmptyFallback().Name(),
+	return json.Marshal(selectorView{
+		Type:          s.Type().String(),
+		Name:          s.Name(),
+		Now:           s.Now(),
+		All:           all,
+		TestURL:       url,
+		Hidden:        s.Hidden(),
+		Icon:          s.Icon(),
+		EmptyFallback: s.EmptyFallback().Name(),
 	})
 }
 

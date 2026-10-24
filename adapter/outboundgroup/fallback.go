@@ -160,16 +160,17 @@ func (f *Fallback) IsL3Protocol(metadata *C.Metadata) bool {
 // MarshalJSON implements C.ProxyAdapter
 func (f *Fallback) MarshalJSON() ([]byte, error) {
 	all := memberNames(f.GetProxies(false))
-	return json.Marshal(map[string]any{
-		"type":           f.Type().String(),
-		"now":            f.Now(),
-		"all":            all,
-		"testUrl":        f.testUrl,
-		"expectedStatus": f.expectedStatus,
-		"fixed":          f.selectedName(),
-		"hidden":         f.Hidden(),
-		"icon":           f.Icon(),
-		"emptyFallback":  f.EmptyFallback().Name(),
+	return json.Marshal(probedView{
+		Type:           f.Type().String(),
+		Name:           f.Name(),
+		Now:            f.Now(),
+		All:            all,
+		TestURL:        f.testUrl,
+		ExpectedStatus: f.expectedStatus,
+		Fixed:          f.selectedName(),
+		Hidden:         f.Hidden(),
+		Icon:           f.Icon(),
+		EmptyFallback:  f.EmptyFallback().Name(),
 	})
 }
 
