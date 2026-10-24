@@ -100,7 +100,7 @@ func (t *PoolClient) getClient(udp bool) Client {
 		}
 		for it := clients.Front(); it != nil; {
 			client := it.Value
-			if client != bestClient && client.OpenStreams() == 0 && time.Now().Sub(client.LastVisited()) > 30*time.Minute {
+			if client != bestClient && client.OpenStreams() == 0 && time.Since(client.LastVisited()) > 30*time.Minute {
 				client.Close()
 				next := it.Next()
 				clients.Remove(it)
