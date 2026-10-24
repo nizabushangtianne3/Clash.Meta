@@ -3,6 +3,7 @@ package mkcp
 import (
 	"context"
 	"io"
+	"math"
 	"math/rand"
 	"net"
 	"os"
@@ -19,14 +20,52 @@ var segmentPool = sync.Pool{
 	New: func() any { return new(dataSegment) },
 }
 
-var waitTimerPool = sync.Pool{
-	New: func() any {
-		timer := time.NewTimer(0)
-		if !timer.Stop() {
-			<-timer.C
-		}
-		return timer
-	},
+const maxWaitDuration = time.Duration(math.MaxInt64)
+
+type waitSignal struct {
+	mu       *sync.Mutex
+	cond     *sync.Cond
+	deadline time.Time
+	timer    *time.Timer
+}
+
+func newWaitSignal(mu *sync.Mutex) *waitSignal {
+	signal := &waitSignal{mu: mu, cond: sync.NewCond(mu)}
+	signal.timer = time.AfterFunc(maxWaitDuration, signal.timeout)
+	signal.timer.Stop()
+	return signal
+}
+
+func (w *waitSignal) timeout() {
+	w.mu.Lock()
+	w.cond.Broadcast()
+	w.mu.Unlock()
+}
+
+func (w *waitSignal) setDeadline(deadline time.Time) {
+	w.deadline = deadline
+	if deadline.IsZero() {
+		w.timer.Stop()
+		return
+	}
+	w.timer.Reset(time.Until(deadline))
+}
+
+func (w *waitSignal) expired() bool {
+	deadline := w.deadline
+	return !deadline.IsZero() && !time.Now().Before(deadline)
+}
+
+func (w *waitSignal) wait() {
+	w.cond.Wait()
+}
+
+func (w *waitSignal) signal() {
+	w.cond.Broadcast()
+}
+
+func (w *waitSignal) stop() {
+	w.timer.Stop()
 }
 
 type connState int32
@@ -41,23 +80,20 @@ const (
 )
 
 type Conn struct {
-	mu            sync.Mutex
-	cfg           Config
-	writer        packetWriter
-	closer        io.Closer
-	localAddr     net.Addr
-	remoteAddr    net.Addr
-	conv          uint16
-	created       time.Time
-	mss           int
-	rto           uint32
-	rttVariation  uint32
-	srtt          uint32
-	minRtt        uint32
-	rtoUpdated    uint32
-	readDeadline  time.Time
-	writeDeadline time.Time
-
+	mu           sync.Mutex
+	cfg          Config
+	writer       packetWriter
+	closer       io.Closer
+	localAddr    net.Addr
+	remoteAddr   net.Addr
+	conv         uint16
+	created      time.Time
+	mss          int
+	rto          uint32
+	rttVariation uint32
+	srtt         uint32
+	minRtt       uint32
+	rtoUpdated   uint32
 	state        connState
 	stateBegin   uint32
 	lastIncoming uint32
@@ -78,9 +114,9 @@ type Conn struct {
 	controlWindow          uint32
 	firstUnackedWasUpdated bool
 
-	readNotify   chan struct{}
+	readNotify   *waitSignal
 	readWaiters  int
-	writeNotify  chan struct{}
+	writeNotify  *waitSignal
 	writeWaiters int
 	flushNotify  chan struct{}
 	flushBatch   []segment
@@ -156,11 +192,11 @@ func newConn(localAddr, remoteAddr net.Addr, conv uint16, writer packetWriter, c
 		recvCache:     make(map[uint32]*dataSegment),
 		remoteRecvWin: 32,
 		controlWindow: cfg.sendingInFlightSize(),
-		readNotify:    make(chan struct{}),
-		writeNotify:   make(chan struct{}),
 		flushNotify:   make(chan struct{}, 1),
 		done:          make(chan struct{}),
 	}
+	c.readNotify = newWaitSignal(&c.mu)
+	c.writeNotify = newWaitSignal(&c.mu)
 	if c.mss < 576 {
 		c.mss = 576
 	}
@@ -187,16 +223,17 @@ func (c *Conn) Read(b []byte) (int, error) {
 			c.mu.Unlock()
 			return 0, io.EOF
 		}
-		ch := c.readNotify
-		deadline := c.readDeadline
+		if c.readNotify.expired() {
+			c.mu.Unlock()
+			return 0, os.ErrDeadlineExceeded
+		}
 		c.readWaiters++
-		c.mu.Unlock()
-		err := waitNotify(ch, deadline)
-		c.mu.Lock()
+		c.readNotify.wait()
 		c.readWaiters--
+		expired := c.readNotify.expired()
 		c.mu.Unlock()
-		if err != nil {
-			return 0, err
+		if expired {
+			return 0, os.ErrDeadlineExceeded
 		}
 	}
 }
@@ -217,6 +254,7 @@ func (c *Conn) Write(b []byte) (int, error) {
 			c.mu.Lock()
 			if c.state != stateActive {
 				c.mu.Unlock()
+				_ = pool.Put(payload)
 				return written, io.ErrClosedPipe
 			}
 			if uint32(len(c.sendWindow)) <= c.cfg.sendingBufferSize() {
@@ -229,53 +267,23 @@ func (c *Conn) Write(b []byte) (int, error) {
 				written = end
 				break
 			}
-			ch := c.writeNotify
-			deadline := c.writeDeadline
+			if c.writeNotify.expired() {
+				c.mu.Unlock()
+				_ = pool.Put(payload)
+				return written, os.ErrDeadlineExceeded
+			}
 			c.writeWaiters++
-			c.mu.Unlock()
-			err := waitNotify(ch, deadline)
-			c.mu.Lock()
+			c.writeNotify.wait()
 			c.writeWaiters--
+			expired := c.writeNotify.expired()
 			c.mu.Unlock()
-			if err != nil {
-				return written, err
+			if expired {
+				_ = pool.Put(payload)
+				return written, os.ErrDeadlineExceeded
 			}
 		}
 	}
 	return written, nil
-}
-
-func waitNotify(ch <-chan struct{}, deadline time.Time) error {
-	if deadline.IsZero() {
-		<-ch
-		return nil
-	}
-	timeout := time.Until(deadline)
-	if timeout <= 0 {
-		return os.ErrDeadlineExceeded
-	}
-	timer := acquireWaitTimer(timeout)
-	select {
-	case <-ch:
-		releaseWaitTimer(timer, false)
-		return nil
-	case <-timer.C:
-		releaseWaitTimer(timer, true)
-		return os.ErrDeadlineExceeded
-	}
-}
-
-func acquireWaitTimer(timeout time.Duration) *time.Timer {
-	timer := waitTimerPool.Get().(*time.Timer)
-	timer.Reset(timeout)
-	return timer
-}
-
-func releaseWaitTimer(timer *time.Timer, fired bool) {
-	if !timer.Stop() && !fired {
-		<-timer.C
-	}
-	waitTimerPool.Put(timer)
 }
 
 func (c *Conn) Close() error {
@@ -309,6 +317,8 @@ func (c *Conn) terminate() {
 		c.signalWriteLocked()
 		c.mu.Unlock()
 		close(c.done)
+		c.readNotify.stop()
+		c.writeNotify.stop()
 		if c.closer != nil {
 			_ = c.closer.Close()
 		}
@@ -329,7 +339,7 @@ func (c *Conn) SetReadDeadline(t time.Time) error {
 		c.mu.Unlock()
 		return net.ErrClosed
 	}
-	c.readDeadline = t
+	c.readNotify.setDeadline(t)
 	c.signalReadLocked()
 	c.mu.Unlock()
 	return nil
@@ -341,7 +351,7 @@ func (c *Conn) SetWriteDeadline(t time.Time) error {
 		c.mu.Unlock()
 		return net.ErrClosed
 	}
-	c.writeDeadline = t
+	c.writeNotify.setDeadline(t)
 	c.signalWriteLocked()
 	c.mu.Unlock()
 	return nil
@@ -597,16 +607,14 @@ func (c *Conn) signalReadLocked() {
 	if c.readWaiters == 0 {
 		return
 	}
-	close(c.readNotify)
-	c.readNotify = make(chan struct{})
+	c.readNotify.signal()
 }
 
 func (c *Conn) signalWriteLocked() {
 	if c.writeWaiters == 0 {
 		return
 	}
-	close(c.writeNotify)
-	c.writeNotify = make(chan struct{})
+	c.writeNotify.signal()
 }
 
 func (c *Conn) wakeFlush() {
