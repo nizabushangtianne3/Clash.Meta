@@ -36,6 +36,9 @@ import (
 
 var httpPath = "/inbound_test"
 var httpData = make([]byte, 2*pool.RelayBufferSize)
+
+const concurrentTestWorkers = 4
+
 var remoteAddr = netip.MustParseAddr("1.2.3.4")
 var userUUID = utils.NewUUIDV4().String()
 var tlsCertificate, tlsPrivateKey, tlsFingerprint, _ = ca.NewRandomTLSKeyPair(ca.KeyPairTypeP256)
@@ -298,23 +301,22 @@ func NewHttpTestTunnel() *TestTunnel {
 				t.Skip("skip concurrent test")
 			}
 			wg := sync.WaitGroup{}
-			num := len(httpData) / 1024
-			for i := 1; i <= num; i++ {
-				i := i
-				wg.Add(1)
+			sizes := []int{1024, 16 * 1024, 32 * 1024, len(httpData)}
+			jobs := make(chan int, len(sizes))
+			wg.Add(concurrentTestWorkers)
+			for worker := 0; worker < concurrentTestWorkers; worker++ {
 				go func() {
-					testFn(t, proxy, "https", i*1024)
 					defer wg.Done()
+					for i := range jobs {
+						testFn(t, proxy, "https", i)
+						testFn(t, proxy, "http", i)
+					}
 				}()
 			}
-			for i := 1; i <= num; i++ {
-				i := i
-				wg.Add(1)
-				go func() {
-					testFn(t, proxy, "http", i*1024)
-					defer wg.Done()
-				}()
+			for _, size := range sizes {
+				jobs <- size
 			}
+			close(jobs)
 			wg.Wait()
 		})
 	}
