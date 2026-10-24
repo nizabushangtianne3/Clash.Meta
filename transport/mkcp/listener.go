@@ -30,15 +30,9 @@ func newListenerCore(cfg Config, localAddr net.Addr, closer io.Closer) (listener
 		return listenerCore{}, err
 	}
 	dataPool := &sync.Pool{New: func() any { return new(dataSegment) }}
-	bufferPool := &sync.Pool{New: func() any { return new(receiveBuffer) }}
 	return listenerCore{
-		cfg: cfg,
-		reader: packetReader{
-			security:   security,
-			header:     cfg.packetHeader(),
-			dataPool:   dataPool,
-			bufferPool: bufferPool,
-		},
+		cfg:    cfg,
+		reader: packetReader{security: security, header: cfg.packetHeader(), dataPool: dataPool},
 		securityWriter: func(w ioWriter) packetWriter {
 			return packetWriter{security: security, header: cfg.packetHeader(), writer: w}
 		},
@@ -97,7 +91,7 @@ func (l *listenerCore) terminate(conns []*Conn) {
 }
 
 type udpPacket struct {
-	payload *receiveBuffer
+	payload []byte
 	addr    netip.AddrPort
 }
 
@@ -131,23 +125,19 @@ func ListenUDP(ctx context.Context, udp *net.UDPConn, cfg Config) (*UDPListener,
 }
 
 func (l *UDPListener) readLoop() {
-	readSize := receiveSize(l.cfg, l.reader.security)
+	buf := make([]byte, 64*1024)
 	for {
-		buffer := l.reader.newReceiveBuffer(readSize)
-		n, addr, err := l.udp.ReadFromUDPAddrPort(buffer.data)
+		n, addr, err := l.udp.ReadFromUDPAddrPort(buf)
 		if err != nil {
-			buffer.release()
 			_ = l.Close()
 			return
 		}
-		buffer.data = buffer.data[:n]
+		payload := append([]byte(nil), buf[:n]...)
 		select {
-		case l.packets <- udpPacket{payload: buffer, addr: addr}:
+		case l.packets <- udpPacket{payload: payload, addr: addr}:
 		case <-l.closed:
-			buffer.release()
 			return
 		default:
-			buffer.release()
 		}
 	}
 }
@@ -157,18 +147,11 @@ func (l *UDPListener) packetLoop() {
 	for {
 		select {
 		case packet := <-l.packets:
-			segments = l.reader.read(packet.payload.data, packet.payload, segments)
+			segments = l.reader.read(packet.payload, segments)
 			l.onPacket(packet, segments)
 			clear(segments)
 		case <-l.closed:
-			for {
-				select {
-				case packet := <-l.packets:
-					packet.payload.release()
-				default:
-					return
-				}
-			}
+			return
 		}
 	}
 }
@@ -244,7 +227,7 @@ func (w *udpPacketConnWriter) Close() error {
 }
 
 type virtualPacket struct {
-	payload *receiveBuffer
+	payload []byte
 	addr    net.Addr
 }
 
@@ -278,23 +261,19 @@ func ListenVirtual(ctx context.Context, pc net.PacketConn, cfg Config) (*Virtual
 }
 
 func (l *VirtualListener) readLoop() {
-	readSize := receiveSize(l.cfg, l.reader.security)
+	buf := make([]byte, 64*1024)
 	for {
-		buffer := l.reader.newReceiveBuffer(readSize)
-		n, addr, err := l.pc.ReadFrom(buffer.data)
+		n, addr, err := l.pc.ReadFrom(buf)
 		if err != nil {
-			buffer.release()
 			_ = l.Close()
 			return
 		}
-		buffer.data = buffer.data[:n]
+		payload := append([]byte(nil), buf[:n]...)
 		select {
-		case l.packets <- virtualPacket{payload: buffer, addr: addr}:
+		case l.packets <- virtualPacket{payload: payload, addr: addr}:
 		case <-l.closed:
-			buffer.release()
 			return
 		default:
-			buffer.release()
 		}
 	}
 }
@@ -304,18 +283,11 @@ func (l *VirtualListener) packetLoop() {
 	for {
 		select {
 		case packet := <-l.packets:
-			segments = l.reader.read(packet.payload.data, packet.payload, segments)
+			segments = l.reader.read(packet.payload, segments)
 			l.onPacket(packet, segments)
 			clear(segments)
 		case <-l.closed:
-			for {
-				select {
-				case packet := <-l.packets:
-					packet.payload.release()
-				default:
-					return
-				}
-			}
+			return
 		}
 	}
 }
