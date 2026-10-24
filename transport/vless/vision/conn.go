@@ -297,10 +297,7 @@ func (vc *Conn) WriterPossiblyReplaceable() bool {
 }
 
 func (vc *Conn) WriterReplaceable() bool {
-	if vc.writeDirect.Load() {
-		return true
-	}
-	return false
+	return vc.writeDirect.Load()
 }
 
 func (vc *Conn) Close() error {

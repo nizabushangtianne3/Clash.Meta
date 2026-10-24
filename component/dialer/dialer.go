@@ -141,18 +141,17 @@ func dialContext(ctx context.Context, network string, destination netip.Addr, po
 	destination, port = resolver.LookupIP4P(destination, port)
 	address = net.JoinHostPort(destination.String(), port)
 
-	netDialer := opt.netDialer
-	switch netDialer.(type) {
+	var dialer *net.Dialer
+	switch typedDialer := opt.netDialer.(type) {
 	case nil:
-		netDialer = &net.Dialer{}
+		dialer = &net.Dialer{}
 	case *net.Dialer:
-		_netDialer := *netDialer.(*net.Dialer)
-		netDialer = &_netDialer // make a copy
+		copiedDialer := *typedDialer
+		dialer = &copiedDialer // make a copy
 	default:
-		return netDialer.DialContext(ctx, network, address)
+		return typedDialer.DialContext(ctx, network, address)
 	}
 
-	dialer := netDialer.(*net.Dialer)
 	keepalive.SetNetDialer(dialer)
 	dialer.SetMultipathTCP(opt.mpTcp)
 

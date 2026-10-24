@@ -108,7 +108,6 @@ func (alloc *defaultAllocator) Put(buf []byte) error {
 	buf = buf[:cap(buf)]
 
 	//nolint
-	//lint:ignore SA6002 ignore temporarily
 	switch bits {
 	case 0:
 		alloc.buffers[bits].Put((*[1 << 6]byte)(buf))
