@@ -1,9 +1,11 @@
 package statistic
 
 import (
+	"encoding/json"
 	"io"
 	"net"
 	"net/netip"
+	"fmt"
 	"testing"
 
 	C "github.com/metacubex/mihomo/constant"
@@ -131,4 +133,52 @@ func BenchmarkManagerPushStriped(b *testing.B) {
 			stripe.pushDownloaded(1460, false)
 		}
 	})
+}
+
+func benchmarkManagerWithConnections(b *testing.B, count int) *Manager {
+	b.Helper()
+
+	manager := &Manager{}
+	for range count {
+		local, remote := net.Pipe()
+		b.Cleanup(func() {
+			_ = remote.Close()
+		})
+		NewTCPTracker(newStatisticTestConn(local), manager, benchmarkMetadata(), nil, 0, 0, false)
+	}
+	return manager
+}
+
+// The host's connection view asks for the whole table on a timer, so one poll
+// pays for the table itself and for the encoding that carries it to the host.
+func BenchmarkManagerSnapshot(b *testing.B) {
+	for _, count := range []int{100, 500} {
+		b.Run(fmt.Sprintf("connections=%d", count), func(b *testing.B) {
+			manager := benchmarkManagerWithConnections(b, count)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_ = manager.Snapshot()
+			}
+		})
+	}
+}
+
+func BenchmarkManagerSnapshotEncoded(b *testing.B) {
+	for _, count := range []int{100, 500} {
+		b.Run(fmt.Sprintf("connections=%d", count), func(b *testing.B) {
+			manager := benchmarkManagerWithConnections(b, count)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				data, err := json.Marshal(manager.Snapshot())
+				if err != nil {
+					b.Fatal(err)
+				}
+				_ = data
+			}
+		})
+	}
 }
