@@ -8,19 +8,25 @@ import (
 	rulesCommon "github.com/metacubex/mihomo/rules/common"
 )
 
+// ruleIndex answers "which rule could match this connection next" without
+// walking the rule list. Domain rules live in an exact map and a suffix trie,
+// address rules in two prefix tries, and every rule those structures cannot
+// answer for in an ascending position list. The scan always resumes at the
+// smallest candidate at or after its cursor, so rule order survives no matter
+// how the rule kinds interleave.
 type ruleIndex struct {
-	segments          []ruleSegment
-	segmentOfPosition []int
-	nextDuplicate     map[int]int
-	usesHelper        []bool
-}
-
-type ruleSegment struct {
-	end    int
-	exact  map[string]int
+	exact  map[string][]int
 	suffix *suffixNode
 	ipDst  *ipRuleTrie
 	ipSrc  *ipRuleTrie
+
+	// plainPositions holds rules without an indexable payload. ipPositions
+	// holds the address rules, which join the scan as plain rules while
+	// neither address is known so each of them still resolves the host
+	// through its own match helper.
+	plainPositions []int
+	ipPositions    []int
+	usesHelper     []bool
 }
 
 type suffixNode struct {
@@ -34,135 +40,93 @@ func buildRuleIndex(rules []C.Rule) *ruleIndex {
 	}
 
 	index := &ruleIndex{
-		segments:          make([]ruleSegment, 0, 8),
-		segmentOfPosition: make([]int, len(rules)),
-		nextDuplicate:     make(map[int]int),
-		usesHelper:        make([]bool, len(rules)),
+		usesHelper: make([]bool, len(rules)),
 	}
-	for position := 0; position < len(rules); {
-		index.usesHelper[position] = ruleUsesMatchHelper(rules[position])
-		if _, _, ok := indexedDomainPayload(rules[position]); ok {
-			segment := ruleSegment{
-				exact:  make(map[string]int),
-				suffix: &suffixNode{},
-			}
-			last := make(map[string]int)
-			for position < len(rules) {
-				index.usesHelper[position] = ruleUsesMatchHelper(rules[position])
-				domain, exact, ok := indexedDomainPayload(rules[position])
-				if !ok {
-					break
+	for position, rule := range rules {
+		index.usesHelper[position] = ruleUsesMatchHelper(rule)
+		if domain, exact, ok := indexedDomainPayload(rule); ok {
+			if exact {
+				if index.exact == nil {
+					index.exact = make(map[string][]int)
 				}
-				if exact {
-					_, exists := segment.exact[domain]
-					if exists {
-						index.nextDuplicate[last[domain]] = position
-						last[domain] = position
-					} else {
-						segment.exact[domain] = position
-						last[domain] = position
-					}
-				} else {
-					insertSuffix(segment.suffix, domain, position)
+				index.exact[domain] = append(index.exact[domain], position)
+			} else {
+				if index.suffix == nil {
+					index.suffix = &suffixNode{}
 				}
-				index.segmentOfPosition[position] = len(index.segments)
-				position++
+				insertSuffix(index.suffix, domain, position)
 			}
-			segment.end = position
-			index.segments = append(index.segments, segment)
 			continue
 		}
-
-		if _, _, ok := indexedIPPayload(rules[position]); ok {
-			segment := ruleSegment{}
-			for position < len(rules) {
-				index.usesHelper[position] = ruleUsesMatchHelper(rules[position])
-				ipPrefix, ipSource, ok := indexedIPPayload(rules[position])
-				if !ok {
-					break
+		if prefix, source, ok := indexedIPPayload(rule); ok {
+			if source {
+				if index.ipSrc == nil {
+					index.ipSrc = &ipRuleTrie{}
 				}
-				if ipSource {
-					if segment.ipSrc == nil {
-						segment.ipSrc = &ipRuleTrie{}
-					}
-					segment.ipSrc.insert(ipPrefix, position)
-				} else {
-					if segment.ipDst == nil {
-						segment.ipDst = &ipRuleTrie{}
-					}
-					segment.ipDst.insert(ipPrefix, position)
+				index.ipSrc.insert(prefix, position)
+			} else {
+				if index.ipDst == nil {
+					index.ipDst = &ipRuleTrie{}
 				}
-				index.segmentOfPosition[position] = len(index.segments)
-				position++
+				index.ipDst.insert(prefix, position)
 			}
-			segment.end = position
-			index.segments = append(index.segments, segment)
+			index.ipPositions = append(index.ipPositions, position)
 			continue
 		}
-
-		for position < len(rules) {
-			index.usesHelper[position] = ruleUsesMatchHelper(rules[position])
-			if _, _, ok := indexedDomainPayload(rules[position]); ok {
-				break
-			}
-			index.segmentOfPosition[position] = len(index.segments)
-			position++
-		}
-		index.segments = append(index.segments, ruleSegment{end: position})
+		index.plainPositions = append(index.plainPositions, position)
 	}
 	return index
 }
 
+// next returns the first position at or after position whose rule could match
+// the metadata, or the length of the rule list when none of them can.
 func (index *ruleIndex) next(position int, metadata *C.Metadata) int {
-	if index == nil || position >= len(index.segmentOfPosition) {
-		return position
-	}
-	segment := index.segments[index.segmentOfPosition[position]]
-	if segment.ipDst != nil || segment.ipSrc != nil {
-		return index.nextIPRule(position, segment, metadata)
-	}
-	if segment.exact == nil && segment.suffix == nil {
+	if index == nil || position >= len(index.usesHelper) {
 		return position
 	}
 
-	candidate := segment.end
-	host := metadata.RuleHost()
-	if hit, ok := segment.exact[host]; ok && hit >= position && hit < candidate {
-		candidate = hit
+	candidate := len(index.usesHelper)
+	if index.exact != nil || index.suffix != nil {
+		host := metadata.RuleHost()
+		if hit := positionAtOrAfter(index.exact[host], position); hit >= 0 && hit < candidate {
+			candidate = hit
+		}
+		if index.suffix != nil {
+			if hit := index.suffix.match(host, position); hit >= 0 && hit < candidate {
+				candidate = hit
+			}
+		}
 	}
-	if segment.suffix != nil {
-		if hit := segment.suffix.match(host, position); hit >= 0 && hit < candidate {
+	// Every address rule records its position in ipPositions, so a nil slice
+	// keeps lists without them from paying for the address checks below.
+	if index.ipPositions != nil {
+		if index.ipDst != nil && metadata.DstIP.IsValid() {
+			if hit := index.ipDst.lookup(metadata.DstIP, position); hit >= 0 && hit < candidate {
+				candidate = hit
+			}
+		}
+		if index.ipSrc != nil && metadata.SrcIP.IsValid() {
+			if hit := index.ipSrc.lookup(metadata.SrcIP, position); hit >= 0 && hit < candidate {
+				candidate = hit
+			}
+		}
+		if !metadata.DstIP.IsValid() && !metadata.SrcIP.IsValid() {
+			if hit := positionAtOrAfter(index.ipPositions, position); hit >= 0 && hit < candidate {
+				candidate = hit
+			}
+		}
+	}
+	if len(index.plainPositions) > 0 {
+		if hit := positionAtOrAfter(index.plainPositions, position); hit >= 0 && hit < candidate {
 			candidate = hit
 		}
 	}
 	return candidate
 }
 
-// nextIPRule jumps to the first rule of the run whose prefix contains an
-// address the packet already carries. A run with no match is skipped whole:
-// the rules it skips would not have matched, and any later rule that needs a
-// resolved address still triggers the lookup through its own match helper.
-func (index *ruleIndex) nextIPRule(position int, segment ruleSegment, metadata *C.Metadata) int {
-	candidate := -1
-	if segment.ipDst != nil && metadata.DstIP.IsValid() {
-		if hit := segment.ipDst.lookup(metadata.DstIP, position); hit >= 0 && (candidate < 0 || hit < candidate) {
-			candidate = hit
-		}
-	}
-	if segment.ipSrc != nil && metadata.SrcIP.IsValid() {
-		if hit := segment.ipSrc.lookup(metadata.SrcIP, position); hit >= 0 && (candidate < 0 || hit < candidate) {
-			candidate = hit
-		}
-	}
-	if candidate < 0 {
-		if !metadata.DstIP.IsValid() && !metadata.SrcIP.IsValid() {
-			// neither address is known: the run must still run its
-			// helper-needing rules so they can resolve lazily
-			return position
-		}
-		return segment.end
-	}
-	return candidate
+// after resumes the scan past a rule that did not settle the connection.
+func (index *ruleIndex) after(position int, metadata *C.Metadata) int {
+	return index.next(position+1, metadata)
 }
 
 // usesHelperAt reports whether the rule at position needs the match helper.
@@ -173,13 +137,6 @@ func (index *ruleIndex) usesHelperAt(position int, rules []C.Rule) bool {
 		return index.usesHelper[position]
 	}
 	return ruleUsesMatchHelper(rules[position])
-}
-
-func (index *ruleIndex) after(position int, metadata *C.Metadata) int {
-	if next, ok := index.nextDuplicate[position]; ok {
-		return next
-	}
-	return index.next(position+1, metadata)
 }
 
 func indexedIPPayload(rule C.Rule) (netip.Prefix, bool, bool) {

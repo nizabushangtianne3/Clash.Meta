@@ -429,6 +429,34 @@ func TestMatchPreservesOrderAcrossOverlappingDomainRules(t *testing.T) {
 	require.Equal(t, C.Rule(rules[0]), rule)
 }
 
+func TestMatchPreservesOrderBetweenExactDuplicatesAndSuffixRules(t *testing.T) {
+	rules := []C.Rule{
+		rulesCommon.NewDomain("target.example.com", "PASS"),
+		rulesCommon.NewDomainSuffix("target.example.com", "DIRECT"),
+		rulesCommon.NewDomain("target.example.com", "DIRECT"),
+	}
+	setupRuleRuntime(
+		t,
+		map[string]C.Proxy{
+			"DIRECT": directTestProxy{},
+			"PASS":   passThroughTestProxy{},
+		},
+		rules,
+		nil,
+	)
+
+	proxy, rule, err := match(
+		&C.Metadata{NetWork: C.TCP, Host: "target.example.com"},
+		loadRuntime(),
+		false,
+		false,
+	)
+	require.NoError(t, err)
+	require.Equal(t, "DIRECT", proxy.Name())
+	require.Equal(t, C.Rule(rules[1]), rule,
+		"the suffix rule sitting between two exact duplicates must not be skipped")
+}
+
 type countingDomainRule struct {
 	C.Rule
 	calls *atomic.Int32
