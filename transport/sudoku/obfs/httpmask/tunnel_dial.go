@@ -190,21 +190,6 @@ type tunnelHTTPClient struct {
 	transport *tunnelHTTPTransport
 }
 
-func (c *tunnelHTTPClient) preconnect(ctx context.Context, req *http.Request, count int) context.CancelFunc {
-	if c == nil || c.transport == nil || c.transport.transport == nil || c.transport.dialer == nil ||
-		req == nil || req.URL == nil || count <= 0 {
-		return func() {}
-	}
-
-	if proxy := c.transport.transport.Proxy; proxy != nil {
-		proxyURL, err := proxy(req)
-		if err != nil || proxyURL != nil {
-			return func() {}
-		}
-	}
-	return c.transport.dialer.preconnect(ctx, req.URL.Scheme == "https", count)
-}
-
 type httpClientTarget struct {
 	scheme     string
 	urlHost    string

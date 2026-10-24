@@ -199,12 +199,7 @@ func New(config LC.TuicServer, lc C.InboundListenConfig, tunnel C.Tunnel, additi
 		sl.servers = append(sl.servers, server)
 
 		go func() {
-			err := server.Serve()
-			if err != nil {
-				if sl.closed {
-					return
-				}
-			}
+			_ = server.Serve()
 		}()
 	}
 
