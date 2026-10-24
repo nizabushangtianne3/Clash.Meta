@@ -92,9 +92,7 @@ func (s *serverHandler) parsePacket(packet *Packet, udpRelayMode types.UdpRelayM
 	if !s.authOk.Load() {
 		return
 	}
-	var assocId uint16
-
-	assocId = packet.ASSOC_ID
+	assocId := packet.ASSOC_ID
 
 	input, _ := s.udpInputMap.LoadOrStoreFn(assocId, func() *serverUDPInput { return &serverUDPInput{} })
 	if input.writeClosed.Load() {

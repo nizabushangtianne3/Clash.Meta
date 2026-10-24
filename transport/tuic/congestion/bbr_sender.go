@@ -132,8 +132,6 @@ type bbrSender struct {
 	congestionWindow congestion.ByteCount
 	// The initial value of the |congestion_window_|.
 	initialCongestionWindow congestion.ByteCount
-	// The largest value the |congestion_window_| can achieve.
-	initialMaxCongestionWindow congestion.ByteCount
 	// The smallest value the |congestion_window_| can achieve.
 	//minCongestionWindow congestion.ByteCount
 	// The pacing gain applied during the STARTUP phase.
@@ -180,9 +178,6 @@ type bbrSender struct {
 	lastSampleIsAppLimited bool
 	// Indicates whether any non app-limited samples have been recorded.
 	hasNoAppLimitedSample bool
-	// Indicates app-limited calls should be ignored as long as there's
-	// enough data inflight to see more bandwidth when necessary.
-	flexibleAppLimited bool
 	// Current state of recovery.
 	recoveryState bbrRecoveryState
 	// Receiving acknowledgement of a packet after |end_recovery_at_| will cause
