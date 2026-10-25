@@ -49,7 +49,11 @@ func BenchmarkExchangeContextCacheHit(b *testing.B) {
 func BenchmarkLookupIPCached(b *testing.B) {
 	r := seededBenchResolver()
 	ips := []netip.Addr{netip.MustParseAddr("1.2.3.4"), netip.MustParseAddr("1.2.3.5")}
-	r.ipCache.SetWithExpire(ipCacheEntryKey("cached.example", D.TypeA), ips, time.Now().Add(time.Hour))
+	r.ipCache.SetWithExpire(
+		ipCacheEntryKey("cached.example", D.TypeA),
+		cachedIPs{ips: ips},
+		time.Now().Add(time.Hour),
+	)
 	ctx := context.Background()
 
 	b.ReportAllocs()

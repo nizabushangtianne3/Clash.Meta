@@ -33,8 +33,8 @@ type dnsCache interface {
 }
 
 type parsedIPCache interface {
-	GetWithExpire(key ipCacheKey) ([]netip.Addr, time.Time, bool)
-	SetWithExpire(key ipCacheKey, value []netip.Addr, expire time.Time)
+	GetWithExpire(key ipCacheKey) (cachedIPs, time.Time, bool)
+	SetWithExpire(key ipCacheKey, value cachedIPs, expire time.Time)
 	Clear()
 }
 
@@ -100,7 +100,7 @@ func (r *Resolver) LookupIPPrimaryIPv4(ctx context.Context, host string) (ips []
 }
 
 func (r *Resolver) LookupIP(ctx context.Context, host string) (ips []netip.Addr, err error) {
-	if combined, hit := r.lookupIPFromCachePair(host); hit {
+	if combined, hit := r.lookupIPFromCachePair(ctx, host); hit {
 		return combined, nil
 	}
 
@@ -534,9 +534,9 @@ func (config Config) newIPCache() parsedIPCache {
 	}
 	switch config.CacheAlgorithm {
 	case "arc":
-		return arc.New(arc.WithSize[ipCacheKey, []netip.Addr](maxSize))
+		return arc.New(arc.WithSize[ipCacheKey, cachedIPs](maxSize))
 	default:
-		return lru.New(lru.WithSize[ipCacheKey, []netip.Addr](maxSize))
+		return lru.New(lru.WithSize[ipCacheKey, cachedIPs](maxSize))
 	}
 }
 

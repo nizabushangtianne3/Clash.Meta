@@ -43,7 +43,7 @@ func TestLookupIPCachePairKeepsAddressOrder(t *testing.T) {
 	_, err := r.LookupIP(ctx, "www.example.com")
 	require.NoError(t, err)
 
-	ips, hit := r.lookupIPFromCachePair("www.example.com")
+	ips, hit := r.lookupIPFromCachePair(ctx, "www.example.com")
 	require.True(t, hit)
 	require.Equal(t, []netip.Addr{
 		netip.MustParseAddr("192.0.2.10"),

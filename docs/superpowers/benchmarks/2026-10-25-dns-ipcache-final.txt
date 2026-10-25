@@ -1,0 +1,26 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/dns
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkExchangeContextCacheHit-16             	   50000	       336.7 ns/op	     344 B/op	       7 allocs/op
+BenchmarkExchangeContextCacheHit-16             	   50000	       316.2 ns/op	     344 B/op	       7 allocs/op
+BenchmarkExchangeContextCacheHit-16             	   50000	       310.1 ns/op	     344 B/op	       7 allocs/op
+BenchmarkExchangeContextCacheHit-16             	   50000	       320.1 ns/op	     344 B/op	       7 allocs/op
+BenchmarkExchangeContextCacheHit-16             	   50000	       328.8 ns/op	     344 B/op	       7 allocs/op
+BenchmarkResolverLookupIPv4CacheHit-16          	   50000	       123.2 ns/op	      96 B/op	       2 allocs/op
+BenchmarkResolverLookupIPv4CacheHit-16          	   50000	       129.6 ns/op	      96 B/op	       2 allocs/op
+BenchmarkResolverLookupIPv4CacheHit-16          	   50000	       121.4 ns/op	      96 B/op	       2 allocs/op
+BenchmarkResolverLookupIPv4CacheHit-16          	   50000	       122.0 ns/op	      96 B/op	       2 allocs/op
+BenchmarkResolverLookupIPv4CacheHit-16          	   50000	       116.6 ns/op	      96 B/op	       2 allocs/op
+BenchmarkResolverLookupIPCacheHit-16            	   50000	       135.8 ns/op	      80 B/op	       1 allocs/op
+BenchmarkResolverLookupIPCacheHit-16            	   50000	       134.0 ns/op	      80 B/op	       1 allocs/op
+BenchmarkResolverLookupIPCacheHit-16            	   50000	       139.7 ns/op	      80 B/op	       1 allocs/op
+BenchmarkResolverLookupIPCacheHit-16            	   50000	       136.5 ns/op	      80 B/op	       1 allocs/op
+BenchmarkResolverLookupIPCacheHit-16            	   50000	       138.9 ns/op	      80 B/op	       1 allocs/op
+BenchmarkResolverLookupIPv4TracedCacheHit-16    	   50000	       175.5 ns/op	      96 B/op	       2 allocs/op
+BenchmarkResolverLookupIPv4TracedCacheHit-16    	   50000	       175.8 ns/op	      96 B/op	       2 allocs/op
+BenchmarkResolverLookupIPv4TracedCacheHit-16    	   50000	       172.2 ns/op	      96 B/op	       2 allocs/op
+BenchmarkResolverLookupIPv4TracedCacheHit-16    	   50000	       177.2 ns/op	      96 B/op	       2 allocs/op
+BenchmarkResolverLookupIPv4TracedCacheHit-16    	   50000	       175.9 ns/op	      96 B/op	       2 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/dns	1.532s
