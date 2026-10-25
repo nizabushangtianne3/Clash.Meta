@@ -397,9 +397,6 @@ func (r *Resolver) lookupIP(ctx context.Context, host string, dnsType uint16) (i
 		}
 	}
 
-	query := &D.Msg{}
-	query.SetQuestion(D.Fqdn(host), dnsType)
-
 	return r.lookupIPCached(ctx, host, dnsType)
 }
 
