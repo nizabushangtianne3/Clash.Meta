@@ -1,0 +1,45 @@
+= common/structure decode: the per-decode walk replaced by a compiled field plan
+# 2000 iterations per run, three runs per side, go1.27.1 windows/amd64
+                │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-25-structure-plan-baseline.txt │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-25-structure-plan-current.txt │
+                │                                                                sec/op                                                                │                                                      sec/op                                                       vs base           │
+DecodeStruct-16                                                                                                                          12.869µ ± ∞ ¹                                                                                                       2.738µ ± ∞ ¹  ~ (p=0.100 n=3) ²
+¹ need >= 6 samples for confidence interval at level 0.95
+² need >= 4 samples to detect a difference at alpha level 0.05
+
+                │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-25-structure-plan-baseline.txt │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-25-structure-plan-current.txt │
+                │                                                                 B/op                                                                 │                                                       B/op                                                        vs base           │
+DecodeStruct-16                                                                                                                         10.352Ki ± ∞ ¹                                                                                                      1.079Ki ± ∞ ¹  ~ (p=0.100 n=3) ²
+¹ need >= 6 samples for confidence interval at level 0.95
+² need >= 4 samples to detect a difference at alpha level 0.05
+
+                │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-25-structure-plan-baseline.txt │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-25-structure-plan-current.txt │
+                │                                                              allocs/op                                                               │                                                    allocs/op                                                      vs base           │
+DecodeStruct-16                                                                                                                           125.00 ± ∞ ¹                                                                                                        27.00 ± ∞ ¹  ~ (p=0.100 n=3) ²
+¹ need >= 6 samples for confidence interval at level 0.95
+² need >= 4 samples to detect a difference at alpha level 0.05
+= hub/executor ParseWithBytes: the same parse end to end
+# 100 iterations per run, three runs per side, proxies=200 and proxies=800 subscriptions
+                           │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-25-parse-config-baseline.txt │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-25-parse-config-current.txt │
+                           │                                                               sec/op                                                               │                                                  sec/op                                                   vs base                 │
+ParseConfig/proxies=200-16                                                                                                                         7.452m ± ∞ ¹                                                                                               4.707m ± ∞ ¹        ~ (p=0.100 n=3) ²
+ParseConfig/proxies=800-16                                                                                                                         26.27m ± ∞ ¹                                                                                               13.37m ± ∞ ¹        ~ (p=0.100 n=3) ²
+geomean                                                                                                                                            13.99m                                                                                                     7.934m        -43.30%
+¹ need >= 6 samples for confidence interval at level 0.95
+² need >= 4 samples to detect a difference at alpha level 0.05
+
+                           │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-25-parse-config-baseline.txt │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-25-parse-config-current.txt │
+                           │                                                                B/op                                                                │                                                   B/op                                                    vs base                 │
+ParseConfig/proxies=200-16                                                                                                                        3.498Mi ± ∞ ¹                                                                                              1.429Mi ± ∞ ¹        ~ (p=0.100 n=3) ²
+ParseConfig/proxies=800-16                                                                                                                       13.469Mi ± ∞ ¹                                                                                              5.295Mi ± ∞ ¹        ~ (p=0.100 n=3) ²
+geomean                                                                                                                                           6.864Mi                                                                                                    2.751Mi        -59.92%
+¹ need >= 6 samples for confidence interval at level 0.95
+² need >= 4 samples to detect a difference at alpha level 0.05
+
+                           │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-25-parse-config-baseline.txt │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-25-parse-config-current.txt │
+                           │                                                             allocs/op                                                              │                                                allocs/op                                                  vs base                 │
+ParseConfig/proxies=200-16                                                                                                                         38.93k ± ∞ ¹                                                                                               24.55k ± ∞ ¹        ~ (p=0.100 n=3) ²
+ParseConfig/proxies=800-16                                                                                                                        154.65k ± ∞ ¹                                                                                               97.66k ± ∞ ¹        ~ (p=0.100 n=3) ²
+geomean                                                                                                                                            77.59k                                                                                                     48.96k        -36.89%
+¹ need >= 6 samples for confidence interval at level 0.95
+² need >= 4 samples to detect a difference at alpha level 0.05
+raw runs: 2026-10-25-structure-plan-baseline.txt / -current.txt (structure), 2026-10-25-parse-config-baseline.txt / -current.txt (parse)

@@ -1,0 +1,3 @@
+BenchmarkDecodeStruct-16	2000	12869 ns/op	10603 B/op	125 allocs/op
+BenchmarkDecodeStruct-16	2000	12720 ns/op	10600 B/op	125 allocs/op
+BenchmarkDecodeStruct-16	2000	12906 ns/op	10600 B/op	125 allocs/op

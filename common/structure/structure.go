@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // Option is the configuration that is used to create a new decoder
@@ -391,6 +392,234 @@ func (d *Decoder) decodeStruct(name string, data any, val reflect.Value) error {
 	}
 }
 
+// A struct's tags are fixed by its type, so the decoder compiles them once per
+// type and tag name instead of splitting them again for every field of every
+// value it decodes.
+type plannedField struct {
+	index     int
+	name      string
+	omitempty bool
+	remain    bool
+	squash    bool
+	pointer   bool
+	badSquash string
+	children  []plannedField
+}
+
+type structPlan struct {
+	fields []plannedField
+	remain bool
+}
+
+type planKey struct {
+	typ reflect.Type
+	tag string
+}
+
+var structPlans sync.Map
+
+func planOf(typ reflect.Type, tag string) *structPlan {
+	key := planKey{typ, tag}
+	if cached, ok := structPlans.Load(key); ok {
+		return cached.(*structPlan)
+	}
+	plan := compileStructPlan(typ, tag)
+	structPlans.Store(key, plan)
+	return plan
+}
+
+// compileStructPlan walks a struct the way decoding used to walk it: a level's
+// fields keep their declaration order and the structs squashed into it are
+// queued behind them, breadth first.
+func compileStructPlan(structType reflect.Type, tag string) *structPlan {
+	type scope struct {
+		owner *plannedField
+		typ   reflect.Type
+		stack []reflect.Type
+	}
+	var fields []plannedField
+	queue := []scope{{nil, structType, []reflect.Type{structType}}}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+
+		level := make([]plannedField, 0, current.typ.NumField())
+		var squashed []int
+		for i := 0; i < current.typ.NumField(); i++ {
+			fieldType := current.typ.Field(i)
+			field := plannedField{index: i, name: fieldType.Name}
+
+			fieldStructType := fieldType.Type
+			pointer := fieldStructType.Kind() == reflect.Pointer && fieldStructType.Elem().Kind() == reflect.Struct
+			if pointer {
+				fieldStructType = fieldStructType.Elem()
+			}
+
+			name, tagSquash, tagRemain, omitempty := parseFieldTag(fieldType.Tag.Get(tag))
+			field.omitempty = omitempty
+
+			squash := tagSquash || (fieldStructType.Kind() == reflect.Struct && fieldType.Anonymous)
+			if squash && typeOnStack(current.stack, fieldStructType) {
+				// a struct embedding itself would be walked forever
+				squash = false
+			}
+			if squash {
+				if fieldStructType.Kind() != reflect.Struct {
+					field.badSquash = fmt.Sprintf("%s: unsupported type for squash: %s", fieldType.Name, fieldType.Type.Kind())
+					level = append(level, field)
+					continue
+				}
+				field.squash = true
+				field.pointer = pointer
+				level = append(level, field)
+				squashed = append(squashed, len(level)-1)
+				continue
+			}
+			if tagRemain {
+				field.remain = true
+				level = append(level, field)
+				continue
+			}
+			if name == "-" {
+				continue
+			}
+			if name != "" {
+				field.name = name
+			}
+			level = append(level, field)
+		}
+
+		if current.owner == nil {
+			fields = level
+		} else {
+			current.owner.children = level
+		}
+		for _, index := range squashed {
+			field := &level[index]
+			embedded := current.typ.Field(field.index).Type
+			if field.pointer {
+				embedded = embedded.Elem()
+			}
+			stack := make([]reflect.Type, len(current.stack)+1)
+			copy(stack, current.stack)
+			stack[len(current.stack)] = embedded
+			queue = append(queue, scope{field, embedded, stack})
+		}
+	}
+
+	plan := &structPlan{fields: fields}
+	for i := range fields {
+		if fields[i].remain {
+			plan.remain = true
+		}
+	}
+	return plan
+}
+
+func typeOnStack(stack []reflect.Type, typ reflect.Type) bool {
+	for _, embedded := range stack {
+		if embedded == typ {
+			return true
+		}
+	}
+	return false
+}
+
+// parseFieldTag reads a struct tag the way the per-field loop did: the first
+// part names the field, "omitempty" anywhere after it makes the field optional,
+// and the first "squash" or "remain" after it decides how the field is walked.
+func parseFieldTag(tag string) (name string, squash, remain, omitempty bool) {
+	name = tag
+	rest := ""
+	if comma := strings.IndexByte(tag, ','); comma >= 0 {
+		name, rest = tag[:comma], tag[comma+1:]
+	}
+	for rest != "" {
+		part := rest
+		if comma := strings.IndexByte(rest, ','); comma >= 0 {
+			part, rest = rest[:comma], rest[comma+1:]
+		} else {
+			rest = ""
+		}
+		switch {
+		case part == "omitempty":
+			omitempty = true
+		case part == "squash" && !remain:
+			squash = true
+		case part == "remain" && !squash:
+			remain = true
+		}
+	}
+	return
+}
+
+// mapSource reads the map a struct is decoded from. A plain map[string]any,
+// which is what the config parser builds, is read directly; every other map
+// shape goes through reflection.
+type mapSource struct {
+	native map[string]any
+	value  reflect.Value
+	keys   []string
+	keyed  bool
+}
+
+func (s *mapSource) get(key string) (any, string, bool) {
+	if s.native != nil {
+		value, ok := s.native[key]
+		if !ok {
+			return nil, key, false
+		}
+		return value, key, true
+	}
+	raw := s.value.MapIndex(reflect.ValueOf(key))
+	if !raw.IsValid() {
+		return nil, key, false
+	}
+	return raw.Interface(), key, true
+}
+
+func (s *mapSource) keyList() []string {
+	if !s.keyed {
+		s.keyed = true
+		if s.native != nil {
+			s.keys = make([]string, 0, len(s.native))
+			for key := range s.native {
+				s.keys = append(s.keys, key)
+			}
+			return s.keys
+		}
+		for _, key := range s.value.MapKeys() {
+			if text, ok := key.Interface().(string); ok {
+				s.keys = append(s.keys, text)
+			}
+		}
+	}
+	return s.keys
+}
+
+func (s *mapSource) getFold(key string, replacer *strings.Replacer) (any, string, bool) {
+	for _, sourceKey := range s.keyList() {
+		compare := sourceKey
+		if replacer != nil {
+			compare = replacer.Replace(compare)
+		}
+		if strings.EqualFold(compare, key) {
+			return s.get(sourceKey)
+		}
+	}
+	return nil, "", false
+}
+
+type structDecodeState struct {
+	decoder    *Decoder
+	source     mapSource
+	planErrors []string
+	errors     []string
+	missing    []string
+	unused     map[string]struct{}
+	remain     reflect.Value
+}
+
 func (d *Decoder) decodeStructFromMap(name string, dataVal, val reflect.Value) error {
 	dataValType := dataVal.Type()
 	if kind := dataValType.Key().Kind(); kind != reflect.String && kind != reflect.Interface {
@@ -399,203 +628,117 @@ func (d *Decoder) decodeStructFromMap(name string, dataVal, val reflect.Value) e
 			name, dataValType.Key().Kind())
 	}
 
-	dataValKeys := make(map[reflect.Value]struct{})
-	dataValKeysUnused := make(map[any]struct{})
-	for _, dataValKey := range dataVal.MapKeys() {
-		dataValKeys[dataValKey] = struct{}{}
-		dataValKeysUnused[dataValKey.Interface()] = struct{}{}
+	plan := planOf(val.Type(), d.option.TagName)
+
+	state := &structDecodeState{decoder: d, source: mapSource{value: dataVal}}
+	if native, ok := dataVal.Interface().(map[string]any); ok {
+		state.source.native = native
 	}
-
-	targetValKeysUnused := make(map[any]struct{})
-	errors := make([]string, 0)
-
-	// This slice will keep track of all the structs we'll be decoding.
-	// There can be more than one struct if there are embedded structs
-	// that are squashed.
-	structs := make([]reflect.Value, 1, 5)
-	structs[0] = val
-
-	// Compile the list of all the fields that we're going to be decoding
-	// from all the structs.
-	type field struct {
-		field reflect.StructField
-		val   reflect.Value
-	}
-
-	// remainField is set to a valid field set with the "remain" tag if
-	// we are keeping track of remaining values.
-	var remainField *field
-
-	var fields []field
-	for len(structs) > 0 {
-		structVal := structs[0]
-		structs = structs[1:]
-
-		structType := structVal.Type()
-
-		for i := 0; i < structType.NumField(); i++ {
-			fieldType := structType.Field(i)
-			fieldVal := structVal.Field(i)
-			if fieldVal.Kind() == reflect.Ptr && fieldVal.Elem().Kind() == reflect.Struct {
-				// Handle embedded struct pointers as embedded structs.
-				fieldVal = fieldVal.Elem()
-			}
-
-			// If "squash" is specified in the tag, we squash the field down.
-			squash := fieldVal.Kind() == reflect.Struct && fieldType.Anonymous
-			remain := false
-
-			// We always parse the tags cause we're looking for other tags too
-			tagParts := strings.Split(fieldType.Tag.Get(d.option.TagName), ",")
-			for _, tag := range tagParts[1:] {
-				if tag == "squash" {
-					squash = true
-					break
-				}
-
-				if tag == "remain" {
-					remain = true
-					break
-				}
-			}
-
-			if squash {
-				if fieldVal.Kind() != reflect.Struct {
-					errors = append(errors,
-						fmt.Errorf("%s: unsupported type for squash: %s", fieldType.Name, fieldVal.Kind()).Error())
-				} else {
-					structs = append(structs, fieldVal)
-				}
-				continue
-			}
-
-			// Build our field
-			if remain {
-				remainField = &field{fieldType, fieldVal}
-			} else {
-				// Normal struct field, store it away
-				fields = append(fields, field{fieldType, fieldVal})
-			}
+	if plan.remain {
+		keys := state.source.keyList()
+		state.unused = make(map[string]struct{}, len(keys))
+		for _, key := range keys {
+			state.unused[key] = struct{}{}
 		}
 	}
 
-	// for fieldType, field := range fields {
-	for _, f := range fields {
-		field, fieldValue := f.field, f.val
-		fieldName := field.Name
+	state.decodeFields(name, plan.fields, val)
 
-		tagParts := strings.Split(field.Tag.Get(d.option.TagName), ",")
-		tagValue := tagParts[0]
-		if tagValue != "" {
-			fieldName = tagValue
+	if state.remain.IsValid() && len(state.unused) > 0 {
+		remain := make(map[any]any, len(state.unused))
+		for key := range state.unused {
+			value, _, _ := state.source.get(key)
+			remain[key] = value
 		}
-
-		if tagValue == "-" {
-			continue
-		}
-
-		omitempty := false
-		for _, tag := range tagParts[1:] {
-			if tag == "omitempty" {
-				omitempty = true
-			}
-		}
-
-		rawMapKey := reflect.ValueOf(fieldName)
-		rawMapVal := dataVal.MapIndex(rawMapKey)
-		if !rawMapVal.IsValid() {
-			// Do a slower search by iterating over each key and
-			// doing case-insensitive search.
-			if d.option.KeyReplacer != nil {
-				fieldName = d.option.KeyReplacer.Replace(fieldName)
-			}
-			for dataValKey := range dataValKeys {
-				mK, ok := dataValKey.Interface().(string)
-				if !ok {
-					// Not a string key
-					continue
-				}
-				if d.option.KeyReplacer != nil {
-					mK = d.option.KeyReplacer.Replace(mK)
-				}
-
-				if strings.EqualFold(mK, fieldName) {
-					rawMapKey = dataValKey
-					rawMapVal = dataVal.MapIndex(dataValKey)
-					break
-				}
-			}
-
-			if !rawMapVal.IsValid() {
-				// There was no matching key in the map for the value in
-				// the struct. Remember it for potential errors and metadata.
-				if !omitempty {
-					targetValKeysUnused[fieldName] = struct{}{}
-				}
-				continue
-			}
-		}
-
-		// Delete the key we're using from the unused map so we stop tracking
-		delete(dataValKeysUnused, rawMapKey.Interface())
-
-		if !fieldValue.IsValid() {
-			// This should never happen
-			panic("field is not valid")
-		}
-
-		// If we can't set the field, then it is unexported or something,
-		// and we just continue onwards.
-		if !fieldValue.CanSet() {
-			continue
-		}
-
-		// If the name is empty string, then we're at the root, and we
-		// don't dot-join the fields.
-		if name != "" {
-			fieldName = name + "." + fieldName
-		}
-
-		if err := d.decode(fieldName, rawMapVal.Interface(), fieldValue); err != nil {
-			errors = append(errors, err.Error())
+		if err := state.decoder.decodeMap(name, remain, state.remain); err != nil {
+			state.errors = append(state.errors, err.Error())
 		}
 	}
-
-	// If we have a "remain"-tagged field and we have unused keys then
-	// we put the unused keys directly into the remain field.
-	if remainField != nil && len(dataValKeysUnused) > 0 {
-		// Build a map of only the unused values
-		remain := map[interface{}]interface{}{}
-		for key := range dataValKeysUnused {
-			remain[key] = dataVal.MapIndex(reflect.ValueOf(key)).Interface()
-		}
-
-		// Decode it as-if we were just decoding this map onto our map.
-		if err := d.decodeMap(name, remain, remainField.val); err != nil {
-			errors = append(errors, err.Error())
-		}
-
-		// Set the map to nil so we have none so that the next check will
-		// not error (ErrorUnused)
-		dataValKeysUnused = nil
+	if len(state.missing) > 0 {
+		sort.Strings(state.missing)
+		state.errors = append(state.errors,
+			fmt.Errorf("'%s' has unset fields: %s", name, strings.Join(dedupeSorted(state.missing), ", ")).Error())
 	}
-
-	if len(targetValKeysUnused) > 0 {
-		keys := make([]string, 0, len(targetValKeysUnused))
-		for rawKey := range targetValKeysUnused {
-			keys = append(keys, rawKey.(string))
-		}
-		sort.Strings(keys)
-
-		err := fmt.Errorf("'%s' has unset fields: %s", name, strings.Join(keys, ", "))
-		errors = append(errors, err.Error())
+	if len(state.planErrors) > 0 {
+		state.errors = append(state.planErrors, state.errors...)
 	}
-
-	if len(errors) > 0 {
-		return fmt.Errorf("%s", strings.Join(errors, ","))
+	if len(state.errors) > 0 {
+		return fmt.Errorf("%s", strings.Join(state.errors, ","))
 	}
-
 	return nil
+}
+
+func dedupeSorted(values []string) []string {
+	if len(values) < 2 {
+		return values
+	}
+	unique := values[:1]
+	for _, value := range values[1:] {
+		if value != unique[len(unique)-1] {
+			unique = append(unique, value)
+		}
+	}
+	return unique
+}
+
+func (s *structDecodeState) decodeFields(name string, fields []plannedField, structVal reflect.Value) {
+	for i := range fields {
+		field := &fields[i]
+		switch {
+		case field.badSquash != "":
+			s.planErrors = append(s.planErrors, field.badSquash)
+		case field.squash:
+			child := structVal.Field(field.index)
+			if field.pointer {
+				if child.IsNil() {
+					if !child.CanSet() {
+						continue
+					}
+					child.Set(reflect.New(child.Type().Elem()))
+				}
+				child = child.Elem()
+			}
+			s.decodeFields(name, field.children, child)
+		case field.remain:
+			s.remain = structVal.Field(field.index)
+		default:
+			s.decodeField(name, field, structVal)
+		}
+	}
+}
+
+func (s *structDecodeState) decodeField(name string, field *plannedField, structVal reflect.Value) {
+	fieldName := field.name
+	fieldValue := structVal.Field(field.index)
+
+	value, sourceKey, ok := s.source.get(fieldName)
+	if !ok {
+		lookup := fieldName
+		if s.decoder.option.KeyReplacer != nil {
+			lookup = s.decoder.option.KeyReplacer.Replace(lookup)
+		}
+		value, sourceKey, ok = s.source.getFold(lookup, s.decoder.option.KeyReplacer)
+		if !ok {
+			if !field.omitempty {
+				s.missing = append(s.missing, lookup)
+			}
+			return
+		}
+		fieldName = lookup
+	}
+
+	if s.unused != nil {
+		delete(s.unused, sourceKey)
+	}
+	if !fieldValue.CanSet() {
+		return
+	}
+	if name != "" {
+		fieldName = name + "." + fieldName
+	}
+	if err := s.decoder.decode(fieldName, value, fieldValue); err != nil {
+		s.errors = append(s.errors, err.Error())
+	}
 }
 
 func (d *Decoder) setInterface(name string, data any, val reflect.Value) (err error) {

@@ -1,0 +1,6 @@
+BenchmarkParseConfig/proxies=200-16	100	7555410 ns/op	3667745 B/op	38926 allocs/op
+BenchmarkParseConfig/proxies=200-16	100	7452338 ns/op	3668183 B/op	38927 allocs/op
+BenchmarkParseConfig/proxies=200-16	100	7398946 ns/op	3667800 B/op	38926 allocs/op
+BenchmarkParseConfig/proxies=800-16	100	26274241 ns/op	14123160 B/op	154650 allocs/op
+BenchmarkParseConfig/proxies=800-16	100	28628806 ns/op	14123220 B/op	154649 allocs/op
+BenchmarkParseConfig/proxies=800-16	100	25515586 ns/op	14123124 B/op	154650 allocs/op
