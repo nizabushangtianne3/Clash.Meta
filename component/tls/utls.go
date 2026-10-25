@@ -152,7 +152,7 @@ func tlsConnectionState(state utls.ConnectionState) (tlsState tls.ConnectionStat
 		CipherSuite:       state.CipherSuite,
 		//CurveID:                     state.CurveID,
 		NegotiatedProtocol:          state.NegotiatedProtocol,
-		NegotiatedProtocolIsMutual:  state.NegotiatedProtocolIsMutual,
+		NegotiatedProtocolIsMutual:  true,
 		ServerName:                  state.ServerName,
 		PeerCertificates:            state.PeerCertificates,
 		VerifiedChains:              state.VerifiedChains,
