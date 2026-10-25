@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func newTestFakeIPPool(test *testing.T, prefix string) *fakeip.Pool {
+func newTestFakeIPPool(test testing.TB, prefix string) *fakeip.Pool {
 	test.Helper()
 	pool, err := fakeip.New(fakeip.Options{
 		IPNet: netip.MustParsePrefix(prefix),
