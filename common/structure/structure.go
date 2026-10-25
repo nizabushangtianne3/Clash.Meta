@@ -24,7 +24,7 @@ var DefaultKeyReplacer = strings.NewReplacer("_", "-")
 
 // Decoder is the core of structure
 type Decoder struct {
-	option *Option
+	option Option
 }
 
 // NewDecoder return a Decoder by Option
@@ -32,7 +32,7 @@ func NewDecoder(option Option) *Decoder {
 	if option.TagName == "" {
 		option.TagName = "structure"
 	}
-	return &Decoder{option: &option}
+	return &Decoder{option: option}
 }
 
 // Decode transform a map[string]any to a struct
@@ -270,16 +270,12 @@ func (d *Decoder) decodeSlice(name string, data any, val reflect.Value) error {
 		return fmt.Errorf("'%s' is not a slice", name)
 	}
 
-	valSlice := val
-	// make a new slice with cap(val)==cap(dataVal)
-	// the caller can determine whether the original configuration contains this item by judging whether the value is nil.
-	valSlice = reflect.MakeSlice(valType, 0, dataVal.Len())
+	// a slice of the input's length, so the caller can tell an absent item
+	// from an empty one by whether the field is still nil.
+	valSlice := reflect.MakeSlice(valType, dataVal.Len(), dataVal.Len())
 	for i := 0; i < dataVal.Len(); i++ {
 		currentData := dataVal.Index(i).Interface()
-		for valSlice.Len() <= i {
-			valSlice = reflect.Append(valSlice, reflect.Zero(valElemType))
-		}
-		fieldName := fmt.Sprintf("%s[%d]", name, i)
+		fieldName := name + "[" + strconv.Itoa(i) + "]"
 		if currentData == nil {
 			// in weakly type mode, null will convert to zero value
 			if d.option.WeaklyTypedInput {
@@ -341,17 +337,22 @@ func (d *Decoder) decodeMapFromMap(name string, dataVal reflect.Value, val refle
 	}
 
 	for _, k := range dataVal.MapKeys() {
-		fieldName := fmt.Sprintf("%s[%s]", name, k)
+		key := k.Interface()
+		text, ok := key.(string)
+		if !ok {
+			text = fmt.Sprintf("%s", key)
+		}
+		fieldName := name + "[" + text + "]"
 
 		currentKey := reflect.Indirect(reflect.New(valKeyType))
-		if err := d.decode(fieldName, k.Interface(), currentKey); err != nil {
+		if err := d.decode(fieldName, key, currentKey); err != nil {
 			errors = append(errors, err.Error())
 			continue
 		}
 
 		v := dataVal.MapIndex(k).Interface()
 		if v == nil {
-			errors = append(errors, fmt.Sprintf("filed %s invalid", fieldName))
+			errors = append(errors, "filed "+fieldName+" invalid")
 			continue
 		}
 

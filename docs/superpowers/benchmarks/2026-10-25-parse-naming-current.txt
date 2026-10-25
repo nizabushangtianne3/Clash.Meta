@@ -1,0 +1,10 @@
+BenchmarkParseConfig/proxies=200-16	100	4597982 ns/op	1480118 B/op	23547 allocs/op
+BenchmarkParseConfig/proxies=200-16	100	4653173 ns/op	1479390 B/op	23547 allocs/op
+BenchmarkParseConfig/proxies=200-16	100	4643182 ns/op	1479498 B/op	23548 allocs/op
+BenchmarkParseConfig/proxies=200-16	100	4576214 ns/op	1479750 B/op	23548 allocs/op
+BenchmarkParseConfig/proxies=200-16	100	4552417 ns/op	1479655 B/op	23548 allocs/op
+BenchmarkParseConfig/proxies=800-16	100	13264702 ns/op	5466416 B/op	93171 allocs/op
+BenchmarkParseConfig/proxies=800-16	100	14388263 ns/op	5465903 B/op	93171 allocs/op
+BenchmarkParseConfig/proxies=800-16	100	13158938 ns/op	5465368 B/op	93170 allocs/op
+BenchmarkParseConfig/proxies=800-16	100	13485423 ns/op	5465133 B/op	93169 allocs/op
+BenchmarkParseConfig/proxies=800-16	100	14371159 ns/op	5465460 B/op	93170 allocs/op
