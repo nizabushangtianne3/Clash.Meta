@@ -1,0 +1,42 @@
+= Proxy.URLTest over the direct dialer, one HEAD per node test
+# 3000 iterations per run, five runs per side, go1.26.0 windows/amd64
+                    │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-26-url-test-baseline.txt │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-26-url-test-current.txt │
+                    │                                                             sec/op                                                             │                                                 sec/op                                                  vs base               │
+ProxyURLTestHTTP-16                                                                                                                     238.1µ ± ∞ ¹                                                                                             194.6µ ± ∞ ¹  -18.28% (p=0.008 n=5)
+¹ need >= 6 samples for confidence interval at level 0.95
+
+                    │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-26-url-test-baseline.txt │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-26-url-test-current.txt │
+                    │                                                              B/op                                                              │                                                  B/op                                                   vs base               │
+ProxyURLTestHTTP-16                                                                                                                    22.53Ki ± ∞ ¹                                                                                            11.93Ki ± ∞ ¹  -47.06% (p=0.008 n=5)
+¹ need >= 6 samples for confidence interval at level 0.95
+
+                    │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-26-url-test-baseline.txt │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-26-url-test-current.txt │
+                    │                                                           allocs/op                                                            │                                               allocs/op                                                 vs base               │
+ProxyURLTestHTTP-16                                                                                                                     163.00 ± ∞ ¹                                                                                              98.00 ± ∞ ¹  -39.88% (p=0.008 n=5)
+¹ need >= 6 samples for confidence interval at level 0.95
+= the host connection view, encoding it after enums append instead of boxing
+# 5000 iterations per run, three runs per side, go1.26.0 windows/amd64
+                                          │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-26-enum-append-baseline.txt │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-26-enum-append-current.txt │
+                                          │                                                              sec/op                                                               │                                                  sec/op                                                   vs base                │
+ManagerSnapshotEncoded/connections=100-16                                                                                                                        278.6µ ± ∞ ¹                                                                                               249.5µ ± ∞ ¹       ~ (p=0.100 n=3) ²
+ManagerSnapshotEncoded/connections=500-16                                                                                                                        1.441m ± ∞ ¹                                                                                               1.695m ± ∞ ¹       ~ (p=0.400 n=3) ²
+geomean                                                                                                                                                          633.6µ                                                                                                     650.2µ        +2.62%
+¹ need >= 6 samples for confidence interval at level 0.95
+² need >= 4 samples to detect a difference at alpha level 0.05
+
+                                          │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-26-enum-append-baseline.txt │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-26-enum-append-current.txt │
+                                          │                                                               B/op                                                                │                                                   B/op                                                    vs base                │
+ManagerSnapshotEncoded/connections=100-16                                                                                                                       73.80Ki ± ∞ ¹                                                                                              72.90Ki ± ∞ ¹       ~ (p=0.100 n=3) ²
+ManagerSnapshotEncoded/connections=500-16                                                                                                                       417.5Ki ± ∞ ¹                                                                                              410.3Ki ± ∞ ¹       ~ (p=0.400 n=3) ²
+geomean                                                                                                                                                         175.5Ki                                                                                                    172.9Ki        -1.47%
+¹ need >= 6 samples for confidence interval at level 0.95
+² need >= 4 samples to detect a difference at alpha level 0.05
+
+                                          │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-26-enum-append-baseline.txt │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-26-enum-append-current.txt │
+                                          │                                                             allocs/op                                                             │                                                allocs/op                                                 vs base                 │
+ManagerSnapshotEncoded/connections=100-16                                                                                                                         603.0 ± ∞ ¹                                                                                               503.0 ± ∞ ¹        ~ (p=0.100 n=3) ²
+ManagerSnapshotEncoded/connections=500-16                                                                                                                        3.004k ± ∞ ¹                                                                                              2.504k ± ∞ ¹        ~ (p=0.100 n=3) ²
+geomean                                                                                                                                                          1.346k                                                                                                    1.122k        -16.61%
+¹ need >= 6 samples for confidence interval at level 0.95
+² need >= 4 samples to detect a difference at alpha level 0.05
+raw runs: 2026-10-26-url-test-{baseline,current}.txt and 2026-10-26-enum-append-{baseline,current}.txt

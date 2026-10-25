@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 	"github.com/metacubex/mihomo/log"
 
 	"github.com/metacubex/http"
+	"github.com/metacubex/tls"
 )
 
 var UnifiedDelay = atomic.NewBool(false)
@@ -167,6 +169,54 @@ func (p *Proxy) MarshalJSON() ([]byte, error) {
 	return json.Marshal(mapping)
 }
 
+type urlTestExchange struct {
+	conn   net.Conn
+	writer *bufio.Writer
+	reader *bufio.Reader
+}
+
+func newURLTestExchange(ctx context.Context, conn net.Conn, serverName string, secure bool, tlsConfig *tls.Config) (*urlTestExchange, error) {
+	if err := setURLTestDeadline(ctx, conn); err != nil {
+		return nil, err
+	}
+	if secure {
+		if tlsConfig.ServerName == "" {
+			tlsConfig.ServerName = serverName
+		}
+		tlsConn := tls.Client(conn, tlsConfig)
+		if err := tlsConn.HandshakeContext(ctx); err != nil {
+			return nil, err
+		}
+		conn = tlsConn
+	}
+	return &urlTestExchange{
+		conn:   conn,
+		writer: bufio.NewWriterSize(conn, 512),
+		reader: bufio.NewReaderSize(conn, 4096),
+	}, nil
+}
+
+func (e *urlTestExchange) Do(req *http.Request) (*http.Response, error) {
+	if err := setURLTestDeadline(req.Context(), e.conn); err != nil {
+		return nil, err
+	}
+	if err := req.Write(e.writer); err != nil {
+		return nil, err
+	}
+	if err := e.writer.Flush(); err != nil {
+		return nil, err
+	}
+	return http.ReadResponse(e.reader, req)
+}
+
+func setURLTestDeadline(ctx context.Context, conn net.Conn) error {
+	deadline := time.Now().Add(30 * time.Second)
+	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+		deadline = ctxDeadline
+	}
+	return conn.SetDeadline(deadline)
+}
+
 // URLTest get the delay for the specified URL
 // implements C.Proxy
 func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.IntRanges[uint16]) (t uint16, err error) {
@@ -227,40 +277,21 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 		_ = instance.Close()
 	}()
 
-	req, err := http.NewRequest(http.MethodHead, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
 	if err != nil {
 		return
 	}
-	req = req.WithContext(ctx)
 
 	tlsConfig, err := ca.GetTLSConfig(ca.Option{})
 	if err != nil {
 		return
 	}
 
-	transport := &http.Transport{
-		DialContext: func(context.Context, string, string) (net.Conn, error) {
-			return instance, nil
-		},
-		// from http.DefaultTransport
-		MaxIdleConns:          100,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
-		TLSClientConfig:       tlsConfig,
+	exchange, err := newURLTestExchange(ctx, instance, req.URL.Hostname(), req.URL.Scheme == "https", tlsConfig)
+	if err != nil {
+		return
 	}
-
-	client := http.Client{
-		Timeout:   30 * time.Second,
-		Transport: transport,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
-
-	defer client.CloseIdleConnections()
-
-	resp, err := client.Do(req)
+	resp, err := exchange.Do(req)
 
 	if err != nil {
 		return
@@ -272,7 +303,7 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 		second := time.Now()
 		var ignoredErr error
 		var secondResp *http.Response
-		secondResp, ignoredErr = client.Do(req)
+		secondResp, ignoredErr = exchange.Do(req)
 		if ignoredErr == nil {
 			resp = secondResp
 			_ = resp.Body.Close()

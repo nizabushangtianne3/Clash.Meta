@@ -3,6 +3,7 @@ package adapter
 import (
 	"context"
 	"encoding/json"
+	"encoding/pem"
 	"net"
 	stdhttp "net/http"
 	"net/http/httptest"
@@ -10,16 +11,17 @@ import (
 
 	"github.com/metacubex/mihomo/adapter/outbound"
 	"github.com/metacubex/mihomo/common/utils"
+	"github.com/metacubex/mihomo/component/ca"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func testStatusServer(t *testing.T, status int) *httptest.Server {
-	t.Helper()
+func testStatusServer(tb testing.TB, status int) *httptest.Server {
+	tb.Helper()
 	server := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		w.WriteHeader(status)
 	}))
-	t.Cleanup(server.Close)
+	tb.Cleanup(server.Close)
 	return server
 }
 
@@ -123,4 +125,43 @@ func TestProxyMarshalJSONCarriesDelayState(t *testing.T) {
 	assert.Equal(t, true, mapping["alive"])
 	assert.Contains(t, mapping, "history")
 	assert.Contains(t, mapping, "extra")
+}
+
+func BenchmarkProxyURLTestHTTP(b *testing.B) {
+	server := testStatusServer(b, stdhttp.StatusNoContent)
+	proxy := testProxy()
+	ctx := context.Background()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := proxy.URLTest(ctx, server.URL, nil); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func TestProxyURLTestUsesTLSAndSendsTheUnifiedDelaySecondRequest(t *testing.T) {
+	requests := make(chan *stdhttp.Request, 2)
+	server := httptest.NewTLSServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+		requests <- r
+		w.WriteHeader(stdhttp.StatusNoContent)
+	}))
+	t.Cleanup(server.Close)
+
+	certificate := server.Certificate()
+	require.NotNil(t, certificate)
+	certificatePEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certificate.Raw})
+	require.NoError(t, ca.AddCertificate(string(certificatePEM)))
+	t.Cleanup(ca.ResetCertificate)
+
+	previousUnifiedDelay := UnifiedDelay.Load()
+	UnifiedDelay.Store(true)
+	t.Cleanup(func() { UnifiedDelay.Store(previousUnifiedDelay) })
+
+	proxy := testProxy()
+	_, err := proxy.URLTest(context.Background(), server.URL, nil)
+	require.NoError(t, err)
+	assert.True(t, proxy.AliveForTestUrl(server.URL))
+	assert.Len(t, requests, 2)
 }

@@ -1,0 +1,5 @@
+BenchmarkProxyURLTestHTTP-16	3000	195995 ns/op	12224 B/op	98 allocs/op
+BenchmarkProxyURLTestHTTP-16	3000	196367 ns/op	12218 B/op	98 allocs/op
+BenchmarkProxyURLTestHTTP-16	3000	191479 ns/op	12190 B/op	98 allocs/op
+BenchmarkProxyURLTestHTTP-16	3000	194017 ns/op	12214 B/op	98 allocs/op
+BenchmarkProxyURLTestHTTP-16	3000	194557 ns/op	12182 B/op	97 allocs/op
