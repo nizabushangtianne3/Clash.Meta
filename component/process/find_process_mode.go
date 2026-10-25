@@ -37,7 +37,11 @@ func (m *FindProcessMode) Set(value string) error {
 
 // MarshalText serialize FindProcessMode
 func (m FindProcessMode) MarshalText() ([]byte, error) {
-	return []byte(m.String()), nil
+	return m.AppendText(nil)
+}
+
+func (m FindProcessMode) AppendText(text []byte) ([]byte, error) {
+	return append(text, m.String()...), nil
 }
 
 func (m FindProcessMode) String() string {

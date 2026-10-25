@@ -33,7 +33,11 @@ func (e *DNSMode) UnmarshalText(data []byte) error {
 
 // MarshalText serialize EnhancedMode
 func (e DNSMode) MarshalText() ([]byte, error) {
-	return []byte(e.String()), nil
+	return e.AppendText(nil)
+}
+
+func (e DNSMode) AppendText(text []byte) ([]byte, error) {
+	return append(text, e.String()...), nil
 }
 
 func (e DNSMode) String() string {
@@ -87,7 +91,11 @@ func (d DNSPrefer) String() string {
 }
 
 func (d DNSPrefer) MarshalText() ([]byte, error) {
-	return []byte(d.String()), nil
+	return d.AppendText(nil)
+}
+
+func (d DNSPrefer) AppendText(text []byte) ([]byte, error) {
+	return append(text, d.String()...), nil
 }
 
 func (d *DNSPrefer) UnmarshalText(data []byte) error {
@@ -128,7 +136,11 @@ func (e FilterMode) String() string {
 }
 
 func (e FilterMode) MarshalText() ([]byte, error) {
-	return []byte(e.String()), nil
+	return e.AppendText(nil)
+}
+
+func (e FilterMode) AppendText(text []byte) ([]byte, error) {
+	return append(text, e.String()...), nil
 }
 
 func (e *FilterMode) UnmarshalText(data []byte) error {
