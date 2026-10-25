@@ -377,6 +377,13 @@ func TestPlanDecodesConcurrently(t *testing.T) {
 	group.Wait()
 }
 
+func TestPlanSkipsFieldsItCannotSet(t *testing.T) {
+	target := &planUnexported{}
+	require.NoError(t, decoder.Decode(map[string]any{"value": "v", "internal": 7}, target))
+	assert.Equal(t, "v", target.Value)
+	assert.Zero(t, target.internal)
+}
+
 // A pointer field that is already allocated is decoded into what it points at.
 func TestPlanDecodesIntoAllocatedPointerField(t *testing.T) {
 	type Inner struct {

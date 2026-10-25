@@ -31,12 +31,12 @@ type counterStripe struct {
 	uploadTotal        atomic.Int64
 	proxyUploadTemp    atomic.Int64
 	proxyUploadTotal   atomic.Int64
-	uploadPad          [4]int64
+	_                  [4]int64
 	downloadTemp       atomic.Int64
 	downloadTotal      atomic.Int64
 	proxyDownloadTemp  atomic.Int64
 	proxyDownloadTotal atomic.Int64
-	stripePad          [4]int64
+	_                  [4]int64
 }
 
 const counterStripeCount = 32
