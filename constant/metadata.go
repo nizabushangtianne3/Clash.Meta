@@ -1,7 +1,6 @@
 package constant
 
 import (
-	"encoding/json"
 	"fmt"
 	"net"
 	"net/netip"
@@ -79,7 +78,7 @@ func (n NetWork) String() string {
 }
 
 func (n NetWork) MarshalJSON() ([]byte, error) {
-	return json.Marshal(n.String())
+	return strconv.AppendQuote(nil, n.String()), nil
 }
 
 type Type int
@@ -185,7 +184,7 @@ func ParseType(t string) (*Type, error) {
 }
 
 func (t Type) MarshalJSON() ([]byte, error) {
-	return json.Marshal(t.String())
+	return strconv.AppendQuote(nil, t.String()), nil
 }
 
 // Metadata is used to store connection address
