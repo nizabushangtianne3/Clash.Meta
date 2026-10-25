@@ -32,3 +32,25 @@ func BenchmarkServeMsgFakeIP(b *testing.B) {
 		}
 	}
 }
+
+// A query the pool has nothing for answers empty, which is what a skipped or
+// unsupported type pays for.
+func BenchmarkServeMsgFakeIPEmpty(b *testing.B) {
+	mapper := NewEnhancer(EnhancerConfig{
+		EnhancedMode:  C.DNSFakeIP,
+		FakeIPSkipper: &fakeip.Skipper{},
+	})
+	service := NewService(nil, mapper)
+	ctx := context.Background()
+
+	query := &D.Msg{}
+	query.SetQuestion(D.Fqdn("www.example.com"), D.TypeA)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := service.ServeMsg(ctx, query); err != nil {
+			b.Fatal(err)
+		}
+	}
+}

@@ -42,3 +42,31 @@ func TestFakeIPReplyCarriesTheQuestionAndEDNS0(t *testing.T) {
 	require.EqualValues(t, 4096, opt.UDPSize())
 	require.True(t, opt.Do())
 }
+
+// The empty answer carries the query's own header, question and EDNS0 record
+// too, so a lookup that gets nothing back still echoes all three.
+func TestFakeIPEmptyAnswerCarriesTheQuestionAndEDNS0(t *testing.T) {
+	mapper := NewEnhancer(EnhancerConfig{
+		EnhancedMode:  C.DNSFakeIP,
+		FakeIPSkipper: &fakeip.Skipper{},
+	})
+	service := NewService(nil, mapper)
+
+	query := &D.Msg{}
+	query.SetQuestion(D.Fqdn("www.example.com"), D.TypeA)
+	query.SetEdns0(4096, true)
+
+	reply, err := service.ServeMsg(context.Background(), query)
+	require.NoError(t, err)
+
+	require.Equal(t, query.Question[0], reply.Question[0])
+	require.Empty(t, reply.Answer)
+	require.True(t, reply.Response)
+	require.EqualValues(t, D.RcodeSuccess, reply.Rcode)
+	require.True(t, reply.RecursionAvailable)
+
+	opt := reply.IsEdns0()
+	require.NotNil(t, opt)
+	require.EqualValues(t, 4096, opt.UDPSize())
+	require.True(t, opt.Do())
+}
