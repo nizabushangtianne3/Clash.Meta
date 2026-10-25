@@ -73,6 +73,23 @@ func SetSrcSocksaddr(metadata *C.Metadata, addr M.Socksaddr) {
 	metadata.SrcPort = addr.Port
 }
 
+// SetDstSocksaddr applies the destination a listener stack carries. It arrives
+// as a Socksaddr, and handing it over as a net.Addr would box the struct on
+// every connection it sets; a name keeps the host the way the interface path
+// sets it, and an unset address leaves the metadata alone as that path does.
+func SetDstSocksaddr(metadata *C.Metadata, addr M.Socksaddr) error {
+	if addr.Port == 0 && !addr.Addr.IsValid() {
+		return metadata.SetRemoteAddress(addr.String())
+	}
+	metadata.DstPort = addr.Port
+	if addr.Addr.IsValid() {
+		metadata.DstIP = addr.Addr.Unmap()
+		return nil
+	}
+	metadata.Host = addr.Fqdn
+	return nil
+}
+
 func WithInAddr(addr net.Addr) Addition {
 	return func(metadata *C.Metadata) {
 		SetInAddr(metadata, addr)

@@ -105,6 +105,28 @@ func TestSetSrcSocksaddrMatchesSetSrcAddr(t *testing.T) {
 	require.Equal(t, viaInterface.SrcPort, direct.SrcPort)
 }
 
+// The stack hands the listener a Socksaddr, which the direct setter takes
+// without boxing it into a net.Addr; every destination shape it can carry
+// lands on the same fields the interface path sets.
+func TestSetDstSocksaddrMatchesSetRemoteAddr(t *testing.T) {
+	for _, socksaddr := range []M.Socksaddr{
+		M.SocksaddrFrom(netip.MustParseAddr("1.2.3.4"), 443),
+		M.SocksaddrFrom(netip.MustParseAddr("2001:db8::1"), 8443),
+		M.Socksaddr{Fqdn: "target.example.com", Port: 443},
+		M.SocksaddrFrom(netip.MustParseAddr("1.2.3.4"), 0),
+	} {
+		viaInterface := &C.Metadata{}
+		require.NoError(t, viaInterface.SetRemoteAddr(socksaddr))
+
+		direct := &C.Metadata{}
+		require.NoError(t, SetDstSocksaddr(direct, socksaddr))
+
+		require.Equal(t, viaInterface.DstIP, direct.DstIP, "%v", socksaddr)
+		require.Equal(t, viaInterface.DstPort, direct.DstPort, "%v", socksaddr)
+		require.Equal(t, viaInterface.Host, direct.Host, "%v", socksaddr)
+	}
+}
+
 func TestSetSrcSocksaddrLeavesANameAlone(t *testing.T) {
 	socksaddr := M.Socksaddr{Fqdn: "client.example.com", Port: 5353}
 	metadata := &C.Metadata{}
