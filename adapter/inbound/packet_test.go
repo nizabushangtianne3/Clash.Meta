@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	C "github.com/metacubex/mihomo/constant"
+	M "github.com/metacubex/sing/common/metadata"
 	"github.com/metacubex/mihomo/transport/socks5"
 	"github.com/stretchr/testify/require"
 )
@@ -86,6 +87,31 @@ func TestSetInAddrMatchesWithInAddr(t *testing.T) {
 
 	require.Equal(t, viaClosure.InIP, direct.InIP)
 	require.Equal(t, viaClosure.InPort, direct.InPort)
+}
+
+// The stack hands the listener a Socksaddr, which the direct setter takes
+// without boxing it into a net.Addr; the fields it applies are the same ones.
+func TestSetSrcSocksaddrMatchesSetSrcAddr(t *testing.T) {
+	socksaddr := M.SocksaddrFrom(netip.MustParseAddr("192.168.1.2"), 5353)
+	addr := net.UDPAddrFromAddrPort(netip.AddrPortFrom(socksaddr.Addr, socksaddr.Port))
+
+	viaInterface := &C.Metadata{}
+	SetSrcAddr(viaInterface, addr)
+
+	direct := &C.Metadata{}
+	SetSrcSocksaddr(direct, socksaddr)
+
+	require.Equal(t, viaInterface.SrcIP, direct.SrcIP)
+	require.Equal(t, viaInterface.SrcPort, direct.SrcPort)
+}
+
+func TestSetSrcSocksaddrLeavesANameAlone(t *testing.T) {
+	socksaddr := M.Socksaddr{Fqdn: "client.example.com", Port: 5353}
+	metadata := &C.Metadata{}
+	SetSrcSocksaddr(metadata, socksaddr)
+
+	require.Equal(t, netip.Addr{}, metadata.SrcIP)
+	require.EqualValues(t, 0, metadata.SrcPort)
 }
 
 // NewPacket must not allocate a closure or a destination address per packet.

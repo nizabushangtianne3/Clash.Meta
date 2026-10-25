@@ -3,6 +3,8 @@ package inbound
 import (
 	"net"
 
+	M "github.com/metacubex/sing/common/metadata"
+
 	C "github.com/metacubex/mihomo/constant"
 )
 
@@ -58,6 +60,17 @@ func SetSrcAddr(metadata *C.Metadata, addr net.Addr) {
 		metadata.SrcIP = m.DstIP
 		metadata.SrcPort = m.DstPort
 	}
+}
+
+// SetSrcSocksaddr applies the source fields from the address a listener stack
+// carries. That address arrives as a Socksaddr, and handing it over as a
+// net.Addr would box the struct on every connection it sets.
+func SetSrcSocksaddr(metadata *C.Metadata, addr M.Socksaddr) {
+	if !addr.Addr.IsValid() { // the interface path leaves a name's fields alone
+		return
+	}
+	metadata.SrcIP = addr.Addr.Unmap()
+	metadata.SrcPort = addr.Port
 }
 
 func WithInAddr(addr net.Addr) Addition {

@@ -138,7 +138,7 @@ func (h *ListenerHandler) NewConnection(ctx context.Context, conn net.Conn, meta
 		Type:    h.Type,
 	}
 	_ = cMetadata.SetRemoteAddr(metadata.Destination)
-	inbound.SetSrcAddr(cMetadata, metadata.Source)
+  inbound.SetSrcSocksaddr(cMetadata, metadata.Source)
 	inbound.SetInAddr(cMetadata, conn.LocalAddr())
 	inbound.ApplyAdditions(cMetadata, h.Additions...)
 	inbound.ApplyAdditions(cMetadata, getAdditions(ctx)...)
@@ -230,7 +230,7 @@ func (h *ListenerHandler) buildPacketMetadata(ctx context.Context, cPacket *pack
 		Type:    h.Type,
 	}
 	_ = cMetadata.SetRemoteAddr(destination)
-	inbound.SetSrcAddr(cMetadata, source)
+  inbound.SetSrcSocksaddr(cMetadata, source)
 	inbound.SetInAddr(cMetadata, cPacket.InAddr())
 	inbound.ApplyAdditions(cMetadata, h.Additions...)
 	inbound.ApplyAdditions(cMetadata, getAdditions(ctx)...)
