@@ -6,13 +6,13 @@ import (
 	"errors"
 	"io"
 	"net"
-	"net/netip"
 	"strings"
 	"time"
 
 	"github.com/metacubex/mihomo/adapter/inbound"
 	N "github.com/metacubex/mihomo/common/net"
 	"github.com/metacubex/mihomo/common/pool"
+	"github.com/metacubex/mihomo/common/utils"
 	C "github.com/metacubex/mihomo/constant"
 	LC "github.com/metacubex/mihomo/listener/config"
 	"github.com/metacubex/mihomo/listener/inner"
@@ -146,7 +146,8 @@ func (l *Listener) handleConn(conn net.Conn, tunnel C.Tunnel, additions ...inbou
 				_ = stream.Close()
 				continue
 			}
-			go l.handler.HandleSocket(targetAddr, stream, additions...)
+			// mux streams ignore deadlines, so the 200ms sniff peek of a server-speaks-first target would never end
+			go l.handler.HandleSocket(targetAddr, N.NewDeadlineConn(stream), additions...)
 		}
 	default:
 		targetAddr := socks5.ParseAddr(session.Target)
@@ -167,94 +168,52 @@ func wrapSessionConn(conn net.Conn) net.Conn {
 }
 
 func (l *Listener) handleUoTSession(conn net.Conn, tunnel C.Tunnel, additions ...inbound.Addition) {
-	session := uotSession{
-		writer:    sudoku.NewUoTPacketConn(conn),
-		source:    N.AddrPortFromNetAddr(conn.RemoteAddr()),
-		tunnel:    tunnel,
-		additions: additions,
-	}
+	writer := sudoku.NewUoTPacketConn(conn)
+	reader := sudoku.NewUoTReader(conn)
+	remoteAddr := conn.RemoteAddr()
+	connID := utils.NewUUIDV4().String() // make a new SNAT key
 
 	for {
-		target, payload, err := sudoku.ReadDatagram(conn)
+		target, payload, err := reader.ReadDatagram()
 		if err != nil {
-			if errors.Is(err, sudoku.ErrAddrNotRepresentable) {
-				if log.DebugEnabled() {
-					log.Debugln("[Sudoku][UoT] drop datagram with a non-IP target")
-				}
-				continue
-			}
 			if !errors.Is(err, io.EOF) {
-				if log.DebugEnabled() {
-					log.Debugln("[Sudoku][UoT] session closed: %v", err)
-				}
+				log.Debugln("[Sudoku][UoT] session closed: %v", err)
 			}
 			_ = conn.Close()
 			return
 		}
-		session.handle(target, payload)
-	}
-}
 
-const uotFlowCacheSize = 256
-
-// uotSession keeps one metadata per destination, so only the first datagram of
-// a flow pays to parse one.
-type uotSession struct {
-	writer    *sudoku.UoTPacketConn
-	source    netip.AddrPort
-	tunnel    C.Tunnel
-	additions []inbound.Addition
-	flows     map[netip.AddrPort]*C.Metadata
-}
-
-func (s *uotSession) handle(target netip.AddrPort, payload []byte) {
-	metadata, ok := s.flows[target]
-	packet := &uotPacket{
-		payload: payload,
-		writer:  s.writer,
-		source:  s.source,
-	}
-	if !ok {
-		if s.flows == nil {
-			s.flows = make(map[netip.AddrPort]*C.Metadata, 8)
-		} else if len(s.flows) >= uotFlowCacheSize {
-			clear(s.flows)
+		cPacket := &uotPacket{
+			payload: payload,
+			writer:  writer,
+			rAddr:   remoteAddr,
 		}
-		_, metadata = inbound.NewPacketFromAddrPort(target, packet, C.SUDOKU, s.additions...)
-		s.flows[target] = metadata
+		cPacket.rAddr = N.NewCustomAddr(C.SUDOKU.String(), connID, cPacket.rAddr) // for tunnel's handleUDPConn
+		tunnel.HandleUDPPacket(inbound.NewPacket(target, cPacket, C.SUDOKU, additions...))
 	}
-	s.tunnel.HandleUDPPacket(packet, metadata)
 }
 
 type uotPacket struct {
 	payload []byte
 	writer  *sudoku.UoTPacketConn
-	source  netip.AddrPort
+	rAddr   net.Addr
 }
 
 func (p *uotPacket) Data() []byte {
 	return p.payload
 }
 
-// FlowKey returns the source address the tunnel keys this packet's flow by.
-func (p *uotPacket) FlowKey() netip.AddrPort {
-	return p.source
-}
-
-func (p *uotPacket) WriteBack(b []byte, addr netip.AddrPort) (int, error) {
-	return p.writer.WriteToAddrPort(b, addr)
+func (p *uotPacket) WriteBack(b []byte, addr net.Addr) (int, error) {
+	return p.writer.WriteTo(b, addr)
 }
 
 func (p *uotPacket) Drop() {
-	if p.payload == nil {
-		return
-	}
 	_ = pool.Put(p.payload)
 	p.payload = nil
 }
 
 func (p *uotPacket) LocalAddr() net.Addr {
-	return net.UDPAddrFromAddrPort(p.source)
+	return p.rAddr
 }
 
 func relayToFallback(wrapper net.Conn, rawConn net.Conn, fallback net.Conn) {
