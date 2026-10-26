@@ -362,10 +362,11 @@ func (m *Metadata) SetRemoteAddress(rawAddress string) error {
 		return err
 	}
 
-	var uint16Port uint16
-	if port, err := strconv.ParseUint(port, 10, 16); err == nil {
-		uint16Port = uint16(port)
+	uint64Port, err := strconv.ParseUint(port, 10, 16)
+	if err != nil {
+		return err
 	}
+	uint16Port := uint16(uint64Port)
 
 	if ip, err := netip.ParseAddr(host); err != nil {
 		m.Host = host
