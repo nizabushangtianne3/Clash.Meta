@@ -3,6 +3,7 @@ package inbound
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/metacubex/mihomo/adapter/inbound"
 	"github.com/metacubex/mihomo/common/utils"
@@ -81,9 +82,12 @@ func (m *Mieru) Listen(tunnel C.Tunnel) error {
 			if err != nil {
 				if !m.server.IsRunning() {
 					break
-				} else {
-					continue
 				}
+				// Accepting failed while the server still runs: a broken
+				// handshake is abandoned by the peer, and retrying straight
+				// away would take a core from the connections already served.
+				time.Sleep(10 * time.Millisecond)
+				continue
 			}
 			go mieru.Handle(c, tunnel, req, additions...)
 		}
