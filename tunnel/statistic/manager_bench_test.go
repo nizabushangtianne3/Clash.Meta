@@ -1,11 +1,10 @@
 package statistic
 
 import (
-	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/netip"
-	"fmt"
 	"testing"
 
 	C "github.com/metacubex/mihomo/constant"
@@ -166,18 +165,21 @@ func BenchmarkManagerSnapshot(b *testing.B) {
 }
 
 func BenchmarkManagerSnapshotEncoded(b *testing.B) {
+	// The document the router writers build. The websocket writer reuses its
+	// buffer between polls, which is the steady state the table is polled in.
 	for _, count := range []int{100, 500} {
 		b.Run(fmt.Sprintf("connections=%d", count), func(b *testing.B) {
 			manager := benchmarkManagerWithConnections(b, count)
 
+			scratch := make([]byte, 0, 256+384*count)
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				data, err := json.Marshal(manager.Snapshot())
-				if err != nil {
-					b.Fatal(err)
-				}
-				_ = data
+				scratch = manager.Snapshot().AppendJSON(scratch[:0])
+			}
+			b.StopTimer()
+			if len(scratch) == 0 {
+				b.Fatal("empty")
 			}
 		})
 	}

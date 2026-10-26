@@ -33,11 +33,7 @@ func (e *TUNStack) UnmarshalText(data []byte) error {
 
 // MarshalText serialize TUNStack with json
 func (e TUNStack) MarshalText() ([]byte, error) {
-	return e.AppendText(nil)
-}
-
-func (e TUNStack) AppendText(text []byte) ([]byte, error) {
-	return append(text, e.String()...), nil
+	return []byte(e.String()), nil
 }
 
 func (e TUNStack) String() string {

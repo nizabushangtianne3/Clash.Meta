@@ -1,0 +1,22 @@
+pkg: github.com/metacubex/mihomo/tunnel/statistic
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+                                          │ 2026-10-26-connection-view-encoder-baseline.txt │ 2026-10-26-connection-view-encoder-current.txt │
+                                          │                     sec/op                      │         sec/op           vs base               │
+ManagerSnapshotEncoded/connections=100-16                                     334.42µ ± ∞ ¹              50.37µ ± ∞ ¹  -84.94% (p=0.008 n=5)
+ManagerSnapshotEncoded/connections=500-16                                     1872.6µ ± ∞ ¹              271.1µ ± ∞ ¹  -85.52% (p=0.008 n=5)
+geomean                                                                        791.3µ                    116.9µ        -85.23%
+¹ need >= 6 samples for confidence interval at level 0.95
+
+                                          │ 2026-10-26-connection-view-encoder-baseline.txt │ 2026-10-26-connection-view-encoder-current.txt │
+                                          │                      B/op                       │          B/op            vs base               │
+ManagerSnapshotEncoded/connections=100-16                                     83523.0 ± ∞ ¹               948.0 ± ∞ ¹  -98.86% (p=0.008 n=5)
+ManagerSnapshotEncoded/connections=500-16                                   437.982Ki ± ∞ ¹             4.248Ki ± ∞ ¹  -99.03% (p=0.008 n=5)
+geomean                                                                       189.0Ki                   1.983Ki        -98.95%
+¹ need >= 6 samples for confidence interval at level 0.95
+
+                                          │ 2026-10-26-connection-view-encoder-baseline.txt │ 2026-10-26-connection-view-encoder-current.txt │
+                                          │                    allocs/op                    │        allocs/op         vs base               │
+ManagerSnapshotEncoded/connections=100-16                                     903.000 ± ∞ ¹               2.000 ± ∞ ¹  -99.78% (p=0.008 n=5)
+ManagerSnapshotEncoded/connections=500-16                                    4504.000 ± ∞ ¹               2.000 ± ∞ ¹  -99.96% (p=0.008 n=5)
+geomean                                                                        2.017k                     2.000        -99.90%
+¹ need >= 6 samples for confidence interval at level 0.95
