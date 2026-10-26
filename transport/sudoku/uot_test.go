@@ -109,3 +109,53 @@ func BenchmarkUoTWriteBack(b *testing.B) {
 		}
 	})
 }
+
+// BenchmarkUoTFrameRoundTrip measures one datagram's whole wire step: the
+// frame is encoded by the writer and read back by the session's reader.
+func BenchmarkUoTFrameRoundTrip(b *testing.B) {
+	target := "1.2.3.4:53"
+	payload := []byte{1, 2, 3, 4, 5, 6, 7, 8}
+
+	b.Run("write", func(b *testing.B) {
+		var frame bytes.Buffer
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			frame.Reset()
+			if err := WriteDatagram(&frame, target, payload); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("read", func(b *testing.B) {
+		const framesPerBatch = 512
+
+		fill := func(frames *bytes.Buffer) *UoTReader {
+			frames.Reset()
+			for i := 0; i < framesPerBatch; i++ {
+				if err := WriteDatagram(frames, target, payload); err != nil {
+					b.Fatal(err)
+				}
+			}
+			return NewUoTReader(frames)
+		}
+
+		var frames bytes.Buffer
+		reader := fill(&frames)
+
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, got, err := reader.ReadDatagram()
+			if err != nil {
+				reader = fill(&frames)
+				_, got, err = reader.ReadDatagram()
+			}
+			if err != nil {
+				b.Fatal(err)
+			}
+			_ = pool.Put(got)
+		}
+	})
+}
