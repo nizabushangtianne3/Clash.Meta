@@ -667,11 +667,7 @@ func (c *Conn) flush() {
 			terminate = true
 		}
 		c.mu.Unlock()
-		c.writeSegments(segments)
-		c.releaseFlushSegments(segments)
-		if terminate {
-			c.terminate()
-		}
+		c.sendSegments(segments, terminate)
 		return
 	}
 	if c.state == statePeerTerminating && current-c.stateBegin > 4000 {
@@ -689,11 +685,7 @@ func (c *Conn) flush() {
 	terminate = c.state == stateTerminated
 	c.mu.Unlock()
 
-	c.writeSegments(segments)
-	c.releaseFlushSegments(segments)
-	if terminate {
-		c.terminate()
-	}
+	c.sendSegments(segments, terminate)
 }
 
 func (c *Conn) flushAcksLocked(current uint32, segments []segment) []segment {
@@ -795,10 +787,30 @@ func (c *Conn) flushSendLocked(current uint32, segments []segment) []segment {
 	return segments
 }
 
-func (c *Conn) writeSegments(segments []segment) {
-	for _, seg := range segments {
-		_ = c.writer.writeSegment(seg)
+// sendSegments writes the batch out, releases it, and ends the connection when
+// a write fails or the flush already decided to terminate. A socket that
+// refuses a write cannot carry this connection any further, and the peer would
+// otherwise sit on its own deadline waiting for segments that can never
+// arrive, so the failure is answered by tearing the connection down now.
+func (c *Conn) sendSegments(segments []segment, terminate bool) {
+	failed := c.writeSegments(segments) != nil
+	c.releaseFlushSegments(segments)
+	if failed || terminate {
+		c.terminate()
 	}
+}
+
+// writeSegments writes the batch in order and stops at the first failure. The
+// segment that failed is not retried here: it is still in the send window with
+// its timeout, and retrying it on a socket that just refused a write would
+// only burn another syscall.
+func (c *Conn) writeSegments(segments []segment) error {
+	for _, seg := range segments {
+		if err := c.writer.writeSegment(seg); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (c *Conn) newAckSegmentLocked() *ackSegment {
