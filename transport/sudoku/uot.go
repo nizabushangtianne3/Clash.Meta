@@ -155,6 +155,18 @@ func (c *UoTPacketConn) WriteTo(p []byte, addr net.Addr) (int, error) {
 	return len(p), nil
 }
 
+// WriteToAddrPort writes one datagram to an AddrPort destination. The UDP write-back
+// contract hands its address as a netip.AddrPort, so going straight to AppendAddrPort
+// spares the net.Addr the interface would allocate.
+func (c *UoTPacketConn) WriteToAddrPort(p []byte, addr netip.AddrPort) (int, error) {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	if err := writeDatagram(c.conn, p, func(b []byte) ([]byte, error) { return AppendAddrPort(b, addr), nil }); err != nil {
+		return 0, err
+	}
+	return len(p), nil
+}
+
 func (c *UoTPacketConn) Close() error {
 	return c.conn.Close()
 }

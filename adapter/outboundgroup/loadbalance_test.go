@@ -62,7 +62,7 @@ func TestLoadBalanceHashKeyInUserSurvivesADestinationChange(t *testing.T) {
 	// Distinct destination keys are the deterministic contract of the fallback
 	// key. Distinct keys may still legally land in the same consistent-hash
 	// bucket, so asserting on selected proxy indexes would make this test flaky.
-	seenKeys := map[string]struct{}{}
+	seenKeys := map[uint64]struct{}{}
 	for _, host := range hosts {
 		seenKeys[getKey(request("job-1", host))] = struct{}{}
 	}
@@ -77,7 +77,7 @@ func TestLoadBalanceHashKeyInUserKeepsUsersDistinct(t *testing.T) {
 	keyed := getKeyWithInUser(getKey)
 	users := []string{"job-1", "job-2", "job-3", "job-4", "job-5", "job-6"}
 
-	seenKeys := map[string]struct{}{}
+	seenKeys := map[uint64]struct{}{}
 	for _, user := range users {
 		seenKeys[keyed(request(user, "a.example.com"))] = struct{}{}
 	}
