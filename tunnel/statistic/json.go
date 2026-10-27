@@ -205,7 +205,10 @@ func appendJSONString(dst []byte, s string) []byte {
 		r, size := utf8.DecodeRuneInString(s[i:])
 		if r == utf8.RuneError && size == 1 {
 			dst = append(dst, s[start:i]...)
-			dst = append(dst, `\ufffd`...)
+			// encoding/json writes the replacement rune verbatim for
+			// ill-formed UTF-8; the escaped \ufffd spelling was the v1
+			// behaviour and would break a reader that compares widths.
+			dst = append(dst, "\uFFFD"...)
 			i += size
 			start = i
 			continue

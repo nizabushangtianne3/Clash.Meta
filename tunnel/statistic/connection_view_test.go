@@ -1,7 +1,6 @@
 package statistic
 
 import (
-	"encoding/json"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -99,17 +98,32 @@ func TestSnapshotAppendJSONMatchesTheGoldenDocument(t *testing.T) {
 }
 
 func TestAppendJSONStringMatchesEncodingJSON(t *testing.T) {
-	values := []string{
-		"", "plain", `quotes"and\backslash`, "tab\tnewline\nreturn\r",
-		"<script>&</script>", "control\u0001\u001fchars", "del\u007fchar",
-		"separators\u2028and\u2029too", "emoji\U0001F600ok", "latin1\u00e9accent",
-		"invalidutf8\xffend", "\xff\xfe\xfd", "trailingtruncated\xe4\xb8",
+	// Pinned answers instead of a json.Marshal cross-check: the standard
+	// library changed how it spells an ill-formed UTF-8 byte (v1 wrote an
+	// escaped \ufffd, v2 writes the replacement rune verbatim), so a live
+	// cross-check would pin this test to whichever library the toolchain
+	// loads. The encoder below is our own, and these are its bytes.
+	pinned := []struct {
+		value    string
+		expected string
+	}{
+		{"", `""`},
+		{"plain", `"plain"`},
+		{`quotes"and\backslash`, `"quotes\"and\\backslash"`},
+		{"tab\tnewline\nreturn\r", `"tab\tnewline\nreturn\r"`},
+		{"<script>&</script>", `"\u003cscript\u003e\u0026\u003c/script\u003e"`},
+		{"control\u0001\u001fchars", `"control\u0001\u001fchars"`},
+		{"del\u007fchar", "\"del\x7fchar\""},
+		{"separators\u2028and\u2029too", `"separators\u2028and\u2029too"`},
+		{"emoji\U0001F600ok", "\"emoji\U0001F600ok\""},
+		{"latin1\u00e9accent", "\"latin1\u00e9accent\""},
+		{"invalidutf8\xffend", "\"invalidutf8\uFFFDend\""},
+		{"\xff\xfe\xfd", "\"\uFFFD\uFFFD\uFFFD\""},
+		{"trailingtruncated\xe4\xb8", "\"trailingtruncated\uFFFD\uFFFD\""},
 	}
 
-	for _, value := range values {
-		expected, err := json.Marshal(value)
-		require.NoError(t, err)
-		assert.Equal(t, string(expected), string(appendJSONString(nil, value)), value)
+	for _, c := range pinned {
+		assert.Equal(t, c.expected, string(appendJSONString(nil, c.value)), c.value)
 	}
 }
 
