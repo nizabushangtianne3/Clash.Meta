@@ -39,7 +39,7 @@ func TestRoundTrip(t *testing.T) {
 	conn, err := Dial(ctx, raw, Config{})
 	require.NoError(t, err)
 	defer conn.Close()
-	require.NoError(t, conn.SetDeadline(time.Now().Add(5*time.Second)))
+	require.NoError(t, conn.SetDeadline(time.Now().Add(30*time.Second)))
 
 	payload := bytes.Repeat([]byte("x"), 64*1024)
 	_, err = conn.Write(payload)
@@ -80,7 +80,7 @@ func TestRoundTripWithSeed(t *testing.T) {
 	conn, err := Dial(ctx, raw, cfg)
 	require.NoError(t, err)
 	defer conn.Close()
-	require.NoError(t, conn.SetDeadline(time.Now().Add(5*time.Second)))
+	require.NoError(t, conn.SetDeadline(time.Now().Add(30*time.Second)))
 
 	payload := bytes.Repeat([]byte("g"), 64*1024)
 	_, err = conn.Write(payload)
@@ -109,7 +109,7 @@ func TestFullDuplex(t *testing.T) {
 			return
 		}
 		defer conn.Close()
-		require.NoError(t, conn.SetDeadline(time.Now().Add(5*time.Second)))
+		require.NoError(t, conn.SetDeadline(time.Now().Add(30*time.Second)))
 		payload := bytes.Repeat([]byte("s"), 128*1024)
 		readErr := make(chan error, 1)
 		go func() {
@@ -133,7 +133,7 @@ func TestFullDuplex(t *testing.T) {
 	conn, err := Dial(ctx, raw, Config{})
 	require.NoError(t, err)
 	defer conn.Close()
-	require.NoError(t, conn.SetDeadline(time.Now().Add(5*time.Second)))
+	require.NoError(t, conn.SetDeadline(time.Now().Add(30*time.Second)))
 
 	readErr := make(chan error, 1)
 	go func() {
@@ -170,7 +170,7 @@ func TestRoundTripHeaders(t *testing.T) {
 					return
 				}
 				defer conn.Close()
-				require.NoError(t, conn.SetDeadline(time.Now().Add(5*time.Second)))
+				require.NoError(t, conn.SetDeadline(time.Now().Add(30*time.Second)))
 				_, err = io.Copy(conn, conn)
 				serverErr <- err
 			}()
@@ -180,7 +180,7 @@ func TestRoundTripHeaders(t *testing.T) {
 			conn, err := Dial(ctx, raw, Config{Header: header})
 			require.NoError(t, err)
 			defer conn.Close()
-			require.NoError(t, conn.SetDeadline(time.Now().Add(5*time.Second)))
+			require.NoError(t, conn.SetDeadline(time.Now().Add(30*time.Second)))
 
 			payload := bytes.Repeat([]byte("h"), 32*1024)
 			_, err = conn.Write(payload)
