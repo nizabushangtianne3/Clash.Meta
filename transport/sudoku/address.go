@@ -1,6 +1,7 @@
 package sudoku
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -12,7 +13,52 @@ import (
 	"github.com/metacubex/mihomo/transport/socks5"
 )
 
-// EncodeAddress returns the SOCKS5 encoding of rawAddr ("host:port").
+// Address type tags of the KIP address form.
+const (
+	atypIPv4   byte = 0x01
+	atypDomain byte = 0x03
+	atypIPv6   byte = 0x04
+)
+
+// ErrAddrNotRepresentable reports an address field that is not an IP:port,
+// which is a domain target. The UoT relay is IP only because the client
+// resolves the destination before it writes.
+var ErrAddrNotRepresentable = errors.New("address is not an ip:port")
+
+// ReadAddrPortField reads one length-delimited address field as an AddrPort,
+// so the datagram path never formats a host:port string only to parse it back.
+// A field with no AddrPort form is consumed whole and reported as
+// ErrAddrNotRepresentable, which leaves the reader on the next frame.
+func ReadAddrPortField(r io.Reader, fieldLen int) (netip.AddrPort, error) {
+	var atyp [1]byte
+	if _, err := io.ReadFull(r, atyp[:]); err != nil {
+		return netip.AddrPort{}, err
+	}
+
+	var buf [net.IPv6len + 2]byte
+	size := -1
+	switch atyp[0] {
+	case atypIPv4:
+		size = net.IPv4len + 2
+	case atypIPv6:
+		size = net.IPv6len + 2
+	}
+	if size < 0 || fieldLen != 1+size {
+		if err := discardBytes(r, fieldLen-1); err != nil {
+			return netip.AddrPort{}, err
+		}
+		return netip.AddrPort{}, ErrAddrNotRepresentable
+	}
+	if _, err := io.ReadFull(r, buf[:size]); err != nil {
+		return netip.AddrPort{}, err
+	}
+	port := binary.BigEndian.Uint16(buf[size-2:])
+	if atyp[0] == atypIPv4 {
+		return netip.AddrPortFrom(netip.AddrFrom4([net.IPv4len]byte(buf[:net.IPv4len])), port), nil
+	}
+	return netip.AddrPortFrom(netip.AddrFrom16([net.IPv6len]byte(buf[:net.IPv6len])).Unmap(), port), nil
+}
+
 func EncodeAddress(rawAddr string) ([]byte, error) {
 	return AppendAddress(nil, rawAddr)
 }

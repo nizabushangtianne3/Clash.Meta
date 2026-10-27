@@ -19,9 +19,14 @@ import (
 // uotHeaderSize is u16 address length | u16 payload length.
 const uotHeaderSize = 4
 
-// WriteDatagram sends a single UDP datagram frame over a reliable stream.
-func WriteDatagram(w io.Writer, addr string, payload []byte) error {
-	return writeDatagram(w, payload, func(b []byte) ([]byte, error) { return AppendAddress(b, addr) })
+// WriteDatagram sends a single UDP datagram frame over a reliable stream. The
+// target is an AddrPort because the UoT relay is IP only: the client resolves
+// the destination before it writes.
+func WriteDatagram(w io.Writer, addr netip.AddrPort, payload []byte) error {
+	if !addr.IsValid() {
+		return errors.New("invalid target address")
+	}
+	return writeDatagram(w, payload, func(b []byte) ([]byte, error) { return AppendAddrPort(b, addr), nil })
 }
 
 // writeDatagram sends the whole frame with one write, so it is sealed as one record.
@@ -42,11 +47,17 @@ func writeDatagram(w io.Writer, payload []byte, appendAddr func([]byte) ([]byte,
 	return err
 }
 
-// UoTReader reads datagram frames from a UoT stream. The header and address are read into
-// scratch space owned by the reader, so a frame costs no allocation besides its payload.
+// ReadDatagram reads the next frame off a bare reader, for callers that hold no
+// long-lived reader of their own.
+func ReadDatagram(r io.Reader) (netip.AddrPort, []byte, error) {
+	return NewUoTReader(r).ReadDatagram()
+}
+
+// UoTReader reads datagram frames from a UoT stream. The address is read straight into an
+// AddrPort, so the datagram path never formats a host:port string only to parse it back.
 type UoTReader struct {
 	r   io.Reader
-	buf [uotHeaderSize + socks5.MaxAddrLen]byte
+	buf [uotHeaderSize]byte
 }
 
 func NewUoTReader(r io.Reader) *UoTReader {
@@ -54,45 +65,42 @@ func NewUoTReader(r io.Reader) *UoTReader {
 }
 
 // readHeader reads the next frame's header and address and leaves its payload (payloadLen bytes)
-// unread. addr is only valid until the next call.
-func (u *UoTReader) readHeader() (addr socks5.Addr, payloadLen int, err error) {
-	if _, err = io.ReadFull(u.r, u.buf[:uotHeaderSize]); err != nil {
-		return nil, 0, err
+// unread. A non-IP address field is consumed whole and reported as ErrAddrNotRepresentable,
+// which leaves the reader on the next frame.
+func (u *UoTReader) readHeader() (netip.AddrPort, int, error) {
+	if _, err := io.ReadFull(u.r, u.buf[:]); err != nil {
+		return netip.AddrPort{}, 0, err
 	}
 	addrLen := int(binary.BigEndian.Uint16(u.buf[:2]))
-	payloadLen = int(binary.BigEndian.Uint16(u.buf[2:]))
+	payloadLen := int(binary.BigEndian.Uint16(u.buf[2:]))
 	if addrLen == 0 {
-		return nil, 0, fmt.Errorf("invalid address length: %d", addrLen)
+		return netip.AddrPort{}, 0, fmt.Errorf("invalid address length: %d", addrLen)
 	}
-
-	// An encoded address is at most socks5.MaxAddrLen bytes; anything after it is padding.
-	n := addrLen
-	if n > socks5.MaxAddrLen {
-		n = socks5.MaxAddrLen
-	}
-	if _, err = io.ReadFull(u.r, u.buf[uotHeaderSize:uotHeaderSize+n]); err != nil {
-		return nil, 0, err
-	}
-	if err = discardBytes(u.r, addrLen-n); err != nil {
-		return nil, 0, err
-	}
-	if addr = socks5.SplitAddr(u.buf[uotHeaderSize : uotHeaderSize+n]); addr == nil {
-		return nil, 0, errors.New("decode address: invalid address")
+	addr, err := ReadAddrPortField(u.r, addrLen)
+	if err != nil {
+		if errors.Is(err, ErrAddrNotRepresentable) {
+			// Consume this frame's payload too, so a caller that drops the frame
+			// stays aligned for the next one.
+			if discardErr := discardBytes(u.r, payloadLen); discardErr != nil {
+				return netip.AddrPort{}, 0, discardErr
+			}
+		}
+		return netip.AddrPort{}, 0, err
 	}
 	return addr, payloadLen, nil
 }
 
-// ReadDatagram reads the next frame. addr is only valid until the next call; payload comes from
-// common/pool and must be released with pool.Put.
-func (u *UoTReader) ReadDatagram() (socks5.Addr, []byte, error) {
+// ReadDatagram reads the next frame. payload comes from common/pool and must be released
+// with pool.Put.
+func (u *UoTReader) ReadDatagram() (netip.AddrPort, []byte, error) {
 	addr, payloadLen, err := u.readHeader()
 	if err != nil {
-		return nil, nil, err
+		return netip.AddrPort{}, nil, err
 	}
 	payload := pool.Get(payloadLen)
 	if _, err := io.ReadFull(u.r, payload); err != nil {
 		_ = pool.Put(payload)
-		return nil, nil, err
+		return netip.AddrPort{}, nil, err
 	}
 	return addr, payload, nil
 }
@@ -110,24 +118,22 @@ func NewUoTPacketConn(conn net.Conn) *UoTPacketConn {
 
 func (c *UoTPacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
 	for {
-		addr, payloadLen, err := c.reader.readHeader()
+		addrPort, payloadLen, err := c.reader.readHeader()
 		if err != nil {
+			if errors.Is(err, ErrAddrNotRepresentable) {
+				// A domain target cannot name a UDP flow; readHeader already consumed
+				// the whole frame, so stay on the next one.
+				log.Debugln("[Sudoku][UoT] discard datagram with a non-IP target")
+				continue
+			}
 			return 0, nil, err
 		}
-
-		udpAddr, err := uotUDPAddr(addr)
+		udpAddr := net.UDPAddrFromAddrPort(addrPort)
 		if payloadLen > len(p) {
 			if discardErr := discardBytes(c.conn, payloadLen); discardErr != nil {
 				return 0, nil, discardErr
 			}
 			return 0, nil, io.ErrShortBuffer
-		}
-		if err != nil {
-			if discardErr := discardBytes(c.conn, payloadLen); discardErr != nil {
-				return 0, nil, discardErr
-			}
-			log.Debugln("[Sudoku][UoT] discard datagram with invalid address %s: %v", addr, err)
-			continue
 		}
 		if _, err := io.ReadFull(c.conn, p[:payloadLen]); err != nil {
 			return 0, nil, err
@@ -185,24 +191,6 @@ func (c *UoTPacketConn) SetReadDeadline(t time.Time) error {
 
 func (c *UoTPacketConn) SetWriteDeadline(t time.Time) error {
 	return c.conn.SetWriteDeadline(t)
-}
-
-// uotUDPAddr converts a datagram's peer to a *net.UDPAddr. Domain names are not resolved: only
-// the IP literals they may spell are accepted.
-func uotUDPAddr(addr socks5.Addr) (*net.UDPAddr, error) {
-	var ap netip.AddrPort
-	switch addr[0] {
-	case socks5.AtypIPv4:
-		ap = netip.AddrPortFrom(netip.AddrFrom4([4]byte(addr[1:5])), binary.BigEndian.Uint16(addr[5:]))
-	case socks5.AtypIPv6:
-		ap = netip.AddrPortFrom(netip.AddrFrom16([16]byte(addr[1:17])), binary.BigEndian.Uint16(addr[17:]))
-	default:
-		var err error
-		if ap, err = netip.ParseAddrPort(addr.String()); err != nil {
-			return nil, err
-		}
-	}
-	return net.UDPAddrFromAddrPort(netip.AddrPortFrom(ap.Addr().Unmap(), ap.Port())), nil
 }
 
 func discardBytes(r io.Reader, n int) error {
