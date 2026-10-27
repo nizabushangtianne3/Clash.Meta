@@ -218,7 +218,7 @@ func TestHTTPMaskTunnel_Poll_UoTRoundTrip(t *testing.T) {
 		if !bytes.Equal(gotPayload, payload) {
 			return fmt.Errorf("uot payload mismatch: %x", gotPayload)
 		}
-		if err := WriteDatagram(s.Conn, gotAddr, gotPayload); err != nil {
+		if err := WriteDatagram(s.Conn, netip.MustParseAddrPort(gotAddr), gotPayload); err != nil {
 			return fmt.Errorf("server write datagram: %w", err)
 		}
 		return nil
@@ -248,7 +248,7 @@ func TestHTTPMaskTunnel_Poll_UoTRoundTrip(t *testing.T) {
 	if err := WriteKIPMessage(cConn, KIPTypeStartUoT, nil); err != nil {
 		t.Fatalf("start uot: %v", err)
 	}
-	if err := WriteDatagram(cConn, target.String(), payload); err != nil {
+	if err := WriteDatagram(cConn, netip.MustParseAddrPort(target.String()), payload); err != nil {
 		t.Fatalf("write datagram: %v", err)
 	}
 	gotAddr, gotPayload, err := readTestDatagram(cConn)

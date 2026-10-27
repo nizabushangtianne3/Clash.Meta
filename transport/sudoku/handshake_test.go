@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"sync"
 	"testing"
 	"time"
@@ -222,12 +223,14 @@ func runPackedTCPSession(id int, cfg *ProtocolConfig, errCh chan<- error) {
 }
 
 func runPackedUoTSession(id int, cfg *ProtocolConfig, errCh chan<- error) {
+
 	serverConn, clientConn, err := newSocketPair()
 	if err != nil {
 		errCh <- err
 		return
 	}
-	target := "8.8.8.8:53"
+	target := netip.MustParseAddrPort("8.8.8.8:53")
+
 	payload := []byte{0xaa, byte(id)}
 
 	serverErr := make(chan error, 1)
@@ -275,7 +278,7 @@ func runPackedUoTSession(id int, cfg *ProtocolConfig, errCh chan<- error) {
 		errCh <- fmt.Errorf("client read datagram: %w", err)
 		return
 	}
-	if addr != target {
+	if addr != target.String() {
 		errCh <- fmt.Errorf("uot target mismatch want %s got %s", target, addr)
 		return
 	}
@@ -334,7 +337,7 @@ func (w *countingWriter) Write(p []byte) (int, error) {
 }
 
 func TestUoTDatagramIsOneWrite(t *testing.T) {
-	for _, target := range []string{"8.8.8.8:53", "[2001:db8::1]:443", "example.com:80"} {
+	for _, target := range []netip.AddrPort{netip.MustParseAddrPort("8.8.8.8:53"), netip.MustParseAddrPort("[2001:db8::1]:443")} {
 		var w countingWriter
 		payload := bytes.Repeat([]byte{0x5a}, 1200)
 		if err := WriteDatagram(&w, target, payload); err != nil {
@@ -344,16 +347,16 @@ func TestUoTDatagramIsOneWrite(t *testing.T) {
 			t.Fatalf("%s: datagram took %d writes, want 1", target, w.writes)
 		}
 		addr, got, err := readTestDatagram(&w.Buffer)
-		if err != nil || addr != target || !bytes.Equal(got, payload) {
+		if err != nil || addr != target.String() || !bytes.Equal(got, payload) {
 			t.Fatalf("%s: round trip got %q %d bytes, %v", target, addr, len(got), err)
 		}
 	}
 
 	var w countingWriter
-	if err := WriteDatagram(&w, "8.8.8.8:53", make([]byte, 65535)); err != nil {
+	if err := WriteDatagram(&w, netip.MustParseAddrPort("8.8.8.8:53"), make([]byte, 65535)); err != nil {
 		t.Fatalf("largest payload: %v", err)
 	}
-	if err := WriteDatagram(&w, "8.8.8.8:53", make([]byte, 65536)); err == nil {
+	if err := WriteDatagram(&w, netip.MustParseAddrPort("8.8.8.8:53"), make([]byte, 65536)); err == nil {
 		t.Fatal("payload over 65535 bytes must be rejected")
 	}
 }
@@ -374,7 +377,8 @@ func TestUoTPacketConnReadFrom(t *testing.T) {
 	var stream []byte
 	stream = append(stream, frame("example.com:53", 0, "dns")...)         // domain peers are dropped
 	stream = append(stream, frame("8.8.8.8:53", 0, "too long for p")...)  // consumed, reported as short
-	stream = append(stream, frame("[::ffff:1.2.3.4]:5353", 300, "ok")...) // padded address, mapped IPv6
+	stream = append(stream, frame("[::ffff:1.2.3.4]:5353", 300, "ok")...) // padded field is dropped whole
+	stream = append(stream, frame("1.2.3.4:5353", 0, "ok")...)            // plain IPv4 succeeds
 	client, server := net.Pipe()
 	defer client.Close()
 	go func() {

@@ -7,13 +7,11 @@ import (
 
 	N "github.com/metacubex/mihomo/common/net"
 	"github.com/metacubex/mihomo/common/pool"
-	"github.com/metacubex/mihomo/common/utils"
-	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/transport/sudoku"
 	"github.com/stretchr/testify/require"
 )
 
-func newTestUoTPacket(t *testing.T) (packet *uotPacket, peer net.Conn, connID string) {
+func newTestUoTPacket(t *testing.T) (packet *uotPacket, peer net.Conn, _ netip.AddrPort) {
 	t.Helper()
 
 	server, client := net.Pipe()
@@ -22,13 +20,12 @@ func newTestUoTPacket(t *testing.T) (packet *uotPacket, peer net.Conn, connID st
 		_ = client.Close()
 	})
 
-	connID = utils.NewUUIDV4().String() // the SNAT key the tunnel stores
 	packet = &uotPacket{
 		payload: pool.Get(8),
 		writer:  sudoku.NewUoTPacketConn(server),
-		rAddr:   N.NewCustomAddr(C.SUDOKU.String(), connID, server.RemoteAddr()),
+		source:  N.AddrPortFromNetAddr(server.RemoteAddr()),
 	}
-	return packet, client, connID
+	return packet, client, packet.source
 }
 
 // The tunnel answers a flow through the last packet the sender handed it, so
@@ -69,12 +66,9 @@ func TestUoTPacketDropReleasesThePayloadOnce(t *testing.T) {
 // The wrapper reports the flow's SNAT key to the tunnel and keeps the real peer
 // underneath it.
 func TestUoTPacketLocalAddrCarriesTheFlow(t *testing.T) {
-	packet, _, connID := newTestUoTPacket(t)
+	packet, _, _ := newTestUoTPacket(t)
 
-	require.Equal(t, connID, packet.LocalAddr().String())
-	require.Equal(t, C.SUDOKU.String(), packet.LocalAddr().Network())
-
-	if custom, ok := packet.LocalAddr().(N.CustomAddr); ok {
-		require.NotNil(t, custom.RawAddr())
-	}
+	// The wrapper reports the real peer the tunnel keys this flow by.
+	udp := packet.LocalAddr().(*net.UDPAddr)
+	require.Equal(t, packet.source, udp.AddrPort())
 }
