@@ -158,6 +158,8 @@ func (t *clientImpl) handleUniStream(quicConn *quic.Conn) (err error) {
 						_ = writer.Flush()
 					}
 				}
+				// either relay mode has copied out what it needs
+				_ = pool.Put(packet.DATA)
 			}
 			return
 		}()
@@ -202,6 +204,9 @@ func (t *clientImpl) handleMessage(quicConn *quic.Conn) (err error) {
 						_, _ = val.Write(message)
 					}
 				}
+				// the raw datagram is already on its way, the parsed copy
+				// was only needed for the assoc id
+				_ = pool.Put(packet.DATA)
 			}
 			return
 		}()

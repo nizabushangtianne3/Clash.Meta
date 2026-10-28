@@ -1,0 +1,14 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/transport/tuic/v4
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkReadPacket-16    	  500000	       399.2 ns/op	    1440 B/op	       6 allocs/op
+BenchmarkReadPacket-16    	  500000	       400.6 ns/op	    1440 B/op	       6 allocs/op
+BenchmarkReadPacket-16    	  500000	       359.3 ns/op	    1440 B/op	       6 allocs/op
+BenchmarkReadPacket-16    	  500000	       391.2 ns/op	    1440 B/op	       6 allocs/op
+BenchmarkReadPacket-16    	  500000	       359.6 ns/op	    1440 B/op	       6 allocs/op
+BenchmarkReadPacket-16    	  500000	       355.8 ns/op	    1440 B/op	       6 allocs/op
+BenchmarkReadPacket-16    	  500000	       356.2 ns/op	    1440 B/op	       6 allocs/op
+BenchmarkReadPacket-16    	  500000	       415.1 ns/op	    1440 B/op	       6 allocs/op
+BenchmarkReadPacket-16    	  500000	       357.7 ns/op	    1440 B/op	       6 allocs/op
+BenchmarkReadPacket-16    	  500000	       448.3 ns/op	    1440 B/op	       6 allocs/op

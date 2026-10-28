@@ -11,6 +11,7 @@ import (
 	"github.com/metacubex/blake3"
 	"github.com/metacubex/quic-go"
 
+	"github.com/metacubex/mihomo/common/pool"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/transport/socks5"
 )
@@ -295,7 +296,9 @@ func readPacketWithHead(head CommandHead, reader BufferedReader, addrScratch []b
 	if err != nil {
 		return
 	}
-	c.DATA = make([]byte, c.LEN)
+	// one owner: the reader hands this buffer up and returns it to the pool
+	// once the datagram is written out or dropped
+	c.DATA = pool.Get(int(c.LEN))
 	_, err = io.ReadFull(reader, c.DATA)
 	if err != nil {
 		return

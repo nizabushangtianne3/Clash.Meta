@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"testing"
 
+	"github.com/metacubex/mihomo/common/pool"
 	"github.com/stretchr/testify/require"
 )
 
@@ -130,9 +131,11 @@ func BenchmarkReadPacket(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		if _, err := ReadPacketWithHead(head, reader); err != nil {
+		packet, err := ReadPacketWithHead(head, reader)
+		if err != nil {
 			b.Fatal(err)
 		}
+		_ = pool.Put(packet.DATA)
 	}
 }
 
@@ -152,8 +155,10 @@ func BenchmarkReadPacketInto(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		rawReader.Reset(raw)
 		reader.Reset(rawReader)
-		if _, err := readPacketInto(reader, scratch); err != nil {
+		packet, err := readPacketInto(reader, scratch)
+		if err != nil {
 			b.Fatal(err)
 		}
+		_ = pool.Put(packet.DATA)
 	}
 }

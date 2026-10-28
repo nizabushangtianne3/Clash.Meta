@@ -210,6 +210,11 @@ func (s *serverUDPPacket) WriteBack(b []byte, addr netip.AddrPort) (n int, err e
 }
 
 func (s *serverUDPPacket) Drop() {
+	// the read path is a pooled buffer, and Drop runs after the sender has
+	// written the datagram out
+	if data := s.packet.DATA; data != nil {
+		_ = pool.Put(data)
+	}
 	s.packet.DATA = nil
 }
 

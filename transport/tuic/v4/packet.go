@@ -106,6 +106,7 @@ func (q *quicStreamPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err err
 		}
 		n = copy(p, packet.DATA)
 		addr = packet.ADDR.UDPAddr()
+		_ = pool.Put(packet.DATA)
 	} else {
 		err = net.ErrClosed
 	}
