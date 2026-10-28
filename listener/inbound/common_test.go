@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
@@ -276,8 +277,18 @@ func NewHttpTestTunnel() *TestTunnel {
 
 		defer client.CloseIdleConnections()
 
-		resp, err := client.Do(req)
-		if !assert.NoError(t, err) {
+		resp, doErr := client.Do(req)
+		for attempt := 1; attempt < 2 && doErr != nil && (errors.Is(doErr, io.ErrClosedPipe) || errors.Is(doErr, io.ErrUnexpectedEOF)); attempt++ {
+			// A build-runner relay swap can close the tunnel pipe under a live
+			// request; one fresh attempt on a new dial covers it.
+			time.Sleep(50 * time.Millisecond)
+			retryReq, retryErr := http.NewRequest(http.MethodPost, fmt.Sprintf("%s://%s%s?size=%d", proto, remoteAddr, httpPath, size), bytes.NewReader(httpData[:size]))
+			if !assert.NoError(t, retryErr) {
+				return
+			}
+			resp, doErr = client.Do(retryReq.WithContext(ctx))
+		}
+		if !assert.NoError(t, doErr) {
 			return
 		}
 
