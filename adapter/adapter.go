@@ -63,11 +63,9 @@ func (p *Proxy) SetAliveForTestUrl(url string, alive bool) {
 		return
 	}
 
-	state, _ := p.extra.LoadOrStoreFn(url, func() *internalProxyState {
-		return &internalProxyState{
-			history: queue.New[C.DelayHistory](defaultHistoriesNum),
-			alive:   atomic.NewBool(alive),
-		}
+	state, _ := p.extra.LoadOrStore(url, &internalProxyState{
+		history: queue.New[C.DelayHistory](defaultHistoriesNum),
+		alive:   atomic.NewBool(alive),
 	})
 	state.alive.Store(alive)
 }
@@ -241,11 +239,9 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 			p.history.Pop()
 		}
 
-		state, _ := p.extra.LoadOrStoreFn(url, func() *internalProxyState {
-			return &internalProxyState{
-				history: queue.New[C.DelayHistory](defaultHistoriesNum),
-				alive:   atomic.NewBool(true),
-			}
+		state, _ := p.extra.LoadOrStore(url, &internalProxyState{
+			history: queue.New[C.DelayHistory](defaultHistoriesNum),
+			alive:   atomic.NewBool(true),
 		})
 
 		if !satisfied {
@@ -329,7 +325,7 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 func NewProxy(adapter C.ProxyAdapter) *Proxy {
 	return &Proxy{
 		ProxyAdapter: adapter,
-		history:      queue.New[C.DelayHistory](defaultHistoriesNum),
+		history:      queue.NewWithCapacity[C.DelayHistory](defaultHistoriesNum),
 		alive:        atomic.NewBool(true),
 	}
 }

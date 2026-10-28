@@ -12,10 +12,11 @@ type call[T any] struct {
 }
 
 type Single[T any] struct {
-	mux    sync.Mutex
-	wait   time.Duration
-	call   *call[T]
-	result *Result[T]
+	mux       sync.Mutex
+	wait      time.Duration
+	call      *call[T]
+	result    Result[T]
+	hasResult bool
 }
 
 type Result[T any] struct {
@@ -27,12 +28,11 @@ type Result[T any] struct {
 // Do single.Do likes sync.singleFlight
 func (s *Single[T]) Do(fn func() (T, error)) (v T, err error, shared bool) {
 	s.mux.Lock()
-	result := s.result
-	if result != nil && time.Since(result.Time) < s.wait {
+	if s.hasResult && time.Since(s.result.Time) < s.wait {
 		s.mux.Unlock()
-		return result.Val, result.Err, true
+		return s.result.Val, s.result.Err, true
 	}
-	s.result = nil // The result has expired, clear it
+	s.hasResult = false // The result has expired, clear it
 
 	if callM := s.call; callM != nil {
 		s.mux.Unlock()
@@ -50,7 +50,8 @@ func (s *Single[T]) Do(fn func() (T, error)) (v T, err error, shared bool) {
 	s.mux.Lock()
 	if s.call == callM { // maybe reset when fn is running
 		s.call = nil
-		s.result = &Result[T]{callM.val, callM.err, time.Now()}
+		s.result = Result[T]{callM.val, callM.err, time.Now()}
+		s.hasResult = true
 	}
 	s.mux.Unlock()
 	return callM.val, callM.err, false
@@ -61,8 +62,8 @@ func (s *Single[T]) Do(fn func() (T, error)) (v T, err error, shared bool) {
 func (s *Single[T]) Cached() (v T, err error, ok bool) {
 	s.mux.Lock()
 	defer s.mux.Unlock()
-	if result := s.result; result != nil && time.Since(result.Time) < s.wait {
-		return result.Val, result.Err, true
+	if s.hasResult && time.Since(s.result.Time) < s.wait {
+		return s.result.Val, s.result.Err, true
 	}
 	return v, err, false
 }
@@ -70,7 +71,7 @@ func (s *Single[T]) Cached() (v T, err error, ok bool) {
 func (s *Single[T]) Reset() {
 	s.mux.Lock()
 	s.call = nil
-	s.result = nil
+	s.hasResult = false
 	s.mux.Unlock()
 }
 

@@ -10,6 +10,18 @@ type Queue[T any] struct {
 	lock  sync.RWMutex
 }
 
+// NewWithCapacity returns a queue whose backing slice is preallocated to hold
+// hint items, including when callers pass the unexported-type restriction via
+// another package.
+func NewWithCapacity[T any](hint int64) *Queue[T] {
+	if hint < 0 {
+		hint = 0
+	}
+	return &Queue[T]{
+		items: make([]T, 0, hint),
+	}
+}
+
 // Put add the item to the queue.
 func (q *Queue[T]) Put(items ...T) {
 	if len(items) == 0 {

@@ -1,0 +1,24 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/adapter/outboundgroup
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkURLTestSelectedProxyLargeGroup-16    	 1000000	       273.2 ns/op	      48 B/op	       1 allocs/op
+BenchmarkURLTestSelectedProxyLargeGroup-16    	 1000000	       208.0 ns/op	      48 B/op	       1 allocs/op
+BenchmarkURLTestSelectedProxyLargeGroup-16    	 1000000	       219.6 ns/op	      48 B/op	       1 allocs/op
+BenchmarkURLTestSelectedProxyLargeGroup-16    	 1000000	       265.8 ns/op	      48 B/op	       1 allocs/op
+BenchmarkURLTestSelectedProxyLargeGroup-16    	 1000000	       214.5 ns/op	      48 B/op	       1 allocs/op
+BenchmarkURLTestSelectedProxyLargeGroup-16    	 1000000	       223.2 ns/op	      48 B/op	       1 allocs/op
+BenchmarkURLTestSelectedProxyLargeGroup-16    	 1000000	       264.3 ns/op	      48 B/op	       1 allocs/op
+BenchmarkURLTestSelectedProxyLargeGroup-16    	 1000000	       235.4 ns/op	      48 B/op	       1 allocs/op
+BenchmarkURLTestSelectedProxyLargeGroup-16    	 1000000	       233.8 ns/op	      48 B/op	       1 allocs/op
+BenchmarkURLTestSelectedProxyLargeGroup-16    	 1000000	       274.7 ns/op	      48 B/op	       1 allocs/op
+BenchmarkURLTestSelectedProxyCached-16        	 1000000	        48.49 ns/op	       0 B/op	       0 allocs/op
+BenchmarkURLTestSelectedProxyCached-16        	 1000000	        48.22 ns/op	       0 B/op	       0 allocs/op
+BenchmarkURLTestSelectedProxyCached-16        	 1000000	        53.71 ns/op	       0 B/op	       0 allocs/op
+BenchmarkURLTestSelectedProxyCached-16        	 1000000	        25.20 ns/op	       0 B/op	       0 allocs/op
+BenchmarkURLTestSelectedProxyCached-16        	 1000000	        24.02 ns/op	       0 B/op	       0 allocs/op
+BenchmarkURLTestSelectedProxyCached-16        	 1000000	        23.74 ns/op	       0 B/op	       0 allocs/op
+BenchmarkURLTestSelectedProxyCached-16        	 1000000	        24.39 ns/op	       0 B/op	       0 allocs/op
+BenchmarkURLTestSelectedProxyCached-16        	 1000000	        25.16 ns/op	       0 B/op	       0 allocs/op
+BenchmarkURLTestSelectedProxyCached-16        	 1000000	        25.55 ns/op	       0 B/op	       0 allocs/op
+BenchmarkURLTestSelectedProxyCached-16        	 1000000	        23.98 ns/op	       0 B/op	       0 allocs/op
