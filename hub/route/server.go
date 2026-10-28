@@ -1,17 +1,17 @@
 package route
 
 import (
-	"bytes"
 	"context"
 	"crypto/subtle"
-	"encoding/json"
 	"net"
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"github.com/metacubex/mihomo/adapter/inbound"
 	"github.com/metacubex/mihomo/common/utils"
@@ -384,26 +384,23 @@ func traffic(w http.ResponseWriter, r *http.Request) {
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
 	t := statistic.DefaultManager
-	buf := &bytes.Buffer{}
+	scratch := make([]byte, 0, 128)
 	var err error
 	for range tick.C {
-		buf.Reset()
 		up, down := t.Now()
 		upTotal, downTotal := t.Total()
-		if err := json.NewEncoder(buf).Encode(Traffic{
+		scratch = appendTrafficJSON(scratch[:0], Traffic{
 			Up:        up,
 			Down:      down,
 			UpTotal:   upTotal,
 			DownTotal: downTotal,
-		}); err != nil {
-			break
-		}
+		})
 
 		if wsConn == nil {
-			_, err = w.Write(buf.Bytes())
+			_, err = w.Write(scratch)
 			w.(http.Flusher).Flush()
 		} else {
-			err = wsWriteServerText(wsConn, buf.Bytes())
+			err = wsWriteServerText(wsConn, scratch)
 		}
 
 		if err != nil {
@@ -430,12 +427,10 @@ func memory(w http.ResponseWriter, r *http.Request) {
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
 	t := statistic.DefaultManager
-	buf := &bytes.Buffer{}
+	scratch := make([]byte, 0, 128)
 	var err error
 	first := true
 	for range tick.C {
-		buf.Reset()
-
 		inuse := t.Memory()
 		// make chat.js begin with zero
 		// this is shit var,but we need output 0 for first time
@@ -443,38 +438,21 @@ func memory(w http.ResponseWriter, r *http.Request) {
 			inuse = 0
 			first = false
 		}
-		if err := json.NewEncoder(buf).Encode(Memory{
+		scratch = appendMemoryJSON(scratch[:0], Memory{
 			Inuse:   inuse,
 			OSLimit: 0,
-		}); err != nil {
-			break
-		}
+		})
 		if wsConn == nil {
-			_, err = w.Write(buf.Bytes())
+			_, err = w.Write(scratch)
 			w.(http.Flusher).Flush()
 		} else {
-			err = wsWriteServerText(wsConn, buf.Bytes())
+			err = wsWriteServerText(wsConn, scratch)
 		}
 
 		if err != nil {
 			break
 		}
 	}
-}
-
-type Log struct {
-	Type    string `json:"type"`
-	Payload string `json:"payload"`
-}
-type LogStructuredField struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
-}
-type LogStructured struct {
-	Time    string               `json:"time"`
-	Level   string               `json:"level"`
-	Message string               `json:"message"`
-	Fields  []LogStructuredField `json:"fields"`
 }
 
 func getLogs(w http.ResponseWriter, r *http.Request) {
@@ -513,7 +491,7 @@ func getLogs(w http.ResponseWriter, r *http.Request) {
 	ch := make(chan log.Event, 1024)
 	sub := log.Subscribe()
 	defer log.UnSubscribe(sub)
-	buf := &bytes.Buffer{}
+	scratch := make([]byte, 0, 256)
 
 	go func() {
 		for logM := range sub {
@@ -529,36 +507,19 @@ func getLogs(w http.ResponseWriter, r *http.Request) {
 		if logM.LogLevel < level {
 			continue
 		}
-		buf.Reset()
 
 		if !isStructured {
-			if err := json.NewEncoder(buf).Encode(Log{
-				Type:    logM.Type(),
-				Payload: logM.Payload,
-			}); err != nil {
-				break
-			}
+			scratch = appendLogJSON(scratch[:0], logM)
 		} else {
-			newLevel := logM.Type()
-			if newLevel == "warning" {
-				newLevel = "warn"
-			}
-			if err := json.NewEncoder(buf).Encode(LogStructured{
-				Time:    time.Now().Format(time.TimeOnly),
-				Level:   newLevel,
-				Message: logM.Payload,
-				Fields:  []LogStructuredField{},
-			}); err != nil {
-				break
-			}
+			scratch = appendLogStructuredJSON(scratch[:0], logM, time.Now())
 		}
 
 		var err error
 		if wsConn == nil {
-			_, err = w.Write(buf.Bytes())
+			_, err = w.Write(scratch)
 			w.(http.Flusher).Flush()
 		} else {
-			err = wsWriteServerText(wsConn, buf.Bytes())
+			err = wsWriteServerText(wsConn, scratch)
 		}
 
 		if err != nil {
@@ -569,4 +530,110 @@ func getLogs(w http.ResponseWriter, r *http.Request) {
 
 func version(w http.ResponseWriter, r *http.Request) {
 	render.JSON(w, r, render.M{"meta": C.Meta, "version": C.Version})
+}
+
+// The poll writers append their documents by hand: the reflection encoder
+// built its own state, a fresh scratch and the document on every tick, while
+// these documents are read once and dropped. The field set, the order and the
+// escaping stay pinned by server_json_test.go against documents encoding/json
+// produced.
+
+func appendTrafficJSON(dst []byte, t Traffic) []byte {
+	dst = append(dst, `{"up":`...)
+	dst = strconv.AppendInt(dst, t.Up, 10)
+	dst = append(dst, `,"down":`...)
+	dst = strconv.AppendInt(dst, t.Down, 10)
+	dst = append(dst, `,"upTotal":`...)
+	dst = strconv.AppendInt(dst, t.UpTotal, 10)
+	dst = append(dst, `,"downTotal":`...)
+	dst = strconv.AppendInt(dst, t.DownTotal, 10)
+	return append(dst, '}', '\n')
+}
+
+func appendMemoryJSON(dst []byte, m Memory) []byte {
+	dst = append(dst, `{"inuse":`...)
+	dst = strconv.AppendUint(dst, m.Inuse, 10)
+	dst = append(dst, `,"oslimit":`...)
+	dst = strconv.AppendUint(dst, m.OSLimit, 10)
+	return append(dst, '}', '\n')
+}
+
+func appendLogJSON(dst []byte, event log.Event) []byte {
+	dst = append(dst, `{"type":`...)
+	dst = appendJSONString(dst, event.Type())
+	dst = append(dst, `,"payload":`...)
+	dst = appendJSONString(dst, event.Payload)
+	return append(dst, '}', '\n')
+}
+
+func appendLogStructuredJSON(dst []byte, event log.Event, now time.Time) []byte {
+	level := event.Type()
+	if level == "warning" {
+		level = "warn"
+	}
+	dst = append(dst, `{"time":`...)
+	dst = now.AppendFormat(dst, `"`+time.TimeOnly+`"`)
+	dst = append(dst, `,"level":`...)
+	dst = appendJSONString(dst, level)
+	dst = append(dst, `,"message":`...)
+	dst = appendJSONString(dst, event.Payload)
+	dst = append(dst, `,"fields":[]`...)
+	return append(dst, '}', '\n')
+}
+
+const jsonHexDigits = "0123456789abcdef"
+
+// appendJSONString quotes and escapes the way encoding/json does with HTML
+// escaping on, which is what the reflection writer applied.
+func appendJSONString(dst []byte, s string) []byte {
+	dst = append(dst, '"')
+	start := 0
+	for i := 0; i < len(s); {
+		if b := s[i]; b < utf8.RuneSelf {
+			if b >= 0x20 && b != '"' && b != '\\' && b != '<' && b != '>' && b != '&' {
+				i++
+				continue
+			}
+			dst = append(dst, s[start:i]...)
+			switch b {
+			case '\\', '"':
+				dst = append(dst, '\\', b)
+			case '\b':
+				dst = append(dst, '\\', 'b')
+			case '\f':
+				dst = append(dst, '\\', 'f')
+			case '\n':
+				dst = append(dst, '\\', 'n')
+			case '\r':
+				dst = append(dst, '\\', 'r')
+			case '\t':
+				dst = append(dst, '\\', 't')
+			default:
+				dst = append(dst, '\\', 'u', '0', '0', jsonHexDigits[b>>4], jsonHexDigits[b&0x0f])
+			}
+			i++
+			start = i
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if r == utf8.RuneError && size == 1 {
+			dst = append(dst, s[start:i]...)
+			dst = utf8.AppendRune(dst, utf8.RuneError)
+			i += size
+			start = i
+			continue
+		}
+		// json escapes the two unicode separators because they break some
+		// hosts that read the document as javascript.
+		if r == '\u2028' || r == '\u2029' {
+			dst = append(dst, s[start:i]...)
+			dst = append(dst, '\\', 'u', '2', '0', '2', jsonHexDigits[r&0x0f])
+			i += size
+			start = i
+			continue
+		}
+		i += size
+	}
+	dst = append(dst, s[start:]...)
+	return append(dst, '"')
 }

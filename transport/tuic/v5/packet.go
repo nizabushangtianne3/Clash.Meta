@@ -1,6 +1,7 @@
 package v5
 
 import (
+	"encoding/binary"
 	"errors"
 	"net"
 	"net/netip"
@@ -16,7 +17,47 @@ import (
 	"github.com/metacubex/randv2"
 )
 
-const addressScratchSize = 256
+const (
+	addressScratchSize = 256
+
+	packetCommandHeadLen   = 2
+	packetRoutingHeaderLen = 6
+	packetFrameHeaderLen   = packetCommandHeadLen + packetRoutingHeaderLen + 2
+	packetFramePrefixCap   = packetFrameHeaderLen + 2
+)
+
+func packetRouting(header []byte) (uint16, bool) {
+	if len(header) < packetCommandHeadLen+packetRoutingHeaderLen ||
+		CommandType(header[1]) != PacketType {
+		return 0, false
+	}
+	return binary.BigEndian.Uint16(header[packetCommandHeadLen:]), true
+}
+
+func rawPacketFrameLen(header []byte) (int, bool) {
+	if len(header) < packetFrameHeaderLen+1 {
+		return 0, false
+	}
+
+	var addressLen int
+	switch header[packetFrameHeaderLen] {
+	case AtypNone:
+		addressLen = 1
+	case AtypIPv4:
+		addressLen = 1 + net.IPv4len + 2
+	case AtypIPv6:
+		addressLen = 1 + net.IPv6len + 2
+	case AtypDomainName:
+		if len(header) < packetFramePrefixCap {
+			return 0, false
+		}
+		addressLen = int(header[packetFrameHeaderLen+1]) + 4
+	default:
+		return 0, false
+	}
+	return packetFrameHeaderLen + addressLen +
+		int(binary.BigEndian.Uint16(header[packetCommandHeadLen+packetRoutingHeaderLen:])), true
+}
 
 type quicStreamPacketConn struct {
 	connId    uint16

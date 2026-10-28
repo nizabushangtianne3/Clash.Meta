@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	N "github.com/metacubex/mihomo/common/net"
@@ -128,42 +129,71 @@ func wsUpgrade(r *http.Request, w http.ResponseWriter) (conn net.Conn, rw *bufio
 	return conn, rw, err
 }
 
-// wsWriteServerMessage writes message to w, considering that caller represents server side.
-func wsWriteServerMessage(w io.Writer, op byte, p []byte) error {
-	dataLen := len(p)
+const (
+	wsOpText               = 0x1
+	wsServerMaxFrameHeader = 10
+	wsMaxPooledFrame       = 65536
+)
 
-	// Make slice of bytes with capacity 14 that could hold any header.
-	bts := make([]byte, 14)
+var wsFramePool = sync.Pool{New: func() any { return new([wsMaxPooledFrame]byte) }}
 
-	bts[0] |= 0x80   //FIN
-	bts[0] |= 0 << 4 //RSV
-	bts[0] |= op     //OPCODE
-
-	var n int
+// wsFrameHeaderLen returns the length of the server frame header for dataLen.
+func wsFrameHeaderLen(dataLen int) int {
 	switch {
 	case dataLen < 126:
-		bts[1] = byte(dataLen)
-		n = 2
+		return 2
 	case dataLen < 65536:
-		bts[1] = 126
-		binary.BigEndian.PutUint16(bts[2:4], uint16(dataLen))
-		n = 4
+		return 4
 	default:
-		bts[1] = 127
-		binary.BigEndian.PutUint64(bts[2:10], uint64(dataLen))
-		n = 10
+		return wsServerMaxFrameHeader
 	}
+}
 
-	_, err := w.Write(bts[:n])
-	if err != nil {
+// wsEncodeFrameHeader writes the FIN+op server frame header for a payload of
+// dataLen bytes into dst and returns its length. dst must hold at least
+// wsServerMaxFrameHeader bytes.
+func wsEncodeFrameHeader(dst []byte, op byte, dataLen int) int {
+	dst[0] = 0x80 | op // FIN, no RSV, opcode
+	switch {
+	case dataLen < 126:
+		dst[1] = byte(dataLen)
+		return 2
+	case dataLen < 65536:
+		dst[1] = 126
+		binary.BigEndian.PutUint16(dst[2:4], uint16(dataLen))
+		return 4
+	default:
+		dst[1] = 127
+		binary.BigEndian.PutUint64(dst[2:wsServerMaxFrameHeader], uint64(dataLen))
+		return wsServerMaxFrameHeader
+	}
+}
+
+// wsWriteServerMessage writes the header and the payload in one write. Small
+// frames ride the frame pool; a payload larger than the pool is the rare
+// fallback that keeps the payload untouched behind a stack header.
+func wsWriteServerMessage(w io.Writer, op byte, p []byte) error {
+	headerLen := wsFrameHeaderLen(len(p))
+	total := headerLen + len(p)
+	if total <= wsMaxPooledFrame {
+		frame := wsFramePool.Get().(*[wsMaxPooledFrame]byte)
+		buf := frame[:total]
+		wsEncodeFrameHeader(buf, op, len(p))
+		copy(buf[headerLen:], p)
+		_, err := w.Write(buf)
+		wsFramePool.Put(frame)
 		return err
 	}
-	_, err = w.Write(p)
+	var header [wsServerMaxFrameHeader]byte
+	headerLen = wsEncodeFrameHeader(header[:], op, len(p))
+	if _, err := w.Write(header[:headerLen]); err != nil {
+		return err
+	}
+	_, err := w.Write(p)
 	return err
 }
 
 // wsWriteServerText is the same as wsWriteServerMessage with ws.OpText.
 func wsWriteServerText(w io.Writer, p []byte) error {
-	const opText = 0x1
-	return wsWriteServerMessage(w, opText, p)
+	return wsWriteServerMessage(w, wsOpText, p)
 }

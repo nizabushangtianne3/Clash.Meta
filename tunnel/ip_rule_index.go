@@ -2,6 +2,8 @@ package tunnel
 
 import (
 	"net/netip"
+
+	"github.com/metacubex/mihomo/component/ruleindex"
 )
 
 // ipRuleTrie indexes consecutive IPCIDR rules by their prefix bits, so a
@@ -63,7 +65,7 @@ func (n *ipRuleNode) lookup(bits []byte, bitLen int, from int) int {
 		return -1
 	}
 	best := -1
-	if hit := positionAtOrAfter(n.positions, from); hit >= 0 {
+	if hit := ruleindex.AtOrAfter(n.positions, from); hit >= 0 {
 		best = hit
 	}
 	node := n
@@ -73,7 +75,7 @@ func (n *ipRuleNode) lookup(bits []byte, bitLen int, from int) int {
 		if node == nil {
 			break
 		}
-		if hit := positionAtOrAfter(node.positions, from); hit >= 0 && (best < 0 || hit < best) {
+		if hit := ruleindex.AtOrAfter(node.positions, from); hit >= 0 && (best < 0 || hit < best) {
 			best = hit
 		}
 	}

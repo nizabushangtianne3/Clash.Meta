@@ -5,7 +5,6 @@ import (
 	"io"
 	"net"
 	"net/netip"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -57,9 +56,12 @@ func TestPacketOriginKeyPrefersHostOverResolvedIP(t *testing.T) {
 	require.Equal(t, resolved.DstIP, target)
 }
 
-func TestPacketMappingConcurrentAccess(t *testing.T) {
+// RestoreReadFrom is confined to the handleUDPToLocal read loop, so the cache
+// is exercised the way that loop runs it: sequential hit, miss and re-populate.
+func TestPacketMappingRestoreCacheStaysInTheReadLoop(t *testing.T) {
 	target := netip.MustParseAddr("203.0.113.20")
 	origin := netip.MustParseAddr("192.168.1.2")
+	unmapped := netip.MustParseAddr("203.0.113.99")
 	sender := newPacketSender().(*packetSender)
 	defer sender.Close()
 	sender.AddMapping(
@@ -67,22 +69,23 @@ func TestPacketMappingConcurrentAccess(t *testing.T) {
 		&C.Metadata{DstIP: target},
 	)
 
-	var failed atomic.Bool
-	var wait sync.WaitGroup
-	for worker := 0; worker < 8; worker++ {
-		wait.Add(1)
-		go func() {
-			defer wait.Done()
-			for iteration := 0; iteration < 1000; iteration++ {
-				if restored := sender.RestoreReadFrom(target); restored != origin {
-					failed.Store(true)
-					return
-				}
-			}
-		}()
+	if restored := sender.RestoreReadFrom(target); restored != origin {
+		t.Fatalf("restored = %v, want %v", restored, origin)
 	}
-	wait.Wait()
-	require.False(t, failed.Load())
+	if restored := sender.RestoreReadFrom(unmapped); restored != unmapped {
+		t.Fatalf("unmapped restore = %v, want %v", restored, unmapped)
+	}
+	require.False(t, sender.readCache.valid, "an unmapped restore must reset the read cache")
+	if restored := sender.RestoreReadFrom(target); restored != origin {
+		t.Fatalf("restored after reset = %v, want %v", restored, origin)
+	}
+
+	allocations := testing.AllocsPerRun(100, func() {
+		sender.RestoreReadFrom(unmapped)
+		sender.RestoreReadFrom(target)
+		sender.RestoreReadFrom(target)
+	})
+	require.EqualValues(t, 0, allocations)
 }
 
 type fastReadPacketConn struct {

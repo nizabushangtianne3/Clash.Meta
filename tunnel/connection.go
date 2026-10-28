@@ -27,12 +27,13 @@ type packetSender struct {
 	originToTarget map[packetOrigin]netip.Addr
 	targetToOrigin map[netip.Addr]netip.Addr
 
-	// originCache is confined to the Process loop. RestoreReadFrom is part of
-	// the public PacketSender interface, so its cache is atomic.
+	// originCache is confined to the Process loop; readCache is confined to
+	// the handleUDPToLocal read loop. Neither is shared across goroutines, so
+	// both stay plain and reset in place.
 	originCacheKey    packetOrigin
 	originCacheTarget netip.Addr
 	originCacheValid  bool
-	readCache         atomic.Pointer[packetReadMapping]
+	readCache         packetReadMapping
 
 	// Only the Process goroutine touches this; the read loop keeps its own copy.
 	readDeadline int64
@@ -47,9 +48,12 @@ type packetOrigin struct {
 	ip   netip.Addr
 }
 
+// packetReadMapping is the read loop's single-entry restore cache, embedded in
+// the sender and reset in place instead of reallocated per unseen destination.
 type packetReadMapping struct {
 	target netip.Addr
 	origin netip.Addr
+	valid  bool
 }
 
 func packetOriginKey(metadata *C.Metadata) packetOrigin {
@@ -91,18 +95,20 @@ func (s *packetSender) AddMapping(originMetadata *C.Metadata, metadata *C.Metada
 }
 
 func (s *packetSender) RestoreReadFrom(addr netip.Addr) netip.Addr {
-	if cached := s.readCache.Load(); cached != nil && addr == cached.target {
-		return cached.origin
+	if s.readCache.valid && addr == s.readCache.target {
+		return s.readCache.origin
 	}
 
 	s.mappingMutex.RLock()
 	originAddr := s.targetToOrigin[addr]
 	s.mappingMutex.RUnlock()
 	if originAddr.IsValid() {
-		s.readCache.Store(&packetReadMapping{target: addr, origin: originAddr})
+		s.readCache.target = addr
+		s.readCache.origin = originAddr
+		s.readCache.valid = true
 		return originAddr
 	}
-	s.readCache.Store(nil)
+	s.readCache.valid = false
 	return addr
 }
 

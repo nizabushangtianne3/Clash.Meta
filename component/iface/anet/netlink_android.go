@@ -11,17 +11,6 @@ import (
 	"unsafe"
 )
 
-// Round the length of a netlink message up to align it properly.
-func nlmAlignOf(msglen int) int {
-	return (msglen + syscall.NLMSG_ALIGNTO - 1) & ^(syscall.NLMSG_ALIGNTO - 1)
-}
-
-// Round the length of a netlink route attribute up to align it
-// properly.
-func rtaAlignOf(attrlen int) int {
-	return (attrlen + syscall.RTA_ALIGNTO - 1) & ^(syscall.RTA_ALIGNTO - 1)
-}
-
 // NetlinkRouteRequest represents a request message to receive routing
 // and link states from the kernel.
 type NetlinkRouteRequest struct {
@@ -86,7 +75,7 @@ done:
 		}
 		rb = rb[:nr]
 		tab = append(tab, rb...)
-		msgs, err := ParseNetlinkMessage(rb)
+		msgs, err := syscall.ParseNetlinkMessage(rb)
 		if err != nil {
 			return nil, err
 		}
@@ -103,77 +92,4 @@ done:
 		}
 	}
 	return tab, nil
-}
-
-// NetlinkMessage represents a netlink message.
-type NetlinkMessage struct {
-	Header syscall.NlMsghdr
-	Data   []byte
-}
-
-// ParseNetlinkMessage parses b as an array of netlink messages and
-// returns the slice containing the NetlinkMessage structures.
-func ParseNetlinkMessage(b []byte) ([]NetlinkMessage, error) {
-	var msgs []NetlinkMessage
-	for len(b) >= syscall.NLMSG_HDRLEN {
-		h, dbuf, dlen, err := netlinkMessageHeaderAndData(b)
-		if err != nil {
-			return nil, err
-		}
-		m := NetlinkMessage{Header: *h, Data: dbuf[:int(h.Len)-syscall.NLMSG_HDRLEN]}
-		msgs = append(msgs, m)
-		b = b[dlen:]
-	}
-	return msgs, nil
-}
-
-func netlinkMessageHeaderAndData(b []byte) (*syscall.NlMsghdr, []byte, int, error) {
-	h := (*syscall.NlMsghdr)(unsafe.Pointer(&b[0]))
-	l := nlmAlignOf(int(h.Len))
-	if int(h.Len) < syscall.NLMSG_HDRLEN || l > len(b) {
-		return nil, nil, 0, syscall.EINVAL
-	}
-	return h, b[syscall.NLMSG_HDRLEN:], l, nil
-}
-
-// NetlinkRouteAttr represents a netlink route attribute.
-type NetlinkRouteAttr struct {
-	Attr  syscall.RtAttr
-	Value []byte
-}
-
-// ParseNetlinkRouteAttr parses m's payload as an array of netlink
-// route attributes and returns the slice containing the
-// NetlinkRouteAttr structures.
-func ParseNetlinkRouteAttr(m *NetlinkMessage) ([]NetlinkRouteAttr, error) {
-	var b []byte
-	switch m.Header.Type {
-	case syscall.RTM_NEWLINK, syscall.RTM_DELLINK:
-		b = m.Data[syscall.SizeofIfInfomsg:]
-	case syscall.RTM_NEWADDR, syscall.RTM_DELADDR:
-		b = m.Data[syscall.SizeofIfAddrmsg:]
-	case syscall.RTM_NEWROUTE, syscall.RTM_DELROUTE:
-		b = m.Data[syscall.SizeofRtMsg:]
-	default:
-		return nil, syscall.EINVAL
-	}
-	var attrs []NetlinkRouteAttr
-	for len(b) >= syscall.SizeofRtAttr {
-		a, vbuf, alen, err := netlinkRouteAttrAndValue(b)
-		if err != nil {
-			return nil, err
-		}
-		ra := NetlinkRouteAttr{Attr: *a, Value: vbuf[:int(a.Len)-syscall.SizeofRtAttr]}
-		attrs = append(attrs, ra)
-		b = b[alen:]
-	}
-	return attrs, nil
-}
-
-func netlinkRouteAttrAndValue(b []byte) (*syscall.RtAttr, []byte, int, error) {
-	a := (*syscall.RtAttr)(unsafe.Pointer(&b[0]))
-	if int(a.Len) < syscall.SizeofRtAttr || int(a.Len) > len(b) {
-		return nil, nil, 0, syscall.EINVAL
-	}
-	return a, b[syscall.SizeofRtAttr:], rtaAlignOf(int(a.Len)), nil
 }

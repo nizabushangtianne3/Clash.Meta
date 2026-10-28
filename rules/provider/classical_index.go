@@ -3,6 +3,7 @@ package provider
 import (
 	"strings"
 
+	"github.com/metacubex/mihomo/component/ruleindex"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/rules/common"
 )
@@ -15,14 +16,9 @@ import (
 type classicalRuleIndex struct {
 	ruleCount int
 	exact     map[string][]int
-	suffix    *classicalSuffixNode
+	suffix    *ruleindex.SuffixTrie
 
 	plainPositions []int
-}
-
-type classicalSuffixNode struct {
-	children  map[string]*classicalSuffixNode
-	positions []int
 }
 
 func buildClassicalRuleIndex(rules []C.Rule) *classicalRuleIndex {
@@ -45,9 +41,9 @@ func buildClassicalRuleIndex(rules []C.Rule) *classicalRuleIndex {
 			continue
 		}
 		if index.suffix == nil {
-			index.suffix = &classicalSuffixNode{}
+			index.suffix = &ruleindex.SuffixTrie{}
 		}
-		insertClassicalSuffix(index.suffix, domain, position)
+		index.suffix.Add(domain, position)
 	}
 	return index
 }
@@ -62,12 +58,12 @@ func (index *classicalRuleIndex) nextIndexed(position int, host string) int {
 	candidate := index.ruleCount
 	if index.exact != nil || index.suffix != nil {
 		if positions, ok := index.exact[host]; ok {
-			if hit := positionAtOrAfter(positions, position); hit >= 0 && hit < candidate {
+			if hit := ruleindex.AtOrAfter(positions, position); hit >= 0 && hit < candidate {
 				candidate = hit
 			}
 		}
 		if index.suffix != nil {
-			if hit := index.suffix.match(host, position); hit >= 0 && hit < candidate {
+			if hit := index.suffix.Match(host, position); hit >= 0 && hit < candidate {
 				candidate = hit
 			}
 		}
@@ -89,60 +85,4 @@ func classicalIndexedRule(rule C.Rule) (payload string, exact bool, ok bool) {
 func indexableSuffixPayload(suffix string) bool {
 	return suffix != "" && !strings.Contains(suffix, "..") &&
 		!strings.HasPrefix(suffix, ".") && !strings.HasSuffix(suffix, ".")
-}
-
-func insertClassicalSuffix(root *classicalSuffixNode, suffix string, position int) {
-	node := root
-	labels := strings.Split(suffix, ".")
-	for labelIndex := len(labels) - 1; labelIndex >= 0; labelIndex-- {
-		label := labels[labelIndex]
-		child, ok := node.children[label]
-		if !ok {
-			child = &classicalSuffixNode{}
-			if node.children == nil {
-				node.children = make(map[string]*classicalSuffixNode)
-			}
-			node.children[label] = child
-		}
-		node = child
-	}
-	node.positions = append(node.positions, position)
-}
-
-func (node *classicalSuffixNode) match(host string, from int) int {
-	hit := -1
-	current := node
-	for end := len(host); end > 0; {
-		start := end - 1
-		for start >= 0 && host[start] != '.' {
-			start--
-		}
-		child, ok := current.children[host[start+1:end]]
-		if !ok {
-			break
-		}
-		current = child
-		if position := positionAtOrAfter(current.positions, from); position >= 0 &&
-			(hit < 0 || position < hit) {
-			hit = position
-		}
-		end = start
-	}
-	return hit
-}
-
-func positionAtOrAfter(positions []int, target int) int {
-	left, right := 0, len(positions)
-	for left < right {
-		middle := int(uint(left+right) >> 1)
-		if positions[middle] < target {
-			left = middle + 1
-		} else {
-			right = middle
-		}
-	}
-	if left == len(positions) {
-		return -1
-	}
-	return positions[left]
 }

@@ -340,6 +340,21 @@ func processUDP(queue chan udpPacket) {
 	}
 }
 
+// newUDPFlowMetadata clones the packet metadata once for the whole flow: the
+// origin snapshot is taken before preHandleMetadata rewrites the clone, and
+// the same clone then carries the prechecked state into the dial goroutine.
+// Later datagrams of the same flow may reuse the packet metadata in place, so
+// nothing downstream reads it again once the dial goes async.
+func newUDPFlowMetadata(metadata *C.Metadata) (*C.Metadata, *C.Metadata, error) {
+	dial := metadata.Clone()
+	origin := &C.Metadata{
+		Host:    dial.Host,
+		DstIP:   dial.DstIP,
+		DstPort: dial.DstPort,
+	}
+	return dial, origin, preHandleMetadata(dial)
+}
+
 func handleUDPConn(item udpPacket) {
 	packet := item.packet
 	if !isHandle(packet.Metadata().Type) {
@@ -363,7 +378,8 @@ func handleUDPConn(item udpPacket) {
 	runtimeState := loadRuntime()
 	fixMetadata(metadata) // fix some metadata not set via metadata.SetRemoteAddr or metadata.SetRemoteAddress
 
-	if err := preHandleMetadata(metadata.Clone()); err != nil { // precheck without modify metadata
+	dialMetadata, originMetadata, err := newUDPFlowMetadata(metadata)
+	if err != nil { // precheck without modifying the packet metadata
 		packet.Drop()
 		log.Debugln("[Metadata PreHandle] error: %s", err)
 		return
@@ -377,16 +393,6 @@ func handleUDPConn(item udpPacket) {
 		return sender
 	})
 	if !loaded {
-		// The dial runs on its own goroutine, so it gets a private metadata
-		// clone and an origin snapshot. Later datagrams of the same flow may
-		// reuse one metadata object in place, and that object must not be read
-		// again once this worker has moved on.
-		dialMetadata := metadata.Clone()
-		originMetadata := &C.Metadata{
-			Host:    metadata.Host,
-			DstIP:   metadata.DstIP,
-			DstPort: metadata.DstPort,
-		}
 		go startUDPSender(originMetadata, dialMetadata, packet, sender, item.key)
 	}
 	sender.Send(packet) // nonblocking
@@ -404,15 +410,14 @@ func startUDPSender(originMetadata *C.Metadata, dialMetadata *C.Metadata, packet
 	sender.Process(pc, writeBackProxy)
 }
 
-// dialUDPSender receives a metadata clone the worker made before the dial went
-// async, plus an origin snapshot: neither is shared with later datagrams.
+// dialUDPSender receives the flow's prechecked metadata clone plus the origin
+// snapshot taken before preHandleMetadata rewrote it: neither is shared with
+// later datagrams.
 func dialUDPSender(originMetadata *C.Metadata, metadata *C.Metadata, packet C.PacketAdapter, sender C.PacketSender, key netip.AddrPort) (C.PacketConn, C.WriteBackProxy, error) {
 	if err := sender.DoSniff(metadata); err != nil {
 		log.Warnln("[UDP] DoSniff error: %s", err.Error())
 		return nil, nil, err
 	}
-
-	_ = preHandleMetadata(metadata) // error was pre-checked
 
 	proxy, rule, err := resolveMetadata(metadata)
 	if err != nil {

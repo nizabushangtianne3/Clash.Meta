@@ -2,8 +2,8 @@ package tunnel
 
 import (
 	"net/netip"
-	"strings"
 
+	"github.com/metacubex/mihomo/component/ruleindex"
 	C "github.com/metacubex/mihomo/constant"
 	rulesCommon "github.com/metacubex/mihomo/rules/common"
 )
@@ -16,7 +16,7 @@ import (
 // always takes the smallest candidate.
 type ruleIndex struct {
 	exact  map[string][]int
-	suffix *suffixNode
+	suffix *ruleindex.SuffixTrie
 	ipDst  *ipRuleTrie
 	ipSrc  *ipRuleTrie
 
@@ -27,11 +27,6 @@ type ruleIndex struct {
 	plainPositions []int
 	ipPositions    []int
 	usesHelper     []bool
-}
-
-type suffixNode struct {
-	children  map[string]*suffixNode
-	positions []int
 }
 
 func buildRuleIndex(rules []C.Rule) *ruleIndex {
@@ -52,9 +47,9 @@ func buildRuleIndex(rules []C.Rule) *ruleIndex {
 				index.exact[domain] = append(index.exact[domain], position)
 			} else {
 				if index.suffix == nil {
-					index.suffix = &suffixNode{}
+					index.suffix = &ruleindex.SuffixTrie{}
 				}
-				insertSuffix(index.suffix, domain, position)
+				index.suffix.Add(domain, position)
 			}
 			continue
 		}
@@ -147,12 +142,12 @@ func (index *ruleIndex) nextIndexed(position int, metadata *C.Metadata) int {
 	if index.exact != nil || index.suffix != nil {
 		host := metadata.RuleHost()
 		if positions, ok := index.exact[host]; ok {
-			if hit := positionAtOrAfter(positions, position); hit >= 0 && hit < candidate {
+			if hit := ruleindex.AtOrAfter(positions, position); hit >= 0 && hit < candidate {
 				candidate = hit
 			}
 		}
 		if index.suffix != nil {
-			if hit := index.suffix.match(host, position); hit >= 0 && hit < candidate {
+			if hit := index.suffix.Match(host, position); hit >= 0 && hit < candidate {
 				candidate = hit
 			}
 		}
@@ -172,7 +167,7 @@ func (index *ruleIndex) nextIndexed(position int, metadata *C.Metadata) int {
 			}
 		}
 		if !destination && !source {
-			if hit := positionAtOrAfter(index.ipPositions, position); hit >= 0 && hit < candidate {
+			if hit := ruleindex.AtOrAfter(index.ipPositions, position); hit >= 0 && hit < candidate {
 				candidate = hit
 			}
 		}
@@ -229,60 +224,4 @@ func indexedDomainPayload(rule C.Rule) (string, bool, bool) {
 		}
 	}
 	return "", false, false
-}
-
-func insertSuffix(root *suffixNode, suffix string, position int) {
-	node := root
-	labels := strings.Split(suffix, ".")
-	for index := len(labels) - 1; index >= 0; index-- {
-		label := labels[index]
-		if node.children == nil {
-			node.children = make(map[string]*suffixNode)
-		}
-		child, ok := node.children[label]
-		if !ok {
-			child = &suffixNode{}
-			node.children[label] = child
-		}
-		node = child
-	}
-	node.positions = append(node.positions, position)
-}
-
-func (node *suffixNode) match(host string, from int) int {
-	hit := -1
-	current := node
-	for end := len(host); end > 0; {
-		start := end - 1
-		for start >= 0 && host[start] != '.' {
-			start--
-		}
-		child, ok := current.children[host[start+1:end]]
-		if !ok {
-			break
-		}
-		current = child
-		if position := positionAtOrAfter(current.positions, from); position >= 0 &&
-			(hit < 0 || position < hit) {
-			hit = position
-		}
-		end = start
-	}
-	return hit
-}
-
-func positionAtOrAfter(positions []int, target int) int {
-	left, right := 0, len(positions)
-	for left < right {
-		middle := int(uint(left+right) >> 1)
-		if positions[middle] < target {
-			left = middle + 1
-		} else {
-			right = middle
-		}
-	}
-	if left == len(positions) {
-		return -1
-	}
-	return positions[left]
 }

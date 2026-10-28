@@ -39,9 +39,9 @@ func (missingRecordMapper) FindHostByIP(netip.Addr) (string, bool) {
 	return "", false
 }
 
-func (missingRecordMapper) FlushFakeIP() error             { return nil }
+func (missingRecordMapper) FlushFakeIP() error                { return nil }
 func (missingRecordMapper) InsertHostByIP(netip.Addr, string) {}
-func (missingRecordMapper) StoreFakePoolState()            {}
+func (missingRecordMapper) StoreFakePoolState()               {}
 
 func TestHandleUDPConnMissingFakeRecord(t *testing.T) {
 	restoreStatus := status.Load()
@@ -76,4 +76,42 @@ func TestHandleUDPConnMissingFakeRecord(t *testing.T) {
 	}, 2*time.Second, 5*time.Millisecond)
 
 	require.Eventually(t, func() bool { return packet.dropped > 0 }, 2*time.Second, 5*time.Millisecond)
+}
+
+type foundFakeRecordMapper struct {
+	missingRecordMapper
+}
+
+func (foundFakeRecordMapper) FindHostByIP(netip.Addr) (string, bool) {
+	return "udp.example.com", true
+}
+
+// The precheck and the dial must share one clone: the dial metadata carries the
+// prechecked state, the origin snapshot keeps the pre-precheck destination, and
+// the packet metadata stays untouched for later datagrams of the same flow.
+func TestNewUDPFlowMetadataSharesOneClone(t *testing.T) {
+	restoreMapper := resolver.DefaultHostMapper
+	resolver.DefaultHostMapper = foundFakeRecordMapper{}
+	defer func() { resolver.DefaultHostMapper = restoreMapper }()
+
+	metadata := &C.Metadata{
+		NetWork: C.UDP,
+		Type:    C.REDIR,
+		SrcIP:   netip.AddrFrom4([4]byte{192, 168, 1, 100}),
+		SrcPort: 53531,
+		DstIP:   netip.AddrFrom4([4]byte{198, 18, 0, 1}),
+		DstPort: 443,
+	}
+
+	dial, origin, err := newUDPFlowMetadata(metadata)
+	require.NoError(t, err)
+	require.NotSame(t, metadata, dial)
+	require.Equal(t, "udp.example.com", dial.Host)
+	require.False(t, dial.DstIP.IsValid())
+	require.Equal(t, C.DNSFakeIP, dial.DNSMode)
+	require.Equal(t, netip.AddrFrom4([4]byte{198, 18, 0, 1}), origin.DstIP)
+	require.Empty(t, origin.Host)
+	require.EqualValues(t, 443, origin.DstPort)
+	require.Empty(t, metadata.Host)
+	require.Equal(t, netip.AddrFrom4([4]byte{198, 18, 0, 1}), metadata.DstIP)
 }

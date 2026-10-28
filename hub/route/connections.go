@@ -2,6 +2,7 @@ package route
 
 import (
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/metacubex/mihomo/tunnel/statistic"
@@ -11,20 +12,25 @@ import (
 	"github.com/metacubex/http"
 )
 
-// The table is polled on a timer, so the writers append it straight into a
-// buffer they reuse instead of paying encoding/json for a document that is
-// read once and dropped.
+// The table is polled on a timer, so the plain responses append it into a
+// pooled buffer and the websocket polls build the frame header in front of
+// the document instead of paying a second write or a fresh buffer per
+// document.
+
+var connectionsBodyPool = sync.Pool{New: func() any { return new([]byte) }}
 
 func writeConnections(w http.ResponseWriter, r *http.Request, snapshot *statistic.Snapshot) {
 	w.Header().Set("Content-Type", "application/json")
 	if status, ok := r.Context().Value(render.StatusCtxKey).(int); ok {
 		w.WriteHeader(status)
 	}
-	// One right sized buffer per request: an address, a uuid, a chain and a
-	// handful of names fit in a few hundred bytes per connection.
-	body := snapshot.AppendJSON(make([]byte, 0, 256+384*len(snapshot.Connections)))
+	bufp := connectionsBodyPool.Get().(*[]byte)
+	body := snapshot.AppendJSON((*bufp)[:0])
 	// encoding/json's Encoder closed the document with a newline.
-	_, _ = w.Write(append(body, '\n'))
+	body = append(body, '\n')
+	_, _ = w.Write(body)
+	*bufp = body
+	connectionsBodyPool.Put(bufp)
 }
 
 func connectionRouter() http.Handler {
@@ -60,11 +66,23 @@ func getConnections(w http.ResponseWriter, r *http.Request) {
 		interval = t
 	}
 
-	var scratch []byte
+	// The initial capacity keeps the reserved frame header inside the slice
+	// before the first document grows it.
+	scratch := make([]byte, 0, wsServerMaxFrameHeader+512)
 	sendSnapshot := func() error {
 		snapshot := statistic.DefaultManager.Snapshot()
-		scratch = snapshot.AppendJSON(scratch[:0])
-		return wsWriteServerText(conn, scratch)
+		// Reserve the worst-case frame header, append the document after it,
+		// then move the document over the unused header bytes once its length
+		// is known, so the whole frame leaves in one write without a second
+		// buffer.
+		scratch = snapshot.AppendJSON(scratch[:wsServerMaxFrameHeader])
+		n := len(scratch) - wsServerMaxFrameHeader
+		headerLen := wsEncodeFrameHeader(scratch[:wsServerMaxFrameHeader], wsOpText, n)
+		if headerLen < wsServerMaxFrameHeader {
+			copy(scratch[headerLen:], scratch[wsServerMaxFrameHeader:])
+		}
+		_, err := conn.Write(scratch[:headerLen+n])
+		return err
 	}
 
 	if err := sendSnapshot(); err != nil {
