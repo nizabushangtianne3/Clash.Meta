@@ -17,7 +17,7 @@ func NewBool(val bool) (i Bool) {
 }
 
 func (i *Bool) MarshalJSON() ([]byte, error) {
-	return json.Marshal(i.Load())
+	return strconv.AppendBool(nil, i.Load()), nil
 }
 
 func (i *Bool) UnmarshalJSON(b []byte) error {
@@ -98,7 +98,7 @@ func NewInt32(val int32) (i Int32) {
 }
 
 func (i *Int32) MarshalJSON() ([]byte, error) {
-	return json.Marshal(i.Load())
+	return strconv.AppendInt(nil, int64(i.Load()), 10), nil
 }
 
 func (i *Int32) UnmarshalJSON(b []byte) error {
@@ -138,7 +138,7 @@ func NewInt64(val int64) (i Int64) {
 }
 
 func (i *Int64) MarshalJSON() ([]byte, error) {
-	return json.Marshal(i.Load())
+	return strconv.AppendInt(nil, i.Load(), 10), nil
 }
 
 func (i *Int64) UnmarshalJSON(b []byte) error {
@@ -178,7 +178,7 @@ func NewUint32(val uint32) (i Uint32) {
 }
 
 func (i *Uint32) MarshalJSON() ([]byte, error) {
-	return json.Marshal(i.Load())
+	return strconv.AppendUint(nil, uint64(i.Load()), 10), nil
 }
 
 func (i *Uint32) UnmarshalJSON(b []byte) error {
@@ -218,7 +218,7 @@ func NewUint64(val uint64) (i Uint64) {
 }
 
 func (i *Uint64) MarshalJSON() ([]byte, error) {
-	return json.Marshal(i.Load())
+	return strconv.AppendUint(nil, i.Load(), 10), nil
 }
 
 func (i *Uint64) UnmarshalJSON(b []byte) error {
@@ -258,7 +258,7 @@ func NewUintptr(val uintptr) (i Uintptr) {
 }
 
 func (i *Uintptr) MarshalJSON() ([]byte, error) {
-	return json.Marshal(i.Load())
+	return strconv.AppendUint(nil, uint64(i.Load()), 10), nil
 }
 
 func (i *Uintptr) UnmarshalJSON(b []byte) error {

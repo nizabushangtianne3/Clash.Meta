@@ -270,6 +270,9 @@ type UDPPacket interface {
 	WriteBack
 
 	// Drop call after packet is used, could recycle buffer in this function.
+	// It must leave WriteBack working: a flow holds the last packet the sender
+	// handed it to answer replies through, and that outlives Drop, so the
+	// packet object itself cannot be recycled here.
 	Drop()
 
 	// LocalAddr returns the source IP/Port of packet
@@ -291,9 +294,9 @@ type PacketAdapter interface {
 
 type packetAdapter struct {
 	UDPPacket
-	metadata  *Metadata
-	localAddr net.Addr
-	flowKey   netip.AddrPort
+	metadata *Metadata
+	flowKey  netip.AddrPort
+	released bool
 }
 
 // Metadata returns destination metadata
@@ -303,7 +306,7 @@ func (s *packetAdapter) Metadata() *Metadata {
 
 // Key is a SNAT key
 func (s *packetAdapter) Key() string {
-	return s.localAddr.String()
+	return s.UDPPacket.LocalAddr().String()
 }
 
 func (s *packetAdapter) FlowKey() netip.AddrPort {
@@ -311,16 +314,40 @@ func (s *packetAdapter) FlowKey() netip.AddrPort {
 }
 
 func NewPacketAdapter(packet UDPPacket, metadata *Metadata) PacketAdapter {
-	localAddr := packet.LocalAddr()
-	return &packetAdapter{
+	adapter := &packetAdapter{
 		UDPPacket: packet,
 		metadata:  metadata,
-		localAddr: localAddr,
-		flowKey:   addrPortFromLocalAddr(localAddr),
 	}
+	if keyPacket, ok := packet.(interface{ FlowKey() netip.AddrPort }); ok {
+		// a packet that already holds its source as an AddrPort saves the
+		// materialisation and re-parse of a net.UDPAddr per packet
+		adapter.flowKey = keyPacket.FlowKey()
+	} else {
+		adapter.flowKey = addrPortFromLocalAddr(packet.LocalAddr())
+	}
+	return adapter
+}
+
+// Drop releases the wrapped packet exactly once. The adapter itself is never
+// recycled and keeps its fields: a flow answers its replies through the last
+// packet the sender handed it, and that write-back proxy outlives this call,
+// so clearing the wrapped packet here would panic the flow's next reply.
+func (s *packetAdapter) Drop() {
+	if s.released {
+		return
+	}
+	s.released = true
+	s.UDPPacket.Drop()
 }
 
 func addrPortFromLocalAddr(addr net.Addr) netip.AddrPort {
+	if wrapper, ok := addr.(interface{ RawAddr() net.Addr }); ok {
+		// listeners wrap the client address in a per-connection SNAT key
+		// (CustomAddr), whose String() is not an address
+		if raw := wrapper.RawAddr(); raw != nil {
+			addr = raw
+		}
+	}
 	var ip net.IP
 	var port int
 	var zone string
@@ -358,7 +385,7 @@ func addrPortFromLocalAddr(addr net.Addr) netip.AddrPort {
 }
 
 type WriteBack interface {
-	WriteBack(b []byte, addr net.Addr) (n int, err error)
+	WriteBack(b []byte, addr netip.AddrPort) (n int, err error)
 }
 
 type WriteBackProxy interface {
@@ -388,15 +415,15 @@ type NatTable interface {
 
 	Delete(key string)
 
-	GetForLocalConn(lAddr, rAddr string) *net.UDPConn
+	GetForLocalConn(lAddr, rAddr netip.AddrPort) *net.UDPConn
 
-	AddForLocalConn(lAddr, rAddr string, conn *net.UDPConn) bool
+	AddForLocalConn(lAddr, rAddr netip.AddrPort, conn *net.UDPConn) bool
 
-	RangeForLocalConn(lAddr string, f func(key string, value *net.UDPConn) bool)
+	RangeForLocalConnForFlow(key netip.AddrPort, f func(key netip.AddrPort, value *net.UDPConn) bool)
 
-	GetOrCreateLockForLocalConn(lAddr string, key string) (*sync.Cond, bool)
+	GetOrCreateLockForLocalConn(lAddr, rAddr netip.AddrPort) (*sync.Cond, bool)
 
-	DeleteForLocalConn(lAddr, key string)
+	DeleteForLocalConn(lAddr, rAddr netip.AddrPort)
 
-	DeleteLockForLocalConn(lAddr, key string)
+	DeleteLockForLocalConn(lAddr, rAddr netip.AddrPort)
 }

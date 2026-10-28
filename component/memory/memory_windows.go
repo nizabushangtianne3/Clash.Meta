@@ -28,7 +28,7 @@ type PROCESS_MEMORY_COUNTERS struct {
 }
 
 func getProcessMemoryInfo(h windows.Handle, mem *PROCESS_MEMORY_COUNTERS) (err error) {
-	r1, _, e1 := syscall.Syscall(procGetProcessMemoryInfo.Addr(), 3, uintptr(h), uintptr(unsafe.Pointer(mem)), uintptr(unsafe.Sizeof(*mem)))
+	r1, _, e1 := syscall.SyscallN(procGetProcessMemoryInfo.Addr(), uintptr(h), uintptr(unsafe.Pointer(mem)), uintptr(unsafe.Sizeof(*mem)))
 	if r1 == 0 {
 		if e1 != 0 {
 			err = error(e1)

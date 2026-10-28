@@ -13,13 +13,15 @@ import (
 type recordingWriteBackPacket struct {
 	C.UDPPacket
 	localAddr net.Addr
+	addrPort  netip.AddrPort
 	writes    atomic.Int64
 }
 
 func (packet *recordingWriteBackPacket) LocalAddr() net.Addr { return packet.localAddr }
 func (packet *recordingWriteBackPacket) Drop()               {}
 
-func (packet *recordingWriteBackPacket) WriteBack(b []byte, addr net.Addr) (int, error) {
+func (packet *recordingWriteBackPacket) WriteBack(b []byte, addr netip.AddrPort) (int, error) {
+	packet.addrPort = addr
 	packet.writes.Add(1)
 	return len(b), nil
 }
@@ -37,15 +39,17 @@ func TestWriteBackProxyDelegatesToLatestWriteBack(t *testing.T) {
 	adapter, packet := newWriteBackTestAdapter(t)
 	proxy := NewWriteBackProxy(adapter)
 
-	n, err := proxy.WriteBack([]byte("hello"), net.UDPAddrFromAddrPort(netip.MustParseAddrPort("1.2.3.4:53")))
+	addr := netip.MustParseAddrPort("1.2.3.4:53")
+	n, err := proxy.WriteBack([]byte("hello"), addr)
 	require.NoError(t, err)
 	require.Equal(t, 5, n)
+	require.Equal(t, addr, packet.addrPort)
 	require.EqualValues(t, 1, packet.writes.Load())
 
 	secondAdapter, secondPacket := newWriteBackTestAdapter(t)
 	proxy.UpdateWriteBack(secondAdapter)
 
-	_, err = proxy.WriteBack([]byte("hello"), net.UDPAddrFromAddrPort(netip.MustParseAddrPort("1.2.3.4:53")))
+	_, err = proxy.WriteBack([]byte("hello"), addr)
 	require.NoError(t, err)
 	require.EqualValues(t, 1, secondPacket.writes.Load())
 	require.EqualValues(t, 1, packet.writes.Load())
@@ -67,7 +71,7 @@ func BenchmarkWriteBackProxyUpdate(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for index := 0; index < b.N; index++ {
 		proxy.UpdateWriteBack(adapter)
 	}
 }

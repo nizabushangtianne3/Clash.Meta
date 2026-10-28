@@ -18,12 +18,13 @@ import (
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/log"
 
+	"slices"
+
 	"github.com/metacubex/http"
 	"github.com/metacubex/quic-go"
 	"github.com/metacubex/quic-go/http3"
 	"github.com/metacubex/tls"
 	D "github.com/miekg/dns"
-	"golang.org/x/exp/slices"
 )
 
 // Values to configure HTTP and HTTP/2 transport.
@@ -36,9 +37,9 @@ const (
 	// connections in HTTP transport.
 	transportDefaultIdleConnTimeout = 5 * time.Minute
 
-	dialTimeout        = 10 * time.Second
+	dialTimeout = 10 * time.Second
 
-	maxElapsedTime  = time.Second * 30
+	maxElapsedTime = time.Second * 30
 )
 
 var DefaultHTTPVersions = []C.HTTPVersion{C.HTTPVersion11, C.HTTPVersion2}
@@ -215,7 +216,7 @@ func (doh *dnsOverHTTPS) exchangeHTTPS(ctx context.Context, client *http.Client,
 	}
 
 	requestUrl := *doh.url // don't modify origin url
-	requestUrl.RawQuery = fmt.Sprintf("dns=%s", base64.RawURLEncoding.EncodeToString(buf))
+	requestUrl.RawQuery = "dns=" + base64.RawURLEncoding.EncodeToString(buf)
 	httpReq, err := http.NewRequestWithContext(ctx, method, requestUrl.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating http request to %s: %w", doh.url, err)
@@ -383,10 +384,17 @@ func (doh *dnsOverHTTPS) createClient(ctx context.Context) (*http.Client, error)
 // HTTP3 is enabled in the upstream options).  If this attempt is successful,
 // it returns an HTTP3 transport, otherwise it returns the H1/H2 transport.
 func (doh *dnsOverHTTPS) createTransport(ctx context.Context) (t http.RoundTripper, err error) {
+	// http.Transport dials in a context detached from the request, so a dial
+	// that the query has given up on must still end on its own.
 	transport := &http.Transport{
 		DisableCompression: true,
-		DialContext:        doh.dialer.DialContext,
-		IdleConnTimeout:    transportDefaultIdleConnTimeout,
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			ctx, cancel := context.WithTimeout(ctx, dialTimeout)
+			defer cancel()
+			return doh.dialer.DialContext(ctx, network, addr)
+		},
+		IdleConnTimeout:     transportDefaultIdleConnTimeout,
+		TLSHandshakeTimeout: dialTimeout,
 	}
 
 	if doh.url.Scheme == "http" {
@@ -645,7 +653,7 @@ func (doh *dnsOverHTTPS) probeQUIC(ctx context.Context, addr string, tlsConfig *
 
 	ch <- nil
 
-	elapsed := time.Now().Sub(startTime)
+	elapsed := time.Since(startTime)
 	log.Debugln("elapsed on establishing a QUIC connection: %s", elapsed)
 }
 
@@ -665,7 +673,7 @@ func (doh *dnsOverHTTPS) probeTLS(ctx context.Context, tlsConfig *tls.Config, ch
 
 	ch <- nil
 
-	elapsed := time.Now().Sub(startTime)
+	elapsed := time.Since(startTime)
 	log.Debugln("elapsed on establishing a TLS connection: %s", elapsed)
 }
 

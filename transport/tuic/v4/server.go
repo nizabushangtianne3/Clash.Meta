@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"net"
+	"net/netip"
 	"sync"
 
 	"github.com/metacubex/mihomo/adapter/inbound"
@@ -75,9 +76,7 @@ func (s *serverHandler) parsePacket(packet *Packet, udpRelayMode types.UdpRelayM
 	if !s.authOk.Load() {
 		return
 	}
-	var assocId uint32
-
-	assocId = packet.ASSOC_ID
+	assocId := packet.ASSOC_ID
 
 	writeClosed, _ := s.udpInputMap.LoadOrStoreFn(assocId, func() *atomic.Bool { return &atomic.Bool{} })
 	if writeClosed.Load() {
@@ -206,8 +205,8 @@ func (s *serverUDPPacket) Data() []byte {
 	return s.packet.DATA
 }
 
-func (s *serverUDPPacket) WriteBack(b []byte, addr net.Addr) (n int, err error) {
-	return s.pc.WriteTo(b, addr)
+func (s *serverUDPPacket) WriteBack(b []byte, addr netip.AddrPort) (n int, err error) {
+	return s.pc.WriteTo(b, net.UDPAddrFromAddrPort(addr))
 }
 
 func (s *serverUDPPacket) Drop() {

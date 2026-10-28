@@ -67,13 +67,38 @@ func (*simpleAuthenticator) Open(dst, nonce, ciphertext, extra []byte) ([]byte, 
 }
 
 func xorfwd(x []byte) {
-	for i := 4; i < len(x); i++ {
+	if len(x) <= 4 {
+		return
+	}
+
+	previous := binary.LittleEndian.Uint32(x[:4])
+	for i := 4; i+4 <= len(x); i += 4 {
+		current := binary.LittleEndian.Uint32(x[i : i+4])
+		current ^= previous
+		binary.LittleEndian.PutUint32(x[i:i+4], current)
+		previous = current
+	}
+	for i := len(x) &^ 3; i < len(x); i++ {
 		x[i] ^= x[i-4]
 	}
 }
 
 func xorbkd(x []byte) {
-	for i := len(x) - 1; i >= 4; i-- {
+	boundary := len(x) - 4
+	for i := boundary; i >= 4; i -= 4 {
+		previous := binary.LittleEndian.Uint32(x[i-4 : i])
+		current := binary.LittleEndian.Uint32(x[i : i+4])
+		current ^= previous
+		binary.LittleEndian.PutUint32(x[i:i+4], current)
+	}
+
+	tailEnd := boundary
+	if tailEnd < 4 {
+		tailEnd = len(x)
+	} else {
+		tailEnd = 4 + (boundary-4)%4
+	}
+	for i := 4; i < tailEnd; i++ {
 		x[i] ^= x[i-4]
 	}
 }

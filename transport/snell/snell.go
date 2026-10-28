@@ -243,30 +243,26 @@ func WritePacket(w io.Writer, socks5Addr, payload []byte) (int, error) {
 	return 0, errors.New("snell UDP payload too large")
 }
 
-func WritePacketResponse(w io.Writer, addr net.Addr, payload []byte) (int, error) {
+func WritePacketResponse(w io.Writer, addr netip.AddrPort, payload []byte) (int, error) {
 	buf := pool.GetBuffer()
 	defer pool.PutBuffer(buf)
 
-	socks5Addr := socks5.ParseAddrToSocksAddr(addr)
-	if len(socks5Addr) == 0 {
+	if !addr.IsValid() {
 		return 0, errors.New("snell UDP response address invalid")
 	}
-	switch socks5Addr[0] {
-	case socks5.AtypIPv4:
-		if len(socks5Addr) < 1+net.IPv4len+2 {
-			return 0, errors.New("snell UDP response address invalid")
-		}
+	ip := addr.Addr().Unmap()
+	if ip.Is4() {
 		buf.WriteByte(0x04)
-		buf.Write(socks5Addr[1 : 1+net.IPv4len+2])
-	case socks5.AtypIPv6:
-		if len(socks5Addr) < 1+net.IPv6len+2 {
-			return 0, errors.New("snell UDP response address invalid")
-		}
+		ip4 := ip.As4()
+		buf.Write(ip4[:])
+	} else {
 		buf.WriteByte(0x06)
-		buf.Write(socks5Addr[1 : 1+net.IPv6len+2])
-	default:
-		return 0, errors.New("snell UDP response address invalid")
+		ip16 := ip.As16()
+		buf.Write(ip16[:])
 	}
+	var port [2]byte
+	binary.BigEndian.PutUint16(port[:], addr.Port())
+	buf.Write(port[:])
 	buf.Write(payload)
 
 	var err error

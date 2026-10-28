@@ -3,15 +3,70 @@ package mkcp
 import (
 	"context"
 	"io"
+	"math"
 	"math/rand"
 	"net"
 	"os"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/metacubex/mihomo/common/pool"
 )
 
 var globalConv uint32 = uint32(uint16(rand.Int63() >> 47))
+
+var segmentPool = sync.Pool{
+	New: func() any { return new(dataSegment) },
+}
+
+const maxWaitDuration = time.Duration(math.MaxInt64)
+
+type waitSignal struct {
+	mu       *sync.Mutex
+	cond     *sync.Cond
+	deadline time.Time
+	timer    *time.Timer
+}
+
+func newWaitSignal(mu *sync.Mutex) *waitSignal {
+	signal := &waitSignal{mu: mu, cond: sync.NewCond(mu)}
+	signal.timer = time.AfterFunc(maxWaitDuration, signal.timeout)
+	signal.timer.Stop()
+	return signal
+}
+
+func (w *waitSignal) timeout() {
+	w.mu.Lock()
+	w.cond.Broadcast()
+	w.mu.Unlock()
+}
+
+func (w *waitSignal) setDeadline(deadline time.Time) {
+	w.deadline = deadline
+	if deadline.IsZero() {
+		w.timer.Stop()
+		return
+	}
+	w.timer.Reset(time.Until(deadline))
+}
+
+func (w *waitSignal) expired() bool {
+	deadline := w.deadline
+	return !deadline.IsZero() && !time.Now().Before(deadline)
+}
+
+func (w *waitSignal) wait() {
+	w.cond.Wait()
+}
+
+func (w *waitSignal) signal() {
+	w.cond.Broadcast()
+}
+
+func (w *waitSignal) stop() {
+	w.timer.Stop()
+}
 
 type connState int32
 
@@ -25,23 +80,20 @@ const (
 )
 
 type Conn struct {
-	mu            sync.Mutex
-	cfg           Config
-	writer        packetWriter
-	closer        io.Closer
-	localAddr     net.Addr
-	remoteAddr    net.Addr
-	conv          uint16
-	created       time.Time
-	mss           int
-	rto           uint32
-	rttVariation  uint32
-	srtt          uint32
-	minRtt        uint32
-	rtoUpdated    uint32
-	readDeadline  time.Time
-	writeDeadline time.Time
-
+	mu           sync.Mutex
+	cfg          Config
+	writer       packetWriter
+	closer       io.Closer
+	localAddr    net.Addr
+	remoteAddr   net.Addr
+	conv         uint16
+	created      time.Time
+	mss          int
+	rto          uint32
+	rttVariation uint32
+	srtt         uint32
+	minRtt       uint32
+	rtoUpdated   uint32
 	state        connState
 	stateBegin   uint32
 	lastIncoming uint32
@@ -52,6 +104,7 @@ type Conn struct {
 	recvNext      uint32
 	ackList       []ackItem
 	ackDirty      bool
+	ackCandidates []uint32
 	sendWindow    []*dataSegment
 	sendNext      uint32
 	firstUnacked  uint32
@@ -61,11 +114,14 @@ type Conn struct {
 	controlWindow          uint32
 	firstUnackedWasUpdated bool
 
-	readNotify  chan struct{}
-	writeNotify chan struct{}
-	flushNotify chan struct{}
-	done        chan struct{}
-	once        sync.Once
+	readNotify   *waitSignal
+	readWaiters  int
+	writeNotify  *waitSignal
+	writeWaiters int
+	flushNotify  chan struct{}
+	flushBatch   []segment
+	done         chan struct{}
+	once         sync.Once
 }
 
 type ackItem struct {
@@ -81,27 +137,40 @@ func Dial(ctx context.Context, raw net.Conn, cfg Config) (*Conn, error) {
 	}
 	conv := uint16(atomic.AddUint32(&globalConv, 1))
 	conn := newConn(raw.LocalAddr(), raw.RemoteAddr(), conv, packetWriter{security: security, header: cfg.packetHeader(), writer: raw}, raw, cfg)
-	reader := packetReader{security: security, header: cfg.packetHeader()}
+	dataPool := &sync.Pool{New: func() any { return new(dataSegment) }}
+	bufferPool := &sync.Pool{New: func() any { return new(receiveBuffer) }}
+	reader := packetReader{
+		security:   security,
+		header:     cfg.packetHeader(),
+		dataPool:   dataPool,
+		bufferPool: bufferPool,
+	}
+	readSize := receiveSize(cfg, security)
 	go func() {
-		cache := make(chan []byte, 1024)
+		cache := make(chan *receiveBuffer, 1024)
 		go func() {
 			defer close(cache)
-			buf := make([]byte, 64*1024)
 			for {
-				n, err := raw.Read(buf)
+				buffer := reader.newReceiveBuffer(readSize)
+				n, err := raw.Read(buffer.data)
 				if err != nil {
+					buffer.release()
 					return
 				}
-				payload := append([]byte(nil), buf[:n]...)
+				buffer.data = buffer.data[:n]
 				select {
-				case cache <- payload:
+				case cache <- buffer:
 				default:
+					buffer.release()
 				}
 			}
 		}()
 
-		for payload := range cache {
-			conn.Input(reader.read(payload))
+		var segments []segment
+		for buffer := range cache {
+			segments = reader.read(buffer.data, buffer, segments)
+			conn.Input(segments)
+			clear(segments)
 		}
 	}()
 	return conn, nil
@@ -123,11 +192,11 @@ func newConn(localAddr, remoteAddr net.Addr, conv uint16, writer packetWriter, c
 		recvCache:     make(map[uint32]*dataSegment),
 		remoteRecvWin: 32,
 		controlWindow: cfg.sendingInFlightSize(),
-		readNotify:    make(chan struct{}),
-		writeNotify:   make(chan struct{}),
 		flushNotify:   make(chan struct{}, 1),
 		done:          make(chan struct{}),
 	}
+	c.readNotify = newWaitSignal(&c.mu)
+	c.writeNotify = newWaitSignal(&c.mu)
 	if c.mss < 576 {
 		c.mss = 576
 	}
@@ -144,7 +213,8 @@ func (c *Conn) Read(b []byte) (int, error) {
 		c.mu.Lock()
 		if len(c.readBuf) > 0 {
 			n := copy(b, c.readBuf)
-			c.readBuf = c.readBuf[n:]
+			remaining := copy(c.readBuf, c.readBuf[n:])
+			c.readBuf = c.readBuf[:remaining]
 			c.mu.Unlock()
 			c.wakeFlush()
 			return n, nil
@@ -153,11 +223,17 @@ func (c *Conn) Read(b []byte) (int, error) {
 			c.mu.Unlock()
 			return 0, io.EOF
 		}
-		ch := c.readNotify
-		deadline := c.readDeadline
+		if c.readNotify.expired() {
+			c.mu.Unlock()
+			return 0, os.ErrDeadlineExceeded
+		}
+		c.readWaiters++
+		c.readNotify.wait()
+		c.readWaiters--
+		expired := c.readNotify.expired()
 		c.mu.Unlock()
-		if err := waitNotify(ch, deadline); err != nil {
-			return 0, err
+		if expired {
+			return 0, os.ErrDeadlineExceeded
 		}
 	}
 }
@@ -172,51 +248,42 @@ func (c *Conn) Write(b []byte) (int, error) {
 		if end > len(b) {
 			end = len(b)
 		}
-		payload := append([]byte(nil), b[written:end]...)
+		payload := pool.Get(end - written)
+		copy(payload, b[written:end])
 		for {
 			c.mu.Lock()
 			if c.state != stateActive {
 				c.mu.Unlock()
+				_ = pool.Put(payload)
 				return written, io.ErrClosedPipe
 			}
 			if uint32(len(c.sendWindow)) <= c.cfg.sendingBufferSize() {
-				seg := &dataSegment{number: c.sendNext, payload: payload}
+				seg := segmentPool.Get().(*dataSegment)
+				*seg = dataSegment{number: c.sendNext, payload: payload}
 				c.sendNext++
 				c.sendWindow = append(c.sendWindow, seg)
-				c.signalWriteLocked()
 				c.mu.Unlock()
 				c.wakeFlush()
 				written = end
 				break
 			}
-			ch := c.writeNotify
-			deadline := c.writeDeadline
+			if c.writeNotify.expired() {
+				c.mu.Unlock()
+				_ = pool.Put(payload)
+				return written, os.ErrDeadlineExceeded
+			}
+			c.writeWaiters++
+			c.writeNotify.wait()
+			c.writeWaiters--
+			expired := c.writeNotify.expired()
 			c.mu.Unlock()
-			if err := waitNotify(ch, deadline); err != nil {
-				return written, err
+			if expired {
+				_ = pool.Put(payload)
+				return written, os.ErrDeadlineExceeded
 			}
 		}
 	}
 	return written, nil
-}
-
-func waitNotify(ch <-chan struct{}, deadline time.Time) error {
-	if deadline.IsZero() {
-		<-ch
-		return nil
-	}
-	timeout := time.Until(deadline)
-	if timeout <= 0 {
-		return os.ErrDeadlineExceeded
-	}
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-	select {
-	case <-ch:
-		return nil
-	case <-timer.C:
-		return os.ErrDeadlineExceeded
-	}
 }
 
 func (c *Conn) Close() error {
@@ -250,6 +317,8 @@ func (c *Conn) terminate() {
 		c.signalWriteLocked()
 		c.mu.Unlock()
 		close(c.done)
+		c.readNotify.stop()
+		c.writeNotify.stop()
 		if c.closer != nil {
 			_ = c.closer.Close()
 		}
@@ -270,7 +339,7 @@ func (c *Conn) SetReadDeadline(t time.Time) error {
 		c.mu.Unlock()
 		return net.ErrClosed
 	}
-	c.readDeadline = t
+	c.readNotify.setDeadline(t)
 	c.signalReadLocked()
 	c.mu.Unlock()
 	return nil
@@ -282,7 +351,7 @@ func (c *Conn) SetWriteDeadline(t time.Time) error {
 		c.mu.Unlock()
 		return net.ErrClosed
 	}
-	c.writeDeadline = t
+	c.writeNotify.setDeadline(t)
 	c.signalWriteLocked()
 	c.mu.Unlock()
 	return nil
@@ -311,7 +380,8 @@ func (c *Conn) Input(segments []segment) {
 	c.lastIncoming = current
 	for _, seg := range segments {
 		if seg.conversation() != c.conv {
-			break
+			releaseReadSegment(seg)
+			continue
 		}
 		switch s := seg.(type) {
 		case *dataSegment:
@@ -322,6 +392,7 @@ func (c *Conn) Input(segments []segment) {
 				c.ackList = append(c.ackList, ackItem{number: s.number, timestamp: s.timestamp})
 				c.ackDirty = true
 				if _, ok := c.recvCache[s.number]; !ok {
+					s.recvOwned = true
 					c.recvCache[s.number] = s
 				}
 			}
@@ -334,7 +405,7 @@ func (c *Conn) Input(segments []segment) {
 			}
 			c.processReceivingNextLocked(s.receivingNext)
 			if len(s.numberList) == 0 {
-				continue
+				break
 			}
 			var maxack uint32
 			maxackRemoved := false
@@ -373,6 +444,7 @@ func (c *Conn) Input(segments []segment) {
 				c.signalWriteLocked()
 			}
 		}
+		releaseReadSegment(seg)
 	}
 }
 
@@ -397,6 +469,8 @@ func (c *Conn) deliverLocked() {
 		delete(c.recvCache, c.recvNext)
 		c.recvNext++
 		c.readBuf = append(c.readBuf, seg.payload...)
+		seg.recvOwned = false
+		releaseReadSegment(seg)
 		delivered = true
 	}
 	if delivered {
@@ -421,13 +495,18 @@ func (c *Conn) processSendingNextLocked(next uint32) {
 
 func (c *Conn) processReceivingNextLocked(next uint32) {
 	changed := false
+	window := c.sendWindow
 	filtered := c.sendWindow[:0]
-	for _, seg := range c.sendWindow {
+	for _, seg := range window {
 		if seg.number < next {
 			changed = true
+			c.retireSegmentLocked(seg)
 			continue
 		}
 		filtered = append(filtered, seg)
+	}
+	for i := len(filtered); i < len(window); i++ {
+		window[i] = nil
 	}
 	c.sendWindow = filtered
 	c.findFirstUnackedLocked()
@@ -445,6 +524,7 @@ func (c *Conn) processAckLocked(number uint32) bool {
 			if c.totalInFlightSize > 0 {
 				c.totalInFlightSize--
 			}
+			c.retireSegmentLocked(seg)
 			copy(c.sendWindow[i:], c.sendWindow[i+1:])
 			c.sendWindow[len(c.sendWindow)-1] = nil
 			c.sendWindow = c.sendWindow[:len(c.sendWindow)-1]
@@ -454,6 +534,43 @@ func (c *Conn) processAckLocked(number uint32) bool {
 		}
 	}
 	return false
+}
+
+func (c *Conn) retireSegmentLocked(seg *dataSegment) {
+	if seg.retired {
+		return
+	}
+	seg.retired = true
+	c.recycleSegmentLocked(seg)
+}
+
+func (c *Conn) recycleSegmentLocked(seg *dataSegment) {
+	if !seg.retired || seg.flushRefs != 0 || seg.recycled {
+		return
+	}
+	_ = pool.Put(seg.payload)
+	seg.payload = nil
+	seg.recycled = true
+	segmentPool.Put(seg)
+}
+
+func (c *Conn) releaseFlushSegments(segments []segment) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	for _, item := range segments {
+		switch seg := item.(type) {
+		case *dataSegment:
+			seg.flushRefs--
+			c.recycleSegmentLocked(seg)
+		case *ackSegment:
+			clear(seg.numberList)
+			seg.numberList = seg.numberList[:0]
+			sendAckSegmentPool.Put(seg)
+		case *cmdOnlySegment:
+			sendCmdSegmentPool.Put(seg)
+		}
+	}
 }
 
 func (c *Conn) handleFastAckLocked(number uint32) {
@@ -487,13 +604,17 @@ func (c *Conn) findFirstUnackedLocked() {
 }
 
 func (c *Conn) signalReadLocked() {
-	close(c.readNotify)
-	c.readNotify = make(chan struct{})
+	if c.readWaiters == 0 {
+		return
+	}
+	c.readNotify.signal()
 }
 
 func (c *Conn) signalWriteLocked() {
-	close(c.writeNotify)
-	c.writeNotify = make(chan struct{})
+	if c.writeWaiters == 0 {
+		return
+	}
+	c.writeNotify.signal()
 }
 
 func (c *Conn) wakeFlush() {
@@ -519,7 +640,11 @@ func (c *Conn) flushLoop() {
 }
 
 func (c *Conn) flush() {
-	var segments []segment
+	segments := c.flushBatch[:0]
+	defer func() {
+		clear(segments)
+		c.flushBatch = segments[:0]
+	}()
 	var terminate bool
 
 	c.mu.Lock()
@@ -542,10 +667,7 @@ func (c *Conn) flush() {
 			terminate = true
 		}
 		c.mu.Unlock()
-		c.writeSegments(segments)
-		if terminate {
-			c.terminate()
-		}
+		c.sendSegments(segments, terminate)
 		return
 	}
 	if c.state == statePeerTerminating && current-c.stateBegin > 4000 {
@@ -555,26 +677,22 @@ func (c *Conn) flush() {
 		c.setStateLocked(stateTerminating)
 	}
 
-	segments = append(segments, c.flushAcksLocked(current)...)
-	segments = append(segments, c.flushSendLocked(current)...)
+	segments = c.flushAcksLocked(current, segments)
+	segments = c.flushSendLocked(current, segments)
 	if current-c.lastPing >= 3000 {
 		segments = append(segments, c.pingSegmentLocked(commandPing, current))
 	}
 	terminate = c.state == stateTerminated
 	c.mu.Unlock()
 
-	c.writeSegments(segments)
-	if terminate {
-		c.terminate()
-	}
+	c.sendSegments(segments, terminate)
 }
 
-func (c *Conn) flushAcksLocked(current uint32) []segment {
+func (c *Conn) flushAcksLocked(current uint32, segments []segment) []segment {
 	if len(c.ackList) == 0 {
-		return nil
+		return segments
 	}
-	segments := make([]segment, 0, 1)
-	candidates := make([]uint32, 0, 128)
+	candidates := c.ackCandidates[:0]
 	ack := c.newAckSegmentLocked()
 	for i := range c.ackList {
 		item := &c.ackList[i]
@@ -609,18 +727,18 @@ func (c *Conn) flushAcksLocked(current uint32) []segment {
 		segments = append(segments, ack)
 		c.ackDirty = false
 	}
+	c.ackCandidates = candidates
 	return segments
 }
 
-func (c *Conn) flushSendLocked(current uint32) []segment {
+func (c *Conn) flushSendLocked(current uint32, segments []segment) []segment {
 	if len(c.sendWindow) == 0 {
 		if c.firstUnackedWasUpdated {
 			c.firstUnackedWasUpdated = false
-			return []segment{c.pingSegmentLocked(commandPing, current)}
+			return append(segments, c.pingSegmentLocked(commandPing, current))
 		}
-		return nil
+		return segments
 	}
-	segments := make([]segment, 0, len(c.sendWindow))
 	cwnd := c.cfg.sendingInFlightSize()
 	if remoteWindow := c.remoteRecvWin - c.firstUnacked; cwnd > remoteWindow {
 		cwnd = remoteWindow
@@ -649,6 +767,7 @@ func (c *Conn) flushSendLocked(current uint32) []segment {
 			seg.option = segmentOptionClose
 		}
 		seg.transmit++
+		seg.flushRefs++
 		timeout := c.rto
 		if timeout < c.cfg.tti() {
 			timeout = c.cfg.tti()
@@ -668,26 +787,38 @@ func (c *Conn) flushSendLocked(current uint32) []segment {
 	return segments
 }
 
-func (c *Conn) writeSegments(segments []segment) {
-	for _, seg := range segments {
-		var err error
-		for i := 0; i < 5; i++ {
-			err = c.writer.writeSegment(seg)
-			if err == nil {
-				break
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
-		_ = err
+// sendSegments writes the batch out, releases it, and ends the connection when
+// a write fails or the flush already decided to terminate. A socket that
+// refuses a write cannot carry this connection any further, and the peer would
+// otherwise sit on its own deadline waiting for segments that can never
+// arrive, so the failure is answered by tearing the connection down now.
+func (c *Conn) sendSegments(segments []segment, terminate bool) {
+	failed := c.writeSegments(segments) != nil
+	c.releaseFlushSegments(segments)
+	if failed || terminate {
+		c.terminate()
 	}
 }
 
-func (c *Conn) newAckSegmentLocked() *ackSegment {
-	ack := &ackSegment{
-		conv:            c.conv,
-		receivingNext:   c.recvNext,
-		receivingWindow: c.recvNext + c.cfg.receivingInFlightSize(),
+// writeSegments writes the batch in order and stops at the first failure. The
+// segment that failed is not retried here: it is still in the send window with
+// its timeout, and retrying it on a socket that just refused a write would
+// only burn another syscall.
+func (c *Conn) writeSegments(segments []segment) error {
+	for _, seg := range segments {
+		if err := c.writer.writeSegment(seg); err != nil {
+			return err
+		}
 	}
+	return nil
+}
+
+func (c *Conn) newAckSegmentLocked() *ackSegment {
+	ack := sendAckSegmentPool.Get().(*ackSegment)
+	ack.conv = c.conv
+	ack.receivingNext = c.recvNext
+	ack.receivingWindow = c.recvNext + c.cfg.receivingInFlightSize()
+	ack.numberList = ack.numberList[:0]
 	if c.state == stateReadyToClose {
 		ack.option = segmentOptionClose
 	}
@@ -695,13 +826,12 @@ func (c *Conn) newAckSegmentLocked() *ackSegment {
 }
 
 func (c *Conn) pingSegmentLocked(cmd command, current uint32) *cmdOnlySegment {
-	seg := &cmdOnlySegment{
-		conv:          c.conv,
-		cmd:           cmd,
-		receivingNext: c.recvNext,
-		sendingNext:   c.firstUnacked,
-		peerRTO:       c.rto,
-	}
+	seg := sendCmdSegmentPool.Get().(*cmdOnlySegment)
+	seg.conv = c.conv
+	seg.cmd = cmd
+	seg.receivingNext = c.recvNext
+	seg.sendingNext = c.firstUnacked
+	seg.peerRTO = c.rto
 	if c.state == stateReadyToClose {
 		seg.option = segmentOptionClose
 	}
@@ -720,21 +850,40 @@ func (c *Conn) setStateLocked(state connState) {
 		c.signalReadLocked()
 		c.signalWriteLocked()
 	case statePeerClosed:
-		c.sendWindow = nil
+		c.clearSendWindowLocked()
 		c.signalWriteLocked()
 	case stateTerminating:
-		c.sendWindow = nil
+		c.clearSendWindowLocked()
+		c.clearRecvCacheLocked()
 		c.signalReadLocked()
 		c.signalWriteLocked()
 	case statePeerTerminating:
-		c.sendWindow = nil
+		c.clearSendWindowLocked()
+		c.clearRecvCacheLocked()
 		c.signalReadLocked()
 		c.signalWriteLocked()
 	case stateTerminated:
-		c.sendWindow = nil
+		c.clearSendWindowLocked()
+		c.clearRecvCacheLocked()
 		c.signalReadLocked()
 		c.signalWriteLocked()
 	}
+}
+
+func (c *Conn) clearSendWindowLocked() {
+	for _, seg := range c.sendWindow {
+		c.retireSegmentLocked(seg)
+	}
+	clear(c.sendWindow)
+	c.sendWindow = nil
+}
+
+func (c *Conn) clearRecvCacheLocked() {
+	for _, seg := range c.recvCache {
+		seg.recvOwned = false
+		releaseReadSegment(seg)
+	}
+	clear(c.recvCache)
 }
 
 func (c *Conn) updateRTTLocked(rtt uint32, current uint32) {

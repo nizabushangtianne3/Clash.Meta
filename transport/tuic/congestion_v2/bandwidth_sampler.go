@@ -366,7 +366,7 @@ func newConnectionStateOnSentPacket(
 // not indicative of the real bandwidth. Hence, we use the send rate as an upper
 // bound, and the sample value is
 //
-//	rate_sample = Min(send_rate, ack_rate)
+//	rate_sample = min(send_rate, ack_rate)
 //
 // An important edge case handled by the sampler is tracking the app-limited
 // samples. There are multiple meaning of "app-limited" used interchangeably,
@@ -482,9 +482,6 @@ type bandwidthSampler struct {
 
 	recentAckPoints recentAckPoints
 	a0Candidates    RingBuffer[ackPoint]
-
-	// Maximum number of tracked packets.
-	maxTrackedPackets congestion.ByteCount
 
 	maxAckHeightTracker              *maxAckHeightTracker
 	totalBytesAckedAfterLastAckEvent congestion.ByteCount
@@ -632,14 +629,14 @@ func (b *bandwidthSampler) OnCongestionEvent(
 		lastAckedPacketSendState = sample.stateAtSend
 
 		if sample.rtt != 0 {
-			eventSample.sampleRtt = Min(eventSample.sampleRtt, sample.rtt)
+			eventSample.sampleRtt = min(eventSample.sampleRtt, sample.rtt)
 		}
 		if sample.bandwidth > eventSample.sampleMaxBandwidth {
 			eventSample.sampleMaxBandwidth = sample.bandwidth
 			eventSample.sampleIsAppLimited = sample.stateAtSend.isAppLimited
 		}
 		if sample.sendRate != infBandwidth {
-			maxSendRate = Max(maxSendRate, sample.sendRate)
+			maxSendRate = max(maxSendRate, sample.sendRate)
 		}
 		inflightSample := b.totalBytesAcked - lastAckedPacketSendState.totalBytesAcked
 		if inflightSample > eventSample.sampleMaxInflight {
@@ -664,12 +661,12 @@ func (b *bandwidthSampler) OnCongestionEvent(
 	}
 
 	isNewMaxBandwidth := eventSample.sampleMaxBandwidth > maxBandwidth
-	maxBandwidth = Max(maxBandwidth, eventSample.sampleMaxBandwidth)
+	maxBandwidth = max(maxBandwidth, eventSample.sampleMaxBandwidth)
 	if b.limitMaxAckHeightTrackerBySendRate {
-		maxBandwidth = Max(maxBandwidth, maxSendRate)
+		maxBandwidth = max(maxBandwidth, maxSendRate)
 	}
 
-	eventSample.extraAcked = b.onAckEventEnd(Min(estBandwidthUpperBound, maxBandwidth), isNewMaxBandwidth, roundTripCount)
+	eventSample.extraAcked = b.onAckEventEnd(min(estBandwidthUpperBound, maxBandwidth), isNewMaxBandwidth, roundTripCount)
 
 	return *eventSample
 }
@@ -724,10 +721,6 @@ func (b *bandwidthSampler) IsAppLimited() bool {
 
 func (b *bandwidthSampler) EndOfAppLimitedPhase() congestion.PacketNumber {
 	return b.endOfAppLimitedPhase
-}
-
-func (b *bandwidthSampler) max_ack_height() congestion.ByteCount {
-	return b.maxAckHeightTracker.Get()
 }
 
 func (b *bandwidthSampler) chooseA0Point(totalBytesAcked congestion.ByteCount, a0 *ackPoint) bool {
@@ -820,7 +813,7 @@ func (b *bandwidthSampler) onPacketAcknowledged(ackTime monotime.Time, packetNum
 
 	ackRate := BandwidthFromDelta(b.totalBytesAcked-a0.totalBytesAcked, ackTime.Sub(a0.ackTime))
 
-	sample.bandwidth = Min(sendRate, ackRate)
+	sample.bandwidth = min(sendRate, ackRate)
 	// Note: this sample does not account for delayed acknowledgement time.  This
 	// means that the RTT measurements here can be artificially high, especially
 	// on low bandwidth connections.
@@ -868,8 +861,4 @@ func sentPacketToSendTimeState(sentPacket *connectionStateOnSentPacket, sendTime
 func bytesFromBandwidthAndTimeDelta(bandwidth Bandwidth, delta time.Duration) congestion.ByteCount {
 	return (congestion.ByteCount(bandwidth) * congestion.ByteCount(delta)) /
 		(congestion.ByteCount(time.Second) * 8)
-}
-
-func timeDeltaFromBytesAndBandwidth(bytes congestion.ByteCount, bandwidth Bandwidth) time.Duration {
-	return time.Duration(bytes*8) * time.Second / time.Duration(bandwidth)
 }

@@ -257,14 +257,6 @@ type bbrSender struct {
 	endRecoveryAt congestion.PacketNumber
 	// A window used to limit the number of bytes in flight during loss recovery.
 	recoveryWindow congestion.ByteCount
-	// If true, consider all samples in recovery app-limited.
-	isAppLimitedRecovery bool // not used
-
-	// When true, pace at 1.5x and disable packet conservation in STARTUP.
-	slowerStartup bool // not used
-	// When true, disables packet conservation in STARTUP.
-	rateBasedStartup bool // not used
-
 	// When true, add the most recent ack aggregation measurement during STARTUP.
 	enableAckAggregationDuringStartup bool
 	// When true, expire the windowed ack aggregation values in STARTUP when
@@ -468,9 +460,9 @@ func (b *bbrSender) SetMaxDatagramSize(s congestion.ByteCount) {
 	case oldInitialCongestionWindow:
 		b.congestionWindow = b.initialCongestionWindow
 	default:
-		b.congestionWindow = Min(b.maxCongestionWindow, Max(b.congestionWindow, b.minCongestionWindow))
+		b.congestionWindow = min(b.maxCongestionWindow, max(b.congestionWindow, b.minCongestionWindow))
 	}
-	b.recoveryWindow = Min(b.maxCongestionWindow, Max(b.recoveryWindow, b.minCongestionWindow))
+	b.recoveryWindow = min(b.maxCongestionWindow, max(b.recoveryWindow, b.minCongestionWindow))
 	b.pacer.SetMaxDatagramSize(s)
 }
 
@@ -491,7 +483,7 @@ func (b *bbrSender) GetCongestionWindow() congestion.ByteCount {
 	}
 
 	if b.InRecovery() {
-		return Min(b.congestionWindow, b.recoveryWindow)
+		return min(b.congestionWindow, b.recoveryWindow)
 	}
 
 	return b.congestionWindow
@@ -612,14 +604,6 @@ func (b *bbrSender) PacingRate() Bandwidth {
 	return b.pacingRate
 }
 
-// Sets the CWND gain used in STARTUP.  Must be greater than 1.
-func (b *bbrSender) setHighCwndGain(highCwndGain float64) {
-	b.highCwndGain = highCwndGain
-	if b.mode == bbrModeStartup {
-		b.congestionWindowGain = highCwndGain
-	}
-}
-
 // Get the current bandwidth estimate. Note that Bandwidth is in bits per second.
 func (b *bbrSender) bandwidthEstimate() Bandwidth {
 	return b.maxBandwidth.GetBest()
@@ -663,7 +647,7 @@ func (b *bbrSender) getTargetCongestionWindow(gain float64) congestion.ByteCount
 		congestionWindow = congestion.ByteCount(gain * float64(b.initialCongestionWindow))
 	}
 
-	return Max(congestionWindow, b.minCongestionWindow)
+	return max(congestionWindow, b.minCongestionWindow)
 }
 
 // The target congestion window during PROBE_RTT.
@@ -907,7 +891,7 @@ func (b *bbrSender) calculatePacingRate(bytesLost congestion.ByteCount) {
 				// We are fairly sure overshoot happens if 1) there is at least one
 				// non app-limited bw sample or 2) half of IW gets lost. Slow pacing
 				// rate.
-				b.pacingRate = Max(targetRate, BandwidthFromDelta(b.cwndToCalculateMinPacingRate, b.rttStats.MinRTT()))
+				b.pacingRate = max(targetRate, BandwidthFromDelta(b.cwndToCalculateMinPacingRate, b.rttStats.MinRTT()))
 				b.bytesLostWhileDetectingOvershooting = 0
 				b.detectOvershooting = false
 			}
@@ -915,7 +899,7 @@ func (b *bbrSender) calculatePacingRate(bytesLost congestion.ByteCount) {
 	}
 
 	// Do not decrease the pacing rate during startup.
-	b.pacingRate = Max(b.pacingRate, targetRate)
+	b.pacingRate = max(b.pacingRate, targetRate)
 }
 
 // Determines the appropriate congestion window for the connection.
@@ -938,7 +922,7 @@ func (b *bbrSender) calculateCongestionWindow(bytesAcked, excessAcked congestion
 	// the CWND towards |target_window| by only increasing it |bytes_acked| at a
 	// time.
 	if b.isAtFullBandwidth {
-		b.congestionWindow = Min(targetWindow, b.congestionWindow+bytesAcked)
+		b.congestionWindow = min(targetWindow, b.congestionWindow+bytesAcked)
 	} else if b.congestionWindow < targetWindow ||
 		b.sampler.TotalBytesAcked() < b.initialCongestionWindow {
 		// If the connection is not yet out of startup phase, do not decrease the
@@ -947,8 +931,8 @@ func (b *bbrSender) calculateCongestionWindow(bytesAcked, excessAcked congestion
 	}
 
 	// Enforce the limits on the congestion window.
-	b.congestionWindow = Max(b.congestionWindow, b.minCongestionWindow)
-	b.congestionWindow = Min(b.congestionWindow, b.maxCongestionWindow)
+	b.congestionWindow = max(b.congestionWindow, b.minCongestionWindow)
+	b.congestionWindow = min(b.congestionWindow, b.maxCongestionWindow)
 }
 
 // Determines the appropriate window that constrains the in-flight during recovery.
@@ -960,7 +944,7 @@ func (b *bbrSender) calculateRecoveryWindow(bytesAcked, bytesLost congestion.Byt
 	// Set up the initial recovery window.
 	if b.recoveryWindow == 0 {
 		b.recoveryWindow = b.bytesInFlight + bytesAcked
-		b.recoveryWindow = Max(b.minCongestionWindow, b.recoveryWindow)
+		b.recoveryWindow = max(b.minCongestionWindow, b.recoveryWindow)
 		return
 	}
 
@@ -979,8 +963,8 @@ func (b *bbrSender) calculateRecoveryWindow(bytesAcked, bytesLost congestion.Byt
 	}
 
 	// Always allow sending at least |bytes_acked| in response.
-	b.recoveryWindow = Max(b.recoveryWindow, b.bytesInFlight+bytesAcked)
-	b.recoveryWindow = Max(b.minCongestionWindow, b.recoveryWindow)
+	b.recoveryWindow = max(b.recoveryWindow, b.bytesInFlight+bytesAcked)
+	b.recoveryWindow = max(b.minCongestionWindow, b.recoveryWindow)
 }
 
 // Return whether we should exit STARTUP due to excessive loss.
@@ -992,10 +976,7 @@ func (b *bbrSender) shouldExitStartupDueToLoss(lastPacketSendState *sendTimeStat
 	inflightAtSend := lastPacketSendState.bytesInFlight
 
 	if inflightAtSend > 0 && b.bytesLostInRound > 0 {
-		if b.bytesLostInRound > congestion.ByteCount(float64(inflightAtSend)*quicBbr2DefaultLossThreshold) {
-			return true
-		}
-		return false
+		return b.bytesLostInRound > congestion.ByteCount(float64(inflightAtSend)*quicBbr2DefaultLossThreshold)
 	}
 	return false
 }

@@ -132,10 +132,8 @@ func (t *clientImpl) handleUniStream(quicConn *quic.Conn) (err error) {
 			defer func() {
 				t.deferQuicConn(quicConn, err)
 				if err != nil && assocId != 0 {
-					if val, ok := t.udpInputMap.LoadAndDelete(assocId); ok {
-						if conn, ok := val.(net.Conn); ok {
-							_ = conn.Close()
-						}
+					if val, ok := t.udpInputMap.LoadAndDelete(assocId); ok && val != nil {
+						_ = val.Close()
 					}
 				}
 				stream.CancelRead(0)
@@ -154,12 +152,10 @@ func (t *clientImpl) handleUniStream(quicConn *quic.Conn) (err error) {
 				}
 				if t.udp && t.UdpRelayMode == types.QUIC {
 					assocId = packet.ASSOC_ID
-					if val, ok := t.udpInputMap.Load(assocId); ok {
-						if conn, ok := val.(net.Conn); ok {
-							writer := bufio.NewWriterSize(conn, packet.BytesLen())
-							_ = packet.WriteTo(writer)
-							_ = writer.Flush()
-						}
+					if val, ok := t.udpInputMap.Load(assocId); ok && val != nil {
+						writer := bufio.NewWriterSize(val, packet.BytesLen())
+						_ = packet.WriteTo(writer)
+						_ = writer.Flush()
 					}
 				}
 			}
@@ -183,10 +179,8 @@ func (t *clientImpl) handleMessage(quicConn *quic.Conn) (err error) {
 			defer func() {
 				t.deferQuicConn(quicConn, err)
 				if err != nil && assocId != 0 {
-					if val, ok := t.udpInputMap.LoadAndDelete(assocId); ok {
-						if conn, ok := val.(net.Conn); ok {
-							_ = conn.Close()
-						}
+					if val, ok := t.udpInputMap.LoadAndDelete(assocId); ok && val != nil {
+						_ = val.Close()
 					}
 				}
 			}()
@@ -204,10 +198,8 @@ func (t *clientImpl) handleMessage(quicConn *quic.Conn) (err error) {
 				}
 				if t.udp && t.UdpRelayMode == types.NATIVE {
 					assocId = packet.ASSOC_ID
-					if val, ok := t.udpInputMap.Load(assocId); ok {
-						if conn, ok := val.(net.Conn); ok {
-							_, _ = conn.Write(message)
-						}
+					if val, ok := t.udpInputMap.Load(assocId); ok && val != nil {
+						_, _ = val.Write(message)
 					}
 				}
 			}
@@ -253,7 +245,7 @@ func (t *clientImpl) forceClose(quicConn *quic.Conn, err error) {
 func (t *clientImpl) Close() {
 	t.closed.Store(true)
 	if t.openStreams.Load() == 0 {
-		t.forceClose(nil, types.ClientClosed)
+		t.forceClose(nil, types.ErrClientClosed)
 	}
 }
 
@@ -265,7 +257,7 @@ func (t *clientImpl) DialContext(ctx context.Context, metadata *C.Metadata) (net
 	openStreams := t.openStreams.Add(1)
 	if openStreams >= t.MaxOpenStreams {
 		t.openStreams.Add(-1)
-		return nil, types.TooManyOpenStreams
+		return nil, types.ErrTooManyOpenStreams
 	}
 	stream, err := func() (stream net.Conn, err error) {
 		defer func() {
@@ -291,7 +283,7 @@ func (t *clientImpl) DialContext(ctx context.Context, metadata *C.Metadata) (net
 				time.AfterFunc(C.DefaultTCPTimeout, func() {
 					openStreams := t.openStreams.Add(-1)
 					if openStreams == 0 && t.closed.Load() {
-						t.forceClose(quicConn, types.ClientClosed)
+						t.forceClose(quicConn, types.ErrClientClosed)
 					}
 				})
 			},
@@ -342,7 +334,7 @@ func (t *clientImpl) ListenPacket(ctx context.Context, metadata *C.Metadata) (ne
 	openStreams := t.openStreams.Add(1)
 	if openStreams >= t.MaxOpenStreams {
 		t.openStreams.Add(-1)
-		return nil, types.TooManyOpenStreams
+		return nil, types.ErrTooManyOpenStreams
 	}
 
 	pipe1, pipe2 := N.Pipe()
@@ -366,7 +358,7 @@ func (t *clientImpl) ListenPacket(ctx context.Context, metadata *C.Metadata) (ne
 			time.AfterFunc(C.DefaultUDPTimeout, func() {
 				openStreams := t.openStreams.Add(-1)
 				if openStreams == 0 && t.closed.Load() {
-					t.forceClose(quicConn, types.ClientClosed)
+					t.forceClose(quicConn, types.ErrClientClosed)
 				}
 			})
 		},
@@ -395,7 +387,7 @@ func (t *Client) ListenPacket(ctx context.Context, metadata *C.Metadata) (net.Pa
 }
 
 func (t *Client) forceClose() {
-	t.clientImpl.forceClose(nil, types.ClientClosed)
+	t.clientImpl.forceClose(nil, types.ErrClientClosed)
 }
 
 func NewClient(clientOption *ClientOption, udp bool, dialFn types.DialFunc) *Client {

@@ -1,11 +1,12 @@
 package constant
 
 import (
-	"encoding/json"
 	"fmt"
 	"net"
 	"net/netip"
 	"strconv"
+
+	M "github.com/metacubex/sing/common/metadata"
 )
 
 // SOCKS address types as defined in RFC 1928 section 5.
@@ -77,7 +78,7 @@ func (n NetWork) String() string {
 }
 
 func (n NetWork) MarshalJSON() ([]byte, error) {
-	return json.Marshal(n.String())
+	return strconv.AppendQuote(nil, n.String()), nil
 }
 
 type Type int
@@ -183,7 +184,7 @@ func ParseType(t string) (*Type, error) {
 }
 
 func (t Type) MarshalJSON() ([]byte, error) {
-	return json.Marshal(t.String())
+	return strconv.AppendQuote(nil, t.String()), nil
 }
 
 // Metadata is used to store connection address
@@ -233,7 +234,7 @@ func (m *Metadata) SourceAddrPort() netip.AddrPort {
 
 func (m *Metadata) SourceDetail() string {
 	if m.Type == INNER {
-		return fmt.Sprintf("%s", MihomoName)
+		return MihomoName
 	}
 
 	switch {
@@ -244,7 +245,7 @@ func (m *Metadata) SourceDetail() string {
 	case m.Process != "":
 		return fmt.Sprintf("%s(%s)", m.SourceAddress(), m.Process)
 	default:
-		return fmt.Sprintf("%s", m.SourceAddress())
+		return m.SourceAddress()
 	}
 }
 
@@ -294,6 +295,16 @@ func (m *Metadata) Clone() *Metadata {
 
 func (m *Metadata) AddrPort() netip.AddrPort {
 	return netip.AddrPortFrom(m.DstIP.Unmap(), m.DstPort)
+}
+
+// Socksaddr returns the destination in sing's address form. A name keeps its
+// name and an IP target comes from the AddrPort, so the destination is never
+// formatted into a host:port string only to be parsed back.
+func (m *Metadata) Socksaddr() M.Socksaddr {
+	if m.Host != "" {
+		return M.ParseSocksaddrHostPort(m.Host, m.DstPort)
+	}
+	return M.SocksaddrFromNetIP(m.AddrPort())
 }
 
 func (m *Metadata) UDPAddr() *net.UDPAddr {
@@ -351,10 +362,11 @@ func (m *Metadata) SetRemoteAddress(rawAddress string) error {
 		return err
 	}
 
-	var uint16Port uint16
-	if port, err := strconv.ParseUint(port, 10, 16); err == nil {
-		uint16Port = uint16(port)
+	uint64Port, err := strconv.ParseUint(port, 10, 16)
+	if err != nil {
+		return err
 	}
+	uint16Port := uint16(uint64Port)
 
 	if ip, err := netip.ParseAddr(host); err != nil {
 		m.Host = host

@@ -7,12 +7,16 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"github.com/metacubex/mihomo/common/pool"
 )
 
 type packet struct {
 	addr net.Addr
 	data []byte
 }
+
+const wrappedPacketReadLimit = 2000
 
 type wrappedPacketConn struct {
 	ctx       context.Context
@@ -54,15 +58,19 @@ func (c *wrappedPacketConn) addSession(session *serverSession) error {
 }
 
 func (c *wrappedPacketConn) readSession(session *serverSession) {
-	buf := make([]byte, 2000)
 	for {
-		n, err := session.Read(buf)
-		if err != nil || n > len(buf) {
+		var payload []byte
+		select {
+		case <-session.ctx.Done():
 			return
+		case payload = <-session.readerChan:
 		}
-		payload := append([]byte(nil), buf[:n]...)
+		if len(payload) > wrappedPacketReadLimit {
+			payload = payload[:wrappedPacketReadLimit]
+		}
 		select {
 		case <-c.ctx.Done():
+			_ = pool.Put(payload)
 			return
 		case c.readChan <- packet{addr: session, data: payload}:
 		}
@@ -77,6 +85,7 @@ func (c *wrappedPacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
 		return 0, nil, os.ErrDeadlineExceeded
 	case packet := <-c.readChan:
 		n := copy(p, packet.data)
+		_ = pool.Put(packet.data)
 		if n < len(packet.data) {
 			return n, packet.addr, io.ErrShortBuffer
 		}

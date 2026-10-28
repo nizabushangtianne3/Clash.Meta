@@ -1,6 +1,9 @@
 package mkcp
 
-import "encoding/binary"
+import (
+	"encoding/binary"
+	"sync"
+)
 
 type command byte
 
@@ -27,14 +30,37 @@ type segment interface {
 }
 
 type dataSegment struct {
-	conv        uint16
-	option      segmentOption
-	timestamp   uint32
-	number      uint32
-	sendingNext uint32
-	payload     []byte
-	timeout     uint32
-	transmit    uint32
+	conv         uint16
+	option       segmentOption
+	timestamp    uint32
+	number       uint32
+	sendingNext  uint32
+	payload      []byte
+	timeout      uint32
+	transmit     uint32
+	flushRefs    int
+	retired      bool
+	recycled     bool
+	recvOwned    bool
+	recvReleased bool
+	recvPool     *sync.Pool
+	recvBuffer   *receiveBuffer
+}
+
+var ackSegmentPool = sync.Pool{
+	New: func() any { return new(ackSegment) },
+}
+
+var cmdSegmentPool = sync.Pool{
+	New: func() any { return new(cmdOnlySegment) },
+}
+
+var sendAckSegmentPool = sync.Pool{
+	New: func() any { return new(ackSegment) },
+}
+
+var sendCmdSegmentPool = sync.Pool{
+	New: func() any { return new(cmdOnlySegment) },
 }
 
 func (s *dataSegment) conversation() uint16 { return s.conv }
@@ -102,7 +128,11 @@ func (s *cmdOnlySegment) serialize(b []byte) {
 	binary.BigEndian.PutUint32(b[12:], s.peerRTO)
 }
 
-func readSegment(b []byte) (segment, []byte) {
+// readSegment parses one segment out of b. A data payload is returned as a
+// slice of b rather than a copy, so the caller must keep b owned and unmodified
+// for as long as the segment is alive. The packet reader owns that receive
+// buffer until every data segment releases its reference.
+func readSegment(b []byte, dataPool *sync.Pool, buffer *receiveBuffer) (segment, []byte) {
 	if len(b) < 4 {
 		return nil, nil
 	}
@@ -119,14 +149,18 @@ func readSegment(b []byte) (segment, []byte) {
 		if len(b) < 14+dataLen {
 			return nil, nil
 		}
-		seg := &dataSegment{
+		seg := dataPool.Get().(*dataSegment)
+		*seg = dataSegment{
 			conv:        conv,
 			option:      opt,
 			timestamp:   binary.BigEndian.Uint32(b),
 			number:      binary.BigEndian.Uint32(b[4:]),
 			sendingNext: binary.BigEndian.Uint32(b[8:]),
-			payload:     append([]byte(nil), b[14:14+dataLen]...),
+			payload:     b[14 : 14+dataLen],
+			recvPool:    dataPool,
+			recvBuffer:  buffer,
 		}
+		buffer.refs++
 		return seg, b[14+dataLen:]
 	case commandACK:
 		if len(b) < 13 {
@@ -136,17 +170,17 @@ func readSegment(b []byte) (segment, []byte) {
 		if len(b) < 13+count*4 {
 			return nil, nil
 		}
-		seg := &ackSegment{
-			conv:            conv,
-			option:          opt,
-			receivingWindow: binary.BigEndian.Uint32(b),
-			receivingNext:   binary.BigEndian.Uint32(b[4:]),
-			timestamp:       binary.BigEndian.Uint32(b[8:]),
-			numberList:      make([]uint32, count),
-		}
 		p := b[13:]
+		seg := ackSegmentPool.Get().(*ackSegment)
+		numberList := seg.numberList[:0]
+		seg.conv = conv
+		seg.option = opt
+		seg.receivingWindow = binary.BigEndian.Uint32(b)
+		seg.receivingNext = binary.BigEndian.Uint32(b[4:])
+		seg.timestamp = binary.BigEndian.Uint32(b[8:])
+		seg.numberList = numberList
 		for i := 0; i < count; i++ {
-			seg.numberList[i] = binary.BigEndian.Uint32(p)
+			seg.numberList = append(seg.numberList, binary.BigEndian.Uint32(p))
 			p = p[4:]
 		}
 		return seg, p
@@ -154,14 +188,32 @@ func readSegment(b []byte) (segment, []byte) {
 		if len(b) < 12 {
 			return nil, nil
 		}
-		seg := &cmdOnlySegment{
-			conv:          conv,
-			cmd:           cmd,
-			option:        opt,
-			sendingNext:   binary.BigEndian.Uint32(b),
-			receivingNext: binary.BigEndian.Uint32(b[4:]),
-			peerRTO:       binary.BigEndian.Uint32(b[8:]),
-		}
+		seg := cmdSegmentPool.Get().(*cmdOnlySegment)
+		seg.conv = conv
+		seg.cmd = cmd
+		seg.option = opt
+		seg.sendingNext = binary.BigEndian.Uint32(b)
+		seg.receivingNext = binary.BigEndian.Uint32(b[4:])
+		seg.peerRTO = binary.BigEndian.Uint32(b[8:])
 		return seg, b[12:]
+	}
+}
+
+func releaseReadSegment(item segment) {
+	switch seg := item.(type) {
+	case *dataSegment:
+		if seg.recvOwned || seg.recvReleased {
+			return
+		}
+		seg.payload = nil
+		seg.recvReleased = true
+		seg.recvBuffer.release()
+		seg.recvPool.Put(seg)
+	case *ackSegment:
+		clear(seg.numberList)
+		seg.numberList = seg.numberList[:0]
+		ackSegmentPool.Put(seg)
+	case *cmdOnlySegment:
+		cmdSegmentPool.Put(seg)
 	}
 }

@@ -60,3 +60,17 @@ func BenchmarkResolverLookupIPCacheHit(b *testing.B) {
 		}
 	})
 }
+
+// FlClash installs the query notify, which holds the tunnel lookups on the
+// message path for the whole life of the process; this measures one of them.
+func BenchmarkResolverLookupIPv4TracedCacheHit(b *testing.B) {
+  r := NewResolverFromClient(stubDNSClient{})
+  DefaultQueryNotify = func(QueryRecord) {}
+  b.Cleanup(func() { DefaultQueryNotify = nil })
+
+  benchmarkWarmLookup(b, r, func(r *Resolver, ctx context.Context, host string) {
+    if _, err := r.LookupIPv4(ctx, host); err != nil {
+      b.Fatal(err)
+    }
+  })
+}

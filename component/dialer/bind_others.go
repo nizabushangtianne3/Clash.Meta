@@ -5,6 +5,7 @@ package dialer
 import (
 	"net"
 	"net/netip"
+	"strings"
 )
 
 func bindIfaceToDialer(ifaceName string, dialer *net.Dialer, network string, destination netip.Addr) error {
@@ -16,5 +17,11 @@ func bindIfaceToListenConfig(ifaceName string, lc *net.ListenConfig, network, ad
 }
 
 func ParseNetwork(network string, addr netip.Addr) string {
-	return fallbackParseNetwork(network, addr)
+	// fix fallbackBindIfaceToListenConfig() force bind to an ipv4 address
+	if !strings.HasSuffix(network, "4") &&
+		!strings.HasSuffix(network, "6") &&
+		addr.Unmap().Is6() {
+		network += "6"
+	}
+	return network
 }

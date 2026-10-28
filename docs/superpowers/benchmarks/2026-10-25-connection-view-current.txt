@@ -1,0 +1,6 @@
+BenchmarkManagerSnapshotEncoded/connections=100-16	5000	278620 ns/op	75569 B/op	603 allocs/op
+BenchmarkManagerSnapshotEncoded/connections=100-16	5000	259311 ns/op	75625 B/op	603 allocs/op
+BenchmarkManagerSnapshotEncoded/connections=100-16	5000	340371 ns/op	75452 B/op	603 allocs/op
+BenchmarkManagerSnapshotEncoded/connections=500-16	5000	1475497 ns/op	436863 B/op	3004 allocs/op
+BenchmarkManagerSnapshotEncoded/connections=500-16	5000	1441032 ns/op	427534 B/op	3004 allocs/op
+BenchmarkManagerSnapshotEncoded/connections=500-16	5000	1419949 ns/op	427532 B/op	3004 allocs/op

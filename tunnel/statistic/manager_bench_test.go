@@ -1,6 +1,7 @@
 package statistic
 
 import (
+	"fmt"
 	"io"
 	"net"
 	"net/netip"
@@ -131,4 +132,55 @@ func BenchmarkManagerPushStriped(b *testing.B) {
 			stripe.pushDownloaded(1460, false)
 		}
 	})
+}
+
+func benchmarkManagerWithConnections(b *testing.B, count int) *Manager {
+	b.Helper()
+
+	manager := &Manager{}
+	for range count {
+		local, remote := net.Pipe()
+		b.Cleanup(func() {
+			_ = remote.Close()
+		})
+		NewTCPTracker(newStatisticTestConn(local), manager, benchmarkMetadata(), nil, 0, 0, false)
+	}
+	return manager
+}
+
+// The host's connection view asks for the whole table on a timer, so one poll
+// pays for the table itself and for the encoding that carries it to the host.
+func BenchmarkManagerSnapshot(b *testing.B) {
+	for _, count := range []int{100, 500} {
+		b.Run(fmt.Sprintf("connections=%d", count), func(b *testing.B) {
+			manager := benchmarkManagerWithConnections(b, count)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_ = manager.Snapshot()
+			}
+		})
+	}
+}
+
+func BenchmarkManagerSnapshotEncoded(b *testing.B) {
+	// The document the router writers build. The websocket writer reuses its
+	// buffer between polls, which is the steady state the table is polled in.
+	for _, count := range []int{100, 500} {
+		b.Run(fmt.Sprintf("connections=%d", count), func(b *testing.B) {
+			manager := benchmarkManagerWithConnections(b, count)
+
+			scratch := make([]byte, 0, 256+384*count)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				scratch = manager.Snapshot().AppendJSON(scratch[:0])
+			}
+			b.StopTimer()
+			if len(scratch) == 0 {
+				b.Fatal("empty")
+			}
+		})
+	}
 }

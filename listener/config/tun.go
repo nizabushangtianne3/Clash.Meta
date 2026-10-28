@@ -5,14 +5,16 @@ import (
 
 	C "github.com/metacubex/mihomo/constant"
 
+	"slices"
+
 	"go4.org/netipx"
-	"golang.org/x/exp/slices"
 )
 
 type Tun struct {
 	Enable              bool       `yaml:"enable" json:"enable"`
 	Device              string     `yaml:"device" json:"device"`
 	Stack               C.TUNStack `yaml:"stack" json:"stack"`
+	DNSMode             string     `yaml:"dns-mode" json:"dns-mode"`
 	DNSHijack           []string   `yaml:"dns-hijack" json:"dns-hijack"`
 	AutoRoute           bool       `yaml:"auto-route" json:"auto-route"`
 	AutoDetectInterface bool       `yaml:"auto-detect-interface" json:"auto-detect-interface"`
@@ -104,6 +106,9 @@ func (t *Tun) Equal(other Tun) bool {
 		return false
 	}
 	if t.Stack != other.Stack {
+		return false
+	}
+	if t.DNSMode != other.DNSMode {
 		return false
 	}
 	if !slices.Equal(t.DNSHijack, other.DNSHijack) {

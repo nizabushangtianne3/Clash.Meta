@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 	"github.com/metacubex/mihomo/log"
 
 	"github.com/metacubex/http"
+	"github.com/metacubex/tls"
 )
 
 var UnifiedDelay = atomic.NewBool(false)
@@ -85,11 +87,7 @@ func (p *Proxy) ListenPacketContext(ctx context.Context, metadata *C.Metadata) (
 // DelayHistory implements C.Proxy
 func (p *Proxy) DelayHistory() []C.DelayHistory {
 	queueM := p.history.Copy()
-	histories := []C.DelayHistory{}
-	for _, item := range queueM {
-		histories = append(histories, item)
-	}
-	return histories
+	return append([]C.DelayHistory{}, queueM...)
 }
 
 // DelayHistoryForTestUrl implements C.Proxy
@@ -99,11 +97,7 @@ func (p *Proxy) DelayHistoryForTestUrl(url string) []C.DelayHistory {
 	if state, ok := p.extra.Load(url); ok {
 		queueM = state.history.Copy()
 	}
-	histories := []C.DelayHistory{}
-	for _, item := range queueM {
-		histories = append(histories, item)
-	}
-	return histories
+	return append([]C.DelayHistory{}, queueM...)
 }
 
 // ExtraDelayHistories return all delay histories for each test URL
@@ -116,11 +110,7 @@ func (p *Proxy) ExtraDelayHistories() map[string]C.ProxyState {
 		state := v
 
 		queueM := state.history.Copy()
-		var history []C.DelayHistory
-
-		for _, item := range queueM {
-			history = append(history, item)
-		}
+		history := append([]C.DelayHistory(nil), queueM...)
 
 		histories[testUrl] = C.ProxyState{
 			Alive:   state.alive.Load(),
@@ -177,6 +167,54 @@ func (p *Proxy) MarshalJSON() ([]byte, error) {
 	mapping["dialer-proxy"] = proxyInfo.DialerProxy
 
 	return json.Marshal(mapping)
+}
+
+type urlTestExchange struct {
+	conn   net.Conn
+	writer *bufio.Writer
+	reader *bufio.Reader
+}
+
+func newURLTestExchange(ctx context.Context, conn net.Conn, serverName string, secure bool, tlsConfig *tls.Config) (*urlTestExchange, error) {
+	if err := setURLTestDeadline(ctx, conn); err != nil {
+		return nil, err
+	}
+	if secure {
+		if tlsConfig.ServerName == "" {
+			tlsConfig.ServerName = serverName
+		}
+		tlsConn := tls.Client(conn, tlsConfig)
+		if err := tlsConn.HandshakeContext(ctx); err != nil {
+			return nil, err
+		}
+		conn = tlsConn
+	}
+	return &urlTestExchange{
+		conn:   conn,
+		writer: bufio.NewWriterSize(conn, 512),
+		reader: bufio.NewReaderSize(conn, 4096),
+	}, nil
+}
+
+func (e *urlTestExchange) Do(req *http.Request) (*http.Response, error) {
+	if err := setURLTestDeadline(req.Context(), e.conn); err != nil {
+		return nil, err
+	}
+	if err := req.Write(e.writer); err != nil {
+		return nil, err
+	}
+	if err := e.writer.Flush(); err != nil {
+		return nil, err
+	}
+	return http.ReadResponse(e.reader, req)
+}
+
+func setURLTestDeadline(ctx context.Context, conn net.Conn) error {
+	deadline := time.Now().Add(30 * time.Second)
+	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+		deadline = ctxDeadline
+	}
+	return conn.SetDeadline(deadline)
 }
 
 // URLTest get the delay for the specified URL
@@ -239,40 +277,21 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 		_ = instance.Close()
 	}()
 
-	req, err := http.NewRequest(http.MethodHead, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
 	if err != nil {
 		return
 	}
-	req = req.WithContext(ctx)
 
 	tlsConfig, err := ca.GetTLSConfig(ca.Option{})
 	if err != nil {
 		return
 	}
 
-	transport := &http.Transport{
-		DialContext: func(context.Context, string, string) (net.Conn, error) {
-			return instance, nil
-		},
-		// from http.DefaultTransport
-		MaxIdleConns:          100,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
-		TLSClientConfig:       tlsConfig,
+	exchange, err := newURLTestExchange(ctx, instance, req.URL.Hostname(), req.URL.Scheme == "https", tlsConfig)
+	if err != nil {
+		return
 	}
-
-	client := http.Client{
-		Timeout:   30 * time.Second,
-		Transport: transport,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
-
-	defer client.CloseIdleConnections()
-
-	resp, err := client.Do(req)
+	resp, err := exchange.Do(req)
 
 	if err != nil {
 		return
@@ -284,7 +303,7 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 		second := time.Now()
 		var ignoredErr error
 		var secondResp *http.Response
-		secondResp, ignoredErr = client.Do(req)
+		secondResp, ignoredErr = exchange.Do(req)
 		if ignoredErr == nil {
 			resp = secondResp
 			_ = resp.Body.Close()
@@ -299,6 +318,11 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 
 	satisfied = resp != nil && (expectedStatus == nil || expectedStatus.Check(uint16(resp.StatusCode)))
 	t = uint16(time.Since(start) / time.Millisecond)
+	if t == 0 {
+		// a zero delay means a failed test to callers, so report a test
+		// that completed in under a millisecond as 1 ms
+		t = 1
+	}
 	return
 }
 

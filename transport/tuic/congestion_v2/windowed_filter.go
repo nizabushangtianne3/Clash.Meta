@@ -1,7 +1,9 @@
 package congestion
 
 import (
-	"golang.org/x/exp/constraints"
+	"cmp"
+
+	"github.com/metacubex/sing/common/x/constraints"
 )
 
 // Implements Kathleen Nichols' algorithm for tracking the minimum (or maximum)
@@ -52,7 +54,7 @@ type entry[V WindowedFilterValue, T WindowedFilterTime] struct {
 
 // Compares two values and returns true if the first is greater than or equal
 // to the second.
-func MaxFilter[O constraints.Ordered](a, b O) int {
+func MaxFilter[O cmp.Ordered](a, b O) int {
 	if a > b {
 		return 1
 	} else if a < b {
@@ -63,7 +65,7 @@ func MaxFilter[O constraints.Ordered](a, b O) int {
 
 // Compares two values and returns true if the first is less than or equal
 // to the second.
-func MinFilter[O constraints.Ordered](a, b O) int {
+func MinFilter[O cmp.Ordered](a, b O) int {
 	if a < b {
 		return 1
 	} else if a > b {
@@ -75,7 +77,7 @@ func MinFilter[O constraints.Ordered](a, b O) int {
 func NewWindowedFilter[V WindowedFilterValue, T WindowedFilterTime](windowLength T, comparator func(V, V) int) *WindowedFilter[V, T] {
 	return &WindowedFilter[V, T]{
 		windowLength: windowLength,
-		estimates:    make([]entry[V, T], 3, 3),
+		estimates:    make([]entry[V, T], 3),
 		comparator:   comparator,
 	}
 }
@@ -158,5 +160,5 @@ func (f *WindowedFilter[V, T]) Reset(newSample V, newTime T) {
 }
 
 func (f *WindowedFilter[V, T]) Clear() {
-	f.estimates = make([]entry[V, T], 3, 3)
+	f.estimates = make([]entry[V, T], 3)
 }

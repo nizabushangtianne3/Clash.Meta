@@ -6,6 +6,7 @@ import (
 
 	"github.com/metacubex/mihomo/adapter"
 	"github.com/metacubex/mihomo/adapter/outbound"
+	"github.com/metacubex/mihomo/common/utils"
 	C "github.com/metacubex/mihomo/constant"
 
 	"github.com/stretchr/testify/require"
@@ -45,7 +46,7 @@ func request(user, host string) *C.Metadata {
 
 // One unit of work walking several destinations is the case both address-derived
 // keys get wrong: the group is meant to hold that work on one egress, and the
-// default key moves it as soon as the host changes.
+// default key changes as soon as the host changes.
 func TestLoadBalanceHashKeyInUserSurvivesADestinationChange(t *testing.T) {
 	proxies := balancedProxies(8)
 	hosts := []string{"a.example.com", "b.example.org", "c.example.net", "d.example.io"}
@@ -58,26 +59,29 @@ func TestLoadBalanceHashKeyInUserSurvivesADestinationChange(t *testing.T) {
 			"hash-key: user must ignore the destination")
 	}
 
-	byDestination := strategyConsistentHashing(testUrl, getKey)
-	seen := map[int]bool{}
+	// Distinct destination keys are the deterministic contract of the fallback
+	// key. Distinct keys may still legally land in the same consistent-hash
+	// bucket, so asserting on selected proxy indexes would make this test flaky.
+	seenKeys := map[uint64]struct{}{}
 	for _, host := range hosts {
-		seen[indexOf(t, proxies, byDestination(proxies, request("job-1", host), false))] = true
+		seenKeys[getKey(request("job-1", host))] = struct{}{}
 	}
-	require.Greater(t, len(seen), 1,
-		"the default key is expected to move with the destination")
+	require.Len(t, seenKeys, len(hosts),
+		"the default key must change with the destination")
 }
 
-// Pinning must not become a single node: distinct users still spread.
-func TestLoadBalanceHashKeyInUserSpreadsUsers(t *testing.T) {
-	proxies := balancedProxies(8)
-	strategy := strategyConsistentHashing(testUrl, getKeyWithInUser(getKey))
+// Pinning must preserve distinct inbound identities. Consistent hashing may
+// legally put several distinct keys in one bucket, so this test checks the
+// identity key before hashing instead of asserting a random bucket spread.
+func TestLoadBalanceHashKeyInUserKeepsUsersDistinct(t *testing.T) {
+	keyed := getKeyWithInUser(getKey)
+	users := []string{"job-1", "job-2", "job-3", "job-4", "job-5", "job-6"}
 
-	seen := map[int]bool{}
-	for _, user := range []string{"job-1", "job-2", "job-3", "job-4", "job-5", "job-6"} {
-		selected := strategy(proxies, request(user, "a.example.com"), false)
-		seen[indexOf(t, proxies, selected)] = true
+	seenKeys := map[uint64]struct{}{}
+	for _, user := range users {
+		seenKeys[keyed(request(user, "a.example.com"))] = struct{}{}
 	}
-	require.Greater(t, len(seen), 1)
+	require.Len(t, seenKeys, len(users))
 }
 
 // Sticky sessions keys on source and destination; a client behind one source
@@ -112,8 +116,8 @@ func TestStickySessionsFallsBackToAnAliveProxy(t *testing.T) {
 // instead would herd every anonymous request onto one member.
 func TestLoadBalanceHashKeyInUserFallsBackWhenUnauthenticated(t *testing.T) {
 	keyed := getKeyWithInUser(getKey)
-	require.Equal(t, "example.com", keyed(request("", "a.example.com")))
-	require.Equal(t, "job-1", keyed(request("job-1", "a.example.com")))
+	require.Equal(t, utils.MapHash("example.com"), keyed(request("", "a.example.com")))
+	require.Equal(t, utils.MapHash("job-1"), keyed(request("job-1", "a.example.com")))
 	require.Equal(t, getKey(nil), keyed(nil))
 }
 
@@ -123,12 +127,32 @@ func TestLoadBalanceHashKeyInUserFallsBackWhenUnauthenticated(t *testing.T) {
 func TestLoadBalanceHashKeyResolvesTheOptionName(t *testing.T) {
 	withInUser, err := hashKey("in-user")
 	require.NoError(t, err)
-	require.Equal(t, "job-1", withInUser(getKey)(request("job-1", "a.example.com")))
+	require.Equal(t, utils.MapHash("job-1"), withInUser(getKey)(request("job-1", "a.example.com")))
 
 	identity, err := hashKey("")
 	require.NoError(t, err)
 	require.Equal(t, getKey(request("job-1", "a.example.com")),
 		identity(getKey)(request("job-1", "a.example.com")))
+}
+
+func TestLoadBalanceKeyDoesNotAllocateForDomainHosts(t *testing.T) {
+	metadata := request("", "a.example.com")
+
+	allocations := testing.AllocsPerRun(100, func() {
+		if getKey(metadata) == 0 {
+			t.Fatal("domain key was zero")
+		}
+	})
+	require.EqualValues(t, 0, allocations)
+}
+
+func TestLoadBalanceKeyHashesIPHostsDirectly(t *testing.T) {
+	metadata := request("", "192.0.2.10")
+
+	require.Equal(t,
+		hashAddr(netip.MustParseAddr("192.0.2.10")),
+		getKey(metadata),
+	)
 }
 
 func TestLoadBalanceHashKeyRejectsUnusableConfigs(t *testing.T) {
@@ -148,4 +172,29 @@ func TestLoadBalanceHashKeyRejectsUnusableConfigs(t *testing.T) {
 	_, err = NewLoadBalance(GroupCommonOption{Name: "lb"},
 		LoadBalanceOption{Strategy: "consistent-hashing", HashKey: "nonsense"}, nil, nil)
 	require.ErrorIs(t, err, errHashKey)
+}
+
+func BenchmarkStickySessionsProxyPick(b *testing.B) {
+	b.ReportAllocs()
+
+	proxies := balancedProxies(64)
+	strategy := strategyStickySessions(testUrl, getKeyWithSrcAndDst)
+	srcIPs := []netip.Addr{
+		netip.MustParseAddr("192.0.2.1"),
+		netip.MustParseAddr("192.0.2.2"),
+		netip.MustParseAddr("192.0.2.3"),
+		netip.MustParseAddr("192.0.2.4"),
+	}
+	hosts := []string{
+		"a.example.com",
+		"b.example.org",
+		"c.example.net",
+		"d.example.io",
+	}
+
+	for i := 0; b.Loop(); i++ {
+		metadata := request("", hosts[i%len(hosts)])
+		metadata.SrcIP = srcIPs[(i/len(hosts))%len(srcIPs)]
+		_ = strategy(proxies, metadata, false)
+	}
 }

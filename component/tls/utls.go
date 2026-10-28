@@ -4,16 +4,16 @@ import (
 	"context"
 	"net"
 	"reflect"
+	"sync"
 	"unsafe"
 
-	"github.com/metacubex/mihomo/common/once"
 	"github.com/metacubex/mihomo/common/utils"
 	"github.com/metacubex/mihomo/log"
 
 	"github.com/metacubex/tls"
 	utls "github.com/metacubex/utls"
 	"github.com/mroth/weightedrand/v2"
-	"golang.org/x/exp/slices"
+	"slices"
 )
 
 type Conn = utls.Conn
@@ -59,7 +59,7 @@ func GetFingerprint(clientFingerprint string) (UClientHelloID, bool) {
 	}
 }
 
-var randomFingerprint = once.OnceValue(func() UClientHelloID {
+var randomFingerprint = sync.OnceValue(func() UClientHelloID {
 	chooser, _ := weightedrand.NewChooser(
 		weightedrand.NewChoice("chrome", 6),
 		weightedrand.NewChoice("safari", 3),
@@ -152,7 +152,7 @@ func tlsConnectionState(state utls.ConnectionState) (tlsState tls.ConnectionStat
 		CipherSuite:       state.CipherSuite,
 		//CurveID:                     state.CurveID,
 		NegotiatedProtocol:          state.NegotiatedProtocol,
-		NegotiatedProtocolIsMutual:  state.NegotiatedProtocolIsMutual,
+		NegotiatedProtocolIsMutual:  true,
 		ServerName:                  state.ServerName,
 		PeerCertificates:            state.PeerCertificates,
 		VerifiedChains:              state.VerifiedChains,

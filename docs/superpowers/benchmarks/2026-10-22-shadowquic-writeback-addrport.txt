@@ -1,0 +1,26 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/transport/shadowquic
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkWriteBackDestinationKey/addrport-16         	98512461	        15.85 ns/op	       0 B/op	       0 allocs/op
+BenchmarkWriteBackDestinationKey/addrport-16         	96016130	        12.66 ns/op	       0 B/op	       0 allocs/op
+BenchmarkWriteBackDestinationKey/addrport-16         	100000000	        32.22 ns/op	       0 B/op	       0 allocs/op
+BenchmarkWriteBackDestinationKey/addrport-16         	98056839	        14.61 ns/op	       0 B/op	       0 allocs/op
+BenchmarkWriteBackDestinationKey/addrport-16         	100000000	        17.35 ns/op	       0 B/op	       0 allocs/op
+BenchmarkWriteBackDestinationKey/addrport-16         	88886913	        28.36 ns/op	       0 B/op	       0 allocs/op
+BenchmarkWriteBackDestinationKey/addrport-16         	75790654	        24.71 ns/op	       0 B/op	       0 allocs/op
+BenchmarkWriteBackDestinationKey/addrport-16         	88293723	        21.65 ns/op	       0 B/op	       0 allocs/op
+BenchmarkWriteBackDestinationKey/addrport-16         	100000000	        14.83 ns/op	       0 B/op	       0 allocs/op
+BenchmarkWriteBackDestinationKey/addrport-16         	77809909	        33.07 ns/op	       0 B/op	       0 allocs/op
+BenchmarkWriteBackDestinationKey/socks-string-16     	19546574	       130.1 ns/op	      64 B/op	       3 allocs/op
+BenchmarkWriteBackDestinationKey/socks-string-16     	20449408	       102.2 ns/op	      64 B/op	       3 allocs/op
+BenchmarkWriteBackDestinationKey/socks-string-16     	18678488	        73.37 ns/op	      64 B/op	       3 allocs/op
+BenchmarkWriteBackDestinationKey/socks-string-16     	16512616	        74.59 ns/op	      64 B/op	       3 allocs/op
+BenchmarkWriteBackDestinationKey/socks-string-16     	18427724	        92.55 ns/op	      64 B/op	       3 allocs/op
+BenchmarkWriteBackDestinationKey/socks-string-16     	17579070	        65.44 ns/op	      64 B/op	       3 allocs/op
+BenchmarkWriteBackDestinationKey/socks-string-16     	19977058	        91.10 ns/op	      64 B/op	       3 allocs/op
+BenchmarkWriteBackDestinationKey/socks-string-16     	20642923	        73.14 ns/op	      64 B/op	       3 allocs/op
+BenchmarkWriteBackDestinationKey/socks-string-16     	18372445	        75.97 ns/op	      64 B/op	       3 allocs/op
+BenchmarkWriteBackDestinationKey/socks-string-16     	15922657	        68.83 ns/op	      64 B/op	       3 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/transport/shadowquic	42.332s

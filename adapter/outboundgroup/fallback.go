@@ -37,8 +37,7 @@ type Fallback struct {
 	expectedStatus string
 	rotateProbe    atomic.Bool
 	probeCursor    atomic.Uint32
-	selectionMu    sync.Mutex
-	selection      *fallbackSelection
+	selection      atomic.Pointer[fallbackSelection]
 }
 
 func (f *Fallback) Now() string {
@@ -160,20 +159,18 @@ func (f *Fallback) IsL3Protocol(metadata *C.Metadata) bool {
 
 // MarshalJSON implements C.ProxyAdapter
 func (f *Fallback) MarshalJSON() ([]byte, error) {
-	all := []string{}
-	for _, proxy := range f.GetProxies(false) {
-		all = append(all, proxy.Name())
-	}
-	return json.Marshal(map[string]any{
-		"type":           f.Type().String(),
-		"now":            f.Now(),
-		"all":            all,
-		"testUrl":        f.testUrl,
-		"expectedStatus": f.expectedStatus,
-		"fixed":          f.selectedName(),
-		"hidden":         f.Hidden(),
-		"icon":           f.Icon(),
-		"emptyFallback":  f.EmptyFallback().Name(),
+	all := memberNames(f.GetProxies(false))
+	return json.Marshal(probedView{
+		Type:           f.Type().String(),
+		Name:           f.Name(),
+		Now:            f.Now(),
+		All:            all,
+		TestURL:        f.testUrl,
+		ExpectedStatus: f.expectedStatus,
+		Fixed:          f.selectedName(),
+		Hidden:         f.Hidden(),
+		Icon:           f.Icon(),
+		EmptyFallback:  f.EmptyFallback().Name(),
 	})
 }
 
@@ -183,15 +180,11 @@ func (f *Fallback) Unwrap(metadata *C.Metadata, touch bool) C.Proxy {
 }
 
 func (f *Fallback) clearSelection() {
-	f.selectionMu.Lock()
-	f.selection = nil
-	f.selectionMu.Unlock()
+	f.selection.Store(nil)
 }
 
 func (f *Fallback) cachedSelection() (fallbackSelection, bool) {
-	f.selectionMu.Lock()
-	defer f.selectionMu.Unlock()
-	selection := f.selection
+	selection := f.selection.Load()
 	if selection == nil || time.Since(selection.at) >= fallbackSelectionTTL {
 		return fallbackSelection{}, false
 	}
@@ -206,14 +199,12 @@ func (f *Fallback) storeSelection(
 	hasAlternative bool,
 	versions []uint32,
 ) {
-	f.selectionMu.Lock()
-	f.selection = &fallbackSelection{
+	f.selection.Store(&fallbackSelection{
 		proxy:          proxy,
 		hasAlternative: hasAlternative,
 		at:             time.Now(),
 		versions:       versions,
-	}
-	f.selectionMu.Unlock()
+	})
 }
 
 func (f *Fallback) findAliveProxy(touch bool) C.Proxy {
@@ -246,6 +237,11 @@ func (f *Fallback) resolveAliveProxyState(touch bool) (C.Proxy, bool) {
 
 	selectedName := f.selectedName()
 	var selectedProxy C.Proxy
+	if selectedName != "" {
+		if proxy, ok := f.indexedProxyByName(selectedName); ok && proxy.AliveForTestUrl(f.testUrl) {
+			selectedProxy = proxy
+		}
+	}
 	var firstAlive C.Proxy
 	aliveCount := int32(0)
 	for _, proxy := range proxies {
@@ -256,7 +252,7 @@ func (f *Fallback) resolveAliveProxyState(touch bool) (C.Proxy, bool) {
 		if firstAlive == nil {
 			firstAlive = proxy
 		}
-		if selectedName != "" && proxy.Name() == selectedName {
+		if selectedProxy == nil && selectedName != "" && proxy.Name() == selectedName {
 			selectedProxy = proxy
 		}
 		if aliveCount >= 2 && (selectedName == "" || selectedProxy != nil) {

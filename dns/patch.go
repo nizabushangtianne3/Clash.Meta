@@ -2,7 +2,6 @@ package dns
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -40,19 +39,22 @@ func queryInitiator(ctx context.Context) string {
 }
 
 // A cached answer keeps no trace of the upstream that gave it, so that is
-// remembered per resolver and question when the exchange finishes.
-var answeredBy = lru.New[string, string](lru.WithSize[string, string](4096))
-
-func answeredByKey(r *Resolver, q D.Question) string {
-	return fmt.Sprintf("%p %s", r, q.String())
+// remembered per resolver and question when the exchange finishes. The key is
+// the pair itself: a lookup happens on every cache hit, and formatting one
+// cost more than the lookup it keys.
+type answeredByKey struct {
+	resolver *Resolver
+	question D.Question
 }
+
+var answeredBy = lru.New[answeredByKey, string](lru.WithSize[answeredByKey, string](4096))
 
 func (r *Resolver) traceCacheHit(ctx context.Context, q D.Question, msg *D.Msg) {
 	notify := DefaultQueryNotify
 	if notify == nil {
 		return
 	}
-	upstream, _ := answeredBy.Get(answeredByKey(r, q))
+	upstream, _ := answeredBy.Get(answeredByKey{resolver: r, question: q})
 	notify(QueryRecord{
 		Question:  q,
 		Msg:       msg,
@@ -118,7 +120,10 @@ func (t *exchangeTrace) finish(msg *D.Msg, err error) {
 		record.Upstream = t.upstreams[msg]
 		t.mu.Unlock()
 		if record.Upstream != "" {
-			answeredBy.Set(answeredByKey(t.resolver, t.question), record.Upstream)
+			answeredBy.Set(
+				answeredByKey{resolver: t.resolver, question: t.question},
+				record.Upstream,
+			)
 		}
 	}
 	t.notify(record)

@@ -125,7 +125,7 @@ func (vc *Conn) ReadBuffer(buffer *buf.Buffer) error {
 				vc.readFilterUUID.Store(false)
 				if !bytes.Equal(vc.userUUID.Bytes(), header[:uuid.Size]) {
 					err = fmt.Errorf("XTLS Vision server responded unknown UUID: %s", uuid.FromBytesOrNil(header[:uuid.Size]))
-					log.Errorln(err.Error())
+					log.Errorln("%s", err.Error())
 					return err
 				}
 				header = header[uuid.Size:]
@@ -133,8 +133,10 @@ func (vc *Conn) ReadBuffer(buffer *buf.Buffer) error {
 			vc.readRemainingPadding = int(binary.BigEndian.Uint16(header[3:]))
 			vc.readRemainingContent = int(binary.BigEndian.Uint16(header[1:]))
 			vc.readLastCommand.Store(uint32(header[0]))
-			log.Debugln("XTLS Vision read padding: command=%d, payloadLen=%d, paddingLen=%d",
-				vc.readLastCommand.Load(), vc.readRemainingContent, vc.readRemainingPadding)
+			if log.DebugEnabled() {
+				log.Debugln("XTLS Vision read padding: command=%d, payloadLen=%d, paddingLen=%d",
+					vc.readLastCommand.Load(), vc.readRemainingContent, vc.readRemainingPadding)
+			}
 			return vc.ReadBuffer(buffer)
 			//}
 		case commandPaddingEnd:
@@ -180,7 +182,7 @@ func (vc *Conn) ReadBuffer(buffer *buf.Buffer) error {
 			}
 		default:
 			err := fmt.Errorf("XTLS Vision read unknown command: %d", vc.readLastCommand.Load())
-			log.Debugln(err.Error())
+			log.Debugln("%s", err.Error())
 			return err
 		}
 	}
@@ -236,9 +238,6 @@ func (vc *Conn) WriteBuffer(buffer *buf.Buffer) (err error) {
 		}
 		return err
 	}
-	/*if vc.writeDirect {
-		log.Debugln("XTLS Vision Direct write, payloadLen=%d", buffer.Len())
-	}*/
 	return vc.ExtendedWriter.WriteBuffer(buffer)
 }
 
@@ -298,10 +297,7 @@ func (vc *Conn) WriterPossiblyReplaceable() bool {
 }
 
 func (vc *Conn) WriterReplaceable() bool {
-	if vc.writeDirect.Load() {
-		return true
-	}
-	return false
+	return vc.writeDirect.Load()
 }
 
 func (vc *Conn) Close() error {

@@ -22,6 +22,7 @@ type TLSObfs struct {
 	remain        int
 	firstRequest  bool
 	firstResponse bool
+	readHeader    [2]byte
 }
 
 func (to *TLSObfs) read(b []byte, discardN int) (int, error) {
@@ -32,13 +33,12 @@ func (to *TLSObfs) read(b []byte, discardN int) (int, error) {
 		return 0, err
 	}
 
-	sizeBuf := make([]byte, 2)
-	_, err = io.ReadFull(to.Conn, sizeBuf)
+	_, err = io.ReadFull(to.Conn, to.readHeader[:])
 	if err != nil {
 		return 0, nil
 	}
 
-	length := int(binary.BigEndian.Uint16(sizeBuf))
+	length := int(binary.BigEndian.Uint16(to.readHeader[:]))
 	if length > len(b) {
 		n, err := to.Conn.Read(b)
 		if err != nil {
@@ -102,7 +102,9 @@ func (to *TLSObfs) write(b []byte) (int, error) {
 	buf := pool.GetBuffer()
 	defer pool.PutBuffer(buf)
 	buf.Write([]byte{0x17, 0x03, 0x03})
-	binary.Write(buf, binary.BigEndian, uint16(len(b)))
+	length := uint16(len(b))
+	_ = buf.WriteByte(byte(length >> 8))
+	_ = buf.WriteByte(byte(length))
 	buf.Write(b)
 	_, err := to.Conn.Write(buf.Bytes())
 	if err != nil {

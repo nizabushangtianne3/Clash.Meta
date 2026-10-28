@@ -19,7 +19,6 @@ import (
 	"github.com/metacubex/mihomo/component/dialer"
 	"github.com/metacubex/mihomo/component/geodata"
 	mihomoHttp "github.com/metacubex/mihomo/component/http"
-	"github.com/metacubex/mihomo/component/iface"
 	"github.com/metacubex/mihomo/component/keepalive"
 	"github.com/metacubex/mihomo/component/profile"
 	"github.com/metacubex/mihomo/component/profile/cachefile"
@@ -101,11 +100,10 @@ func ApplyConfig(cfg *config.Config, force bool) {
 	updateRules(cfg.Rules, cfg.SubRules, cfg.RuleProviders)
 	updateSniffer(cfg.Sniffer)
 	updateHosts(cfg.Hosts)
-	updateGeneral(cfg.General, true)
+	config.SetGeneral(cfg.General, true)
 	updateDNS(cfg.DNS, cfg.General.IPv6)
 	updateNTP(cfg.NTP) // initialize NTP after DNS because an NTP server may be a hostname.
-	//updateListeners(cfg.General, cfg.Listeners, force)
-	//updateTun(cfg.General) // tun should not care "force"
+	updateListeners(cfg.General, cfg.Listeners, force)
 	updateIPTables(cfg)
 	updateTunnels(cfg.Tunnels)
 
@@ -115,7 +113,9 @@ func ApplyConfig(cfg *config.Config, force bool) {
 	loadProvider(cfg.Providers)
 	updateProfile(cfg)
 	loadProvider(cfg.RuleProviders)
-	runtime.GC()
+	// Reclaim the provider-parse garbage without stalling the running config
+	// apply; the collect runs alongside the resumed tunnels.
+	go runtime.GC()
 	tunnel.OnRunning()
 	updateUpdater(cfg)
 
@@ -205,10 +205,6 @@ func updateListeners(general *config.General, listeners map[string]C.InboundList
 	listener.ReCreateShadowSocks(general.ShadowSocksConfig, tunnel.Tunnel)
 	listener.ReCreateVmess(general.VmessConfig, tunnel.Tunnel)
 	listener.ReCreateTuic(general.TuicServer, tunnel.Tunnel)
-}
-
-func updateTun(general *config.General) {
-	listener.ReCreateTun(general.Tun, tunnel.Tunnel)
 }
 
 func updateExperimental(c *config.Experimental) {
@@ -382,53 +378,6 @@ func updateUpdater(cfg *config.Config) {
 	controller := cfg.Controller
 	updater.DefaultUiUpdater = updater.NewUiUpdater(controller.ExternalUI, controller.ExternalUIURL, controller.ExternalUIName)
 	updater.DefaultUiUpdater.AutoDownloadUI()
-}
-
-//go:linkname temporaryUpdateGeneral github.com/metacubex/mihomo/config.temporaryUpdateGeneral
-func temporaryUpdateGeneral(general *config.General) func() {
-	oldGeneral := GetGeneral()
-	updateGeneral(general, false)
-	return func() {
-		updateGeneral(oldGeneral, false)
-	}
-}
-
-func updateGeneral(general *config.General, logging bool) {
-	tunnel.SetMode(general.Mode)
-	tunnel.SetFindProcessMode(general.FindProcessMode)
-	resolver.DisableIPv6 = !general.IPv6
-
-	dialer.SetTcpConcurrent(general.TCPConcurrent)
-	if logging && general.TCPConcurrent {
-		log.Infoln("Use tcp concurrent")
-	}
-
-	inbound.SetTfo(general.InboundTfo)
-	inbound.SetMPTCP(general.InboundMPTCP)
-
-	keepalive.SetKeepAliveIdle(time.Duration(general.KeepAliveIdle) * time.Second)
-	keepalive.SetKeepAliveInterval(time.Duration(general.KeepAliveInterval) * time.Second)
-	keepalive.SetDisableKeepAlive(general.DisableKeepAlive)
-
-	adapter.UnifiedDelay.Store(general.UnifiedDelay)
-
-	dialer.DefaultInterface.Store(general.Interface)
-	dialer.DefaultRoutingMark.Store(int32(general.RoutingMark))
-	if logging && general.RoutingMark > 0 {
-		log.Infoln("Use routing mark: %#x", general.RoutingMark)
-	}
-
-	iface.FlushCache()
-
-	geodata.SetGeodataMode(general.GeodataMode)
-	geodata.SetLoader(general.GeodataLoader)
-	geodata.SetSiteMatcher(general.GeositeMatcher)
-	geodata.SetGeoIpUrl(general.GeoXUrl.GeoIp)
-	geodata.SetGeoSiteUrl(general.GeoXUrl.GeoSite)
-	geodata.SetMmdbUrl(general.GeoXUrl.Mmdb)
-	geodata.SetASNUrl(general.GeoXUrl.ASN)
-	mihomoHttp.SetUA(general.GlobalUA)
-	resource.SetETag(general.ETagSupport)
 }
 
 func updateUsers(users []auth.AuthUser) {

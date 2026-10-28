@@ -109,6 +109,75 @@ func TestLookupReportsInitiatorUpstreamAndCacheHit(t *testing.T) {
 	}
 }
 
+// The address cache answers from the message it holds, so a lookup the host
+// traces reports the answer the message path reports: the same question, the
+// same upstream and the same records, with only the cache flag differing.
+func TestTracedIPLookupReportsTheAnswerTheMessagePathReports(t *testing.T) {
+	client := &answeringClient{address: "udp://192.0.2.53:53", ip: "192.0.2.10"}
+	r := NewResolverFromClient(client)
+	records := recordQueries(t)
+	ctx := context.Background()
+
+	if _, err := r.LookupIPv4(ctx, "www.example.com"); err != nil {
+		t.Fatalf("first lookup: %v", err)
+	}
+	if _, err := r.LookupIPv4(ctx, "www.example.com"); err != nil {
+		t.Fatalf("second lookup: %v", err)
+	}
+
+	got := records()
+	if len(got) != 2 {
+		t.Fatalf("recorded %d queries, want one per lookup", len(got))
+	}
+	exchange, cached := got[0], got[1]
+	if exchange.Cached {
+		t.Error("the first lookup answered from a cache, so it never left the resolver")
+	}
+	if !cached.Cached {
+		t.Error("the second lookup answered from the address cache")
+	}
+	if cached.Question != exchange.Question {
+		t.Errorf("question = %v, want %v", cached.Question, exchange.Question)
+	}
+	if cached.Upstream != exchange.Upstream {
+		t.Errorf("upstream = %q, want %q", cached.Upstream, exchange.Upstream)
+	}
+	if cached.Initiator != exchange.Initiator {
+		t.Errorf("initiator = %q, want %q", cached.Initiator, exchange.Initiator)
+	}
+	if cached.Msg.String() != exchange.Msg.String() {
+		t.Errorf("answer = %s, want %s", cached.Msg, exchange.Msg)
+	}
+}
+
+// Both families the pair answers are traced, and both come from the address
+// cache the second time: a host that records queries sees one record per
+// answer whichever family a lookup asked for.
+func TestTracedIPLookupPairReportsBothAnswers(t *testing.T) {
+	records := recordQueries(t)
+	r := NewResolverFromClient(&countingDNSClient{})
+	ctx := context.Background()
+
+	for i := 0; i < 2; i++ {
+		if _, err := r.LookupIP(ctx, "www.example.com"); err != nil {
+			t.Fatalf("lookup %d: %v", i, err)
+		}
+	}
+
+	got := records()
+	if len(got) != 4 {
+		t.Fatalf("recorded %d queries, want one per answer per lookup", len(got))
+	}
+	for i, wantCached := range []bool{false, false, true, true} {
+		if got[i].Cached != wantCached {
+			t.Errorf("query %d cached = %v, want %v", i, got[i].Cached, wantCached)
+		}
+		if got[i].Msg == nil {
+			t.Errorf("query %d carries no answer", i)
+		}
+	}
+}
+
 func TestUnlabeledQueryIsOther(t *testing.T) {
 	records := recordQueries(t)
 	r := newAnsweringResolver("https://dns.example/dns-query")

@@ -1,0 +1,28 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/tunnel
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+                                              │ D:\Codex\tmp\clash-meta-audit-20261023\plain-base.txt │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-25-rule-index-lazy-final-plain.txt │
+                                              │                        sec/op                         │                                                      sec/op                                                        vs base               │
+MatchPlainRulesBeforeIndexedHit/plain=1000-16                                            9.082µ ± ∞ ¹                                                                                                        8.406µ ± ∞ ¹   -7.44% (p=0.008 n=5)
+MatchPlainRulesBeforeIndexedHit/plain=5000-16                                            45.62µ ± ∞ ¹                                                                                                        40.65µ ± ∞ ¹  -10.88% (p=0.008 n=5)
+geomean                                                                                  20.35µ                                                                                                              18.49µ         -9.18%
+¹ need >= 6 samples for confidence interval at level 0.95
+
+                                              │ D:\Codex\tmp\clash-meta-audit-20261023\plain-base.txt │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-25-rule-index-lazy-final-plain.txt │
+                                              │                         B/op                          │                                                       B/op                                                        vs base                │
+MatchPlainRulesBeforeIndexedHit/plain=1000-16                                             0.000 ± ∞ ¹                                                                                                        0.000 ± ∞ ¹       ~ (p=1.000 n=5) ²
+MatchPlainRulesBeforeIndexedHit/plain=5000-16                                             0.000 ± ∞ ¹                                                                                                        0.000 ± ∞ ¹       ~ (p=1.000 n=5) ²
+geomean                                                                                             ³                                                                                                                     +0.00%               ³
+¹ need >= 6 samples for confidence interval at level 0.95
+² all samples are equal
+³ summaries must be >0 to compute geomean
+
+                                              │ D:\Codex\tmp\clash-meta-audit-20261023\plain-base.txt │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-25-rule-index-lazy-final-plain.txt │
+                                              │                       allocs/op                       │                                                    allocs/op                                                      vs base                │
+MatchPlainRulesBeforeIndexedHit/plain=1000-16                                             0.000 ± ∞ ¹                                                                                                        0.000 ± ∞ ¹       ~ (p=1.000 n=5) ²
+MatchPlainRulesBeforeIndexedHit/plain=5000-16                                             0.000 ± ∞ ¹                                                                                                        0.000 ± ∞ ¹       ~ (p=1.000 n=5) ²
+geomean                                                                                             ³                                                                                                                     +0.00%               ³
+¹ need >= 6 samples for confidence interval at level 0.95
+² all samples are equal
+³ summaries must be >0 to compute geomean

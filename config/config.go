@@ -41,7 +41,7 @@ import (
 	RW "github.com/metacubex/mihomo/rules/wrapper"
 	T "github.com/metacubex/mihomo/tunnel"
 
-	"golang.org/x/exp/slices"
+	"slices"
 )
 
 // General config
@@ -274,6 +274,7 @@ type RawTun struct {
 	Enable              bool       `yaml:"enable" json:"enable"`
 	Device              string     `yaml:"device" json:"device"`
 	Stack               C.TUNStack `yaml:"stack" json:"stack"`
+	DNSMode             string     `yaml:"dns-mode" json:"dns-mode"`
 	DNSHijack           []string   `yaml:"dns-hijack" json:"dns-hijack"`
 	AutoRoute           bool       `yaml:"auto-route" json:"auto-route"`
 	AutoDetectInterface bool       `yaml:"auto-detect-interface" json:"auto-detect-interface"`
@@ -632,10 +633,9 @@ func ParseRawConfig(rawCfg *RawConfig) (*Config, error) {
 	}
 	config.General = general
 
-	// We need to temporarily apply some configuration in general and roll back after parsing the complete configuration.
-	// The loading and downloading of geodata in the parseRules and parseRuleProviders rely on these.
-	// This implementation is very disgusting, but there is currently no better solution
-	rollback := temporaryUpdateGeneral(config.General)
+	// Rule and provider parsing loads geodata and downloads providers, and
+	// both read these settings, so they go in now and come back out after.
+	rollback := TemporarilySetGeneral(config.General)
 	defer rollback()
 
 	controller, err := parseController(rawCfg)
@@ -753,9 +753,6 @@ func ParseRawConfig(rawCfg *RawConfig) (*Config, error) {
 
 	return config, nil
 }
-
-//go:linkname temporaryUpdateGeneral
-func temporaryUpdateGeneral(general *General) func()
 
 func parseGeneral(cfg *RawConfig) (*General, error) {
 	if cfg.GlobalClientFingerprint != "" {
@@ -1695,6 +1692,7 @@ func parseTun(rawTun RawTun, dns *DNS, general *General) error {
 		Enable:              rawTun.Enable,
 		Device:              rawTun.Device,
 		Stack:               rawTun.Stack,
+		DNSMode:             rawTun.DNSMode,
 		DNSHijack:           rawTun.DNSHijack,
 		AutoRoute:           rawTun.AutoRoute,
 		AutoDetectInterface: rawTun.AutoDetectInterface,

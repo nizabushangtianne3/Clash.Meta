@@ -1,13 +1,13 @@
 module github.com/metacubex/mihomo
 
-go 1.20
+go 1.24
 
 require (
 	github.com/bahlo/generic-list-go v0.2.0
 	github.com/coreos/go-iptables v0.8.0
 	github.com/dlclark/regexp2 v1.12.0
 	github.com/easytier/easytier/easytier-go v0.0.0-20260910071355-3d0c9c3ca5e2
-	github.com/enfein/mieru/v3 v3.38.0
+	github.com/enfein/mieru/v3 v3.38.1
 	github.com/gobwas/ws v1.4.0
 	github.com/gofrs/uuid/v5 v5.4.0
 	github.com/golang/snappy v1.0.0
@@ -23,12 +23,13 @@ require (
 	github.com/metacubex/edwards25519 v1.2.0
 	github.com/metacubex/fswatch v0.1.1
 	github.com/metacubex/gopacket v1.1.20-0.20230608035415-7e2f98a3e759
+	github.com/metacubex/gvisor v0.0.0-20260922041103-e2cbcd6e7400
 	github.com/metacubex/http v0.1.8
 	github.com/metacubex/jls-quic-go v0.0.0-20260727080412-732f2fc9a34d
 	github.com/metacubex/jls-tls v0.0.0-20260723084315-67adc0e2f796
 	github.com/metacubex/kcp-go v0.0.0-20260105040817-550693377604
 	github.com/metacubex/mhurl v0.1.0
-	github.com/metacubex/mipstack v0.0.0-20260930071539-961d4b1c1983
+	github.com/metacubex/mipstack v0.0.0-20261019124225-9a80a07eaeb9
 	github.com/metacubex/mlkem v0.1.0
 	github.com/metacubex/quic-go v0.61.1-0.20260727080200-2548683b76f4
 	github.com/metacubex/randv2 v0.2.0
@@ -39,14 +40,14 @@ require (
 	github.com/metacubex/sing-quic v0.0.0-20260904234848-1c242664697a
 	github.com/metacubex/sing-shadowsocks v0.2.13
 	github.com/metacubex/sing-shadowsocks2 v0.2.8
-	github.com/metacubex/sing-tun v0.4.27
+	github.com/metacubex/sing-tun v0.4.28
 	github.com/metacubex/sing-vmess v0.2.5
-	github.com/metacubex/sing-wireguard v0.0.0-20260826105301-c3ae17d19f9e
+	github.com/metacubex/sing-wireguard v0.0.0-20261002050126-e5fa1a607406
 	github.com/metacubex/smux v0.0.0-20260105030934-d0c8756d3141
 	github.com/metacubex/ssh v0.1.0
 	github.com/metacubex/tailscale v0.0.0-20260821153257-ff0ecd818181
 	github.com/metacubex/tfo-go v0.0.0-20260623020846-376a77860b8c
-	github.com/metacubex/tls v0.1.8
+	github.com/metacubex/tls v0.1.9
 	github.com/metacubex/utls v1.8.8
 	github.com/metacubex/wireguard-go v0.0.0-20250820062549-a6cecdd7f57f
 	github.com/metacubex/zerotier-go v0.0.0-20260813124750-13fa6f45da5f
@@ -72,7 +73,7 @@ require (
 	github.com/miekg/dns v1.1.63
 	github.com/oschwald/maxminddb-golang v1.12.0
 	golang.org/x/crypto v0.33.0
-	golang.org/x/exp v0.0.0-20240904232852-e7e105dedf7e
+	golang.org/x/exp v0.0.0-20240904232852-e7e105dedf7e // indirect
 	golang.org/x/net v0.35.0
 	golang.org/x/sync v0.11.0
 	golang.org/x/sys v0.30.0
@@ -110,7 +111,6 @@ require (
 	github.com/klauspost/reedsolomon v1.12.3 // indirect
 	github.com/mdlayher/socket v0.5.1 // indirect
 	github.com/metacubex/ascon v0.1.0 // indirect
-	github.com/metacubex/gvisor v0.0.0-20260922041103-e2cbcd6e7400 // indirect
 	github.com/metacubex/hkdf v0.1.0 // indirect
 	github.com/metacubex/hpke v0.1.0 // indirect
 	github.com/metacubex/jsonv2 v0.0.0-20260721082349-16b4998c8f89 // indirect

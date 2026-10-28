@@ -226,8 +226,8 @@ func TestOnDialFailedReleasesFailureLockBeforeHealthCheck(t *testing.T) {
 	called := make(chan struct{}, 2)
 	healthCheck := func() {
 		group.failedTestMux.Lock()
-		group.failedTestMux.Unlock()
 		called <- struct{}{}
+		group.failedTestMux.Unlock()
 	}
 	group.onDialFailed(C.Shadowsocks, errors.New("dial failed"), healthCheck)
 	group.onDialFailed(C.Shadowsocks, errors.New("dial failed"), healthCheck)

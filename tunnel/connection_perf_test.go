@@ -2,13 +2,16 @@ package tunnel
 
 import (
 	"context"
+	"io"
 	"net"
 	"net/netip"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	N "github.com/metacubex/mihomo/common/net"
+	"github.com/metacubex/mihomo/common/pool"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/stretchr/testify/require"
 )
@@ -22,9 +25,8 @@ func TestPacketOriginKeyMatchesWithoutFormatting(t *testing.T) {
 	defer sender.Close()
 
 	sender.AddMapping(origin, resolved)
-	mappings := sender.mappings.Load()
-	target, exists := mappings.originToTarget[packetOriginKey(origin)]
-	require.True(t, exists)
+	target := sender.targetFor(packetOriginKey(origin))
+	require.True(t, target.IsValid())
 	require.Equal(t, resolved.DstIP, target)
 
 	allocations := testing.AllocsPerRun(100, func() {
@@ -47,9 +49,9 @@ func TestPacketOriginKeyPrefersHostOverResolvedIP(t *testing.T) {
 
 	sender.AddMapping(origin, resolved)
 	key := packetOriginKey(origin)
-	target, exists := sender.mappings.Load().originToTarget[key]
+	target := sender.targetFor(key)
 
-	require.True(t, exists)
+	require.True(t, target.IsValid())
 	require.Equal(t, "example.com", key.host)
 	require.False(t, key.ip.IsValid())
 	require.Equal(t, resolved.DstIP, target)
@@ -65,12 +67,66 @@ func TestPacketMappingConcurrentAccess(t *testing.T) {
 		&C.Metadata{DstIP: target},
 	)
 
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		require.Equal(t, origin, sender.RestoreReadFrom(target))
-	}()
-	<-done
+	var failed atomic.Bool
+	var wait sync.WaitGroup
+	for worker := 0; worker < 8; worker++ {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			for iteration := 0; iteration < 1000; iteration++ {
+				if restored := sender.RestoreReadFrom(target); restored != origin {
+					failed.Store(true)
+					return
+				}
+			}
+		}()
+	}
+	wait.Wait()
+	require.False(t, failed.Load())
+}
+
+type fastReadPacketConn struct {
+	C.PacketConn
+	data  []byte
+	from  netip.AddrPort
+	calls int
+}
+
+func (c *fastReadPacketConn) WaitReadFrom() (data []byte, addr netip.AddrPort, err error) {
+	if c.calls > 0 {
+		return nil, netip.AddrPort{}, io.EOF
+	}
+	c.calls++
+	return c.data, c.from, nil
+}
+
+func (c *fastReadPacketConn) SetReadDeadline(time.Time) error { return nil }
+func (c *fastReadPacketConn) Close() error                    { return nil }
+
+type recordingWriteBack struct {
+	data []byte
+	addr netip.AddrPort
+}
+
+func (w *recordingWriteBack) WriteBack(data []byte, addr netip.AddrPort) (int, error) {
+	w.data = append(w.data[:0], data...)
+	w.addr = addr
+	return len(data), nil
+}
+
+func TestHandleUDPToLocalWritesBackReadAddrPort(t *testing.T) {
+	sender := newPacketSender().(*packetSender)
+	pc := &fastReadPacketConn{
+		data: []byte("pong"),
+		from: netip.MustParseAddrPort("198.51.100.7:5353"),
+	}
+	writeBack := &recordingWriteBack{}
+
+	handleUDPToLocal(writeBack, pc, sender, netip.MustParseAddrPort("192.0.2.1:1234"), netip.MustParseAddrPort("203.0.113.9:53"))
+
+	require.Equal(t, 1, pc.calls)
+	require.Equal(t, pc.data, writeBack.data)
+	require.Equal(t, pc.from, writeBack.addr)
 }
 
 func TestPacketMappingKeepsFirstDestinationAndOrigin(t *testing.T) {
@@ -84,13 +140,43 @@ func TestPacketMappingKeepsFirstDestinationAndOrigin(t *testing.T) {
 	sender.AddMapping(firstOrigin, &C.Metadata{DstIP: firstTarget})
 	sender.AddMapping(secondOrigin, &C.Metadata{DstIP: firstTarget})
 	sender.AddMapping(firstOrigin, &C.Metadata{DstIP: secondTarget})
-	mappings := sender.mappings.Load()
-	first, _ := mappings.originToTarget[packetOriginKey(firstOrigin)]
-	firstOriginAddr, _ := mappings.targetToOrigin[firstTarget]
-	secondOriginAddr, _ := mappings.targetToOrigin[secondTarget]
+	first := sender.targetFor(packetOriginKey(firstOrigin))
+	firstOriginAddr := sender.RestoreReadFrom(firstTarget)
+	secondOriginAddr := sender.RestoreReadFrom(secondTarget)
 	require.Equal(t, firstTarget, first)
 	require.Equal(t, firstOrigin.DstIP, firstOriginAddr)
 	require.Equal(t, firstOrigin.DstIP, secondOriginAddr)
+}
+
+func TestPacketMappingFillKeepsEveryMapping(t *testing.T) {
+	const mappingCount = 4096
+
+	origins := make([]C.Metadata, mappingCount)
+	targets := make([]C.Metadata, mappingCount)
+	for index := range origins {
+		origins[index].DstIP = netip.AddrFrom4([4]byte{10, byte(index >> 8), byte(index), 1})
+		targets[index].DstIP = netip.AddrFrom4([4]byte{203, 0, byte(index >> 8), byte(index)})
+	}
+
+	sender := newPacketSender().(*packetSender)
+	defer sender.Close()
+	for index := range origins {
+		sender.AddMapping(&origins[index], &targets[index])
+	}
+
+	allocations := testing.AllocsPerRun(1, func() {
+		checkSender := newPacketSender().(*packetSender)
+		for index := range origins {
+			checkSender.AddMapping(&origins[index], &targets[index])
+		}
+		checkSender.Close()
+	})
+	require.Less(t, allocations, float64(2048))
+
+	for _, index := range []int{0, mappingCount / 2, mappingCount - 1} {
+		require.Equal(t, targets[index].DstIP, sender.targetFor(packetOriginKey(&origins[index])))
+		require.Equal(t, origins[index].DstIP, sender.RestoreReadFrom(targets[index].DstIP))
+	}
 }
 
 func BenchmarkPacketMappingRestore(b *testing.B) {
@@ -125,6 +211,27 @@ func BenchmarkPacketMappingFirstAdd(b *testing.B) {
 	}
 }
 
+func BenchmarkPacketMappingFill(b *testing.B) {
+	const mappingCount = 4096
+
+	origins := make([]C.Metadata, mappingCount)
+	targets := make([]C.Metadata, mappingCount)
+	for index := range origins {
+		origins[index].DstIP = netip.AddrFrom4([4]byte{10, byte(index >> 8), byte(index), 1})
+		targets[index].DstIP = netip.AddrFrom4([4]byte{203, 0, byte(index >> 8), byte(index)})
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for index := 0; index < b.N; index++ {
+		sender := newPacketSender().(*packetSender)
+		for mapping := range origins {
+			sender.AddMapping(&origins[mapping], &targets[mapping])
+		}
+		sender.Close()
+	}
+}
+
 func BenchmarkPacketOriginLookup(b *testing.B) {
 	origin := &C.Metadata{DstIP: netip.MustParseAddr("192.168.1.2")}
 	target := netip.MustParseAddr("203.0.113.20")
@@ -135,8 +242,7 @@ func BenchmarkPacketOriginLookup(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for index := 0; index < b.N; index++ {
-		if address, exists := sender.mappings.Load().originToTarget[packetOriginKey(origin)]; !exists ||
-			address != target {
+		if address := sender.targetFor(packetOriginKey(origin)); address != target {
 			b.Fatal("packet origin mapping was not found")
 		}
 	}
@@ -152,8 +258,23 @@ func TestShouldRefreshDeadlineAcrossDeadlineAges(t *testing.T) {
 	require.True(t, shouldRefreshDeadline(now.Add(-time.Second).UnixNano(), now), "an expired deadline must be re-armed")
 }
 
-type deadlineRecordingPacketConn struct {
+// chainlessPacketConn supplies the C.PacketConn surface these tests do not
+// exercise, so each test conn only declares what it observes.
+type chainlessPacketConn struct {
 	N.EnhancePacketConn
+}
+
+func (c *chainlessPacketConn) Chains() C.Chain               { return nil }
+func (c *chainlessPacketConn) ProviderChains() C.Chain       { return nil }
+func (c *chainlessPacketConn) AppendToChains(C.ProxyAdapter) {}
+func (c *chainlessPacketConn) RemoteDestination() string     { return "" }
+
+func (c *chainlessPacketConn) ResolveUDP(ctx context.Context, metadata *C.Metadata) error {
+	return nil
+}
+
+type deadlineRecordingPacketConn struct {
+	chainlessPacketConn
 	sets atomic.Int64
 	last atomic.Int64
 }
@@ -162,15 +283,6 @@ func (c *deadlineRecordingPacketConn) SetReadDeadline(t time.Time) error {
 	c.sets.Add(1)
 	c.last.Store(t.UnixNano())
 	return c.EnhancePacketConn.SetReadDeadline(t)
-}
-
-func (c *deadlineRecordingPacketConn) Chains() C.Chain               { return nil }
-func (c *deadlineRecordingPacketConn) ProviderChains() C.Chain       { return nil }
-func (c *deadlineRecordingPacketConn) AppendToChains(C.ProxyAdapter) {}
-func (c *deadlineRecordingPacketConn) RemoteDestination() string     { return "" }
-
-func (c *deadlineRecordingPacketConn) ResolveUDP(ctx context.Context, metadata *C.Metadata) error {
-	return nil
 }
 
 type deadlineTestPacket struct {
@@ -187,7 +299,7 @@ func TestProcessPacketArmsDeadlineOncePerHalfTimeout(t *testing.T) {
 	udp, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = udp.Close() })
-	pc := &deadlineRecordingPacketConn{EnhancePacketConn: N.NewEnhancePacketConn(udp)}
+	pc := &deadlineRecordingPacketConn{chainlessPacketConn: chainlessPacketConn{EnhancePacketConn: N.NewEnhancePacketConn(udp)}}
 
 	sender := newPacketSender().(*packetSender)
 	t.Cleanup(sender.Close)
@@ -204,18 +316,18 @@ func TestProcessPacketArmsDeadlineOncePerHalfTimeout(t *testing.T) {
 	require.EqualValues(t, 1, pc.sets.Load(), "the first packet must arm the deadline")
 	firstDeadline := pc.last.Load()
 
+	packet = C.NewPacketAdapter(
+		deadlineTestPacket{localAddr: net.UDPAddrFromAddrPort(netip.MustParseAddrPort("127.0.0.1:53535")), data: []byte("ping")},
+		origin,
+	)
 	sender.processPacket(pc, packet)
 	require.EqualValues(t, 1, pc.sets.Load(), "a packet inside the half-timeout window must not re-arm")
 	require.Equal(t, firstDeadline, pc.last.Load())
 }
 
 func BenchmarkUDPDeadlineUnconditional(b *testing.B) {
-	udp, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
-	if err != nil {
-		b.Fatal(err)
-	}
-	b.Cleanup(func() { _ = udp.Close() })
-	pc := N.NewEnhancePacketConn(udp)
+	pc := newIdlePacketConn(&idleStubPacketConn{})
+	b.Cleanup(func() { _ = pc.Close() })
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -236,41 +348,92 @@ func BenchmarkUDPDeadlineGated(b *testing.B) {
 	}
 }
 
-type upstreamBox struct {
-	inner any
+type idleStubPacketConn struct {
+	C.PacketConn
+	closed atomic.Bool
+	closes atomic.Int64
 }
 
-func (box upstreamBox) Upstream() any { return box.inner }
+func (c *idleStubPacketConn) SetReadDeadline(time.Time) error { return nil }
 
-func TestSynchronousWriteTargetIdentifiesKernelSockets(t *testing.T) {
-	udp, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = udp.Close() })
+func (c *idleStubPacketConn) Close() error {
+	c.closes.Add(1)
+	c.closed.Store(true)
+	return nil
+}
 
-	require.True(t, synchronousWriteTarget(udp), "a kernel socket consumes the address inside WriteTo")
-	require.True(t, synchronousWriteTarget(upstreamBox{inner: upstreamBox{inner: upstreamBox{inner: udp}}}),
-		"the wrapped conn chain must be walked to its socket")
-	require.False(t, synchronousWriteTarget(upstreamBox{inner: upstreamBox{inner: nil}}),
-		"a chain without a kernel socket must not reuse destinations")
-	require.False(t, synchronousWriteTarget(upstreamBox{inner: "opaque"}))
-	require.False(t, synchronousWriteTarget("not-a-conn"))
-	require.False(t, synchronousWriteTarget(nil))
+func TestIdlePacketConnClosesOnTheReadDeadline(t *testing.T) {
+	inner := &idleStubPacketConn{}
+	conn := newIdlePacketConn(inner)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(30*time.Millisecond)))
+	require.Eventually(t, inner.closed.Load, time.Second, 5*time.Millisecond)
+	require.EqualValues(t, 1, inner.closes.Load(), "the idle close must run once")
+}
+
+func TestIdlePacketConnReadDeadlinePostponesTheClose(t *testing.T) {
+	inner := &idleStubPacketConn{}
+	conn := newIdlePacketConn(inner)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(30*time.Millisecond)))
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(400*time.Millisecond)))
+	require.Never(t, inner.closed.Load, 150*time.Millisecond, 10*time.Millisecond, "a refreshed deadline must not fire")
+	require.Eventually(t, inner.closed.Load, time.Second, 10*time.Millisecond)
+}
+
+func TestIdlePacketConnZeroDeadlineAndCloseBothDisarm(t *testing.T) {
+	inner := &idleStubPacketConn{}
+	conn := newIdlePacketConn(inner)
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(30*time.Millisecond)))
+	require.NoError(t, conn.SetReadDeadline(time.Time{}))
+	require.Never(t, inner.closed.Load, 100*time.Millisecond, 10*time.Millisecond, "a cleared deadline must disarm the timer")
+
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(30*time.Millisecond)))
+	require.NoError(t, conn.Close())
+	require.True(t, inner.closed.Load())
+	require.Never(t, func() bool { return inner.closes.Load() > 1 }, 100*time.Millisecond, 10*time.Millisecond, "closing must disarm the timer and close once")
+}
+
+// BenchmarkUDPFlowReplyRead is the shape the tunnel's reply loop reads in: one
+// pooled read per datagram on a flow conn whose idle deadline is armed.
+func BenchmarkUDPFlowReplyRead(b *testing.B) {
+	server, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		b.Fatal(err)
+	}
+	client, err := net.DialUDP("udp4", nil, server.LocalAddr().(*net.UDPAddr))
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() { _ = server.Close(); _ = client.Close() })
+
+	pc := newIdlePacketConn(&chainlessPacketConn{EnhancePacketConn: N.NewEnhancePacketConn(server)})
+	b.Cleanup(func() { _ = pc.Close() })
+	require.NoError(b, pc.SetReadDeadline(time.Now().Add(udpTimeout)))
+	payload := make([]byte, 1500)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := client.Write(payload); err != nil {
+			b.Fatal(err)
+		}
+		data, _, err := pc.WaitReadFrom()
+		if err != nil {
+			b.Fatal(err)
+		}
+		_ = pool.Put(data)
+	}
 }
 
 type destinationRecordingPacketConn struct {
-	N.EnhancePacketConn
-	udp       *net.UDPConn // non-nil marks the conn as kernel-backed
+	chainlessPacketConn
 	written   int
 	firstAddr net.Addr
 	reused    bool
 	changed   bool
-}
-
-func (c *destinationRecordingPacketConn) Upstream() any {
-	if c.udp == nil {
-		return nil // a queued conn has no kernel socket below it
-	}
-	return c.udp
 }
 
 func (c *destinationRecordingPacketConn) WriteTo(b []byte, addr net.Addr) (int, error) {
@@ -287,16 +450,7 @@ func (c *destinationRecordingPacketConn) WriteTo(b []byte, addr net.Addr) (int, 
 
 func (c *destinationRecordingPacketConn) SetReadDeadline(t time.Time) error { return nil }
 
-func (c *destinationRecordingPacketConn) Chains() C.Chain               { return nil }
-func (c *destinationRecordingPacketConn) ProviderChains() C.Chain       { return nil }
-func (c *destinationRecordingPacketConn) AppendToChains(C.ProxyAdapter) {}
-func (c *destinationRecordingPacketConn) RemoteDestination() string     { return "" }
-
-func (c *destinationRecordingPacketConn) ResolveUDP(ctx context.Context, metadata *C.Metadata) error {
-	return nil
-}
-
-func newDestinationTestFlow(t *testing.T, pc C.PacketConn) (*packetSender, C.PacketAdapter) {
+func newDestinationTestFlow(t *testing.T, pc C.PacketConn) (*packetSender, *C.Metadata) {
 	t.Helper()
 
 	sender := newPacketSender().(*packetSender)
@@ -305,96 +459,84 @@ func newDestinationTestFlow(t *testing.T, pc C.PacketConn) (*packetSender, C.Pac
 	origin := &C.Metadata{NetWork: C.UDP, DstIP: netip.MustParseAddr("127.0.0.2"), DstPort: 5353}
 	sender.AddMapping(origin, &C.Metadata{NetWork: C.UDP, DstIP: netip.MustParseAddr("127.0.0.3"), DstPort: 5353})
 
-	packet := C.NewPacketAdapter(
+	return sender, origin
+}
+
+func newDestinationTestPacket(origin *C.Metadata) C.PacketAdapter {
+	return C.NewPacketAdapter(
 		deadlineTestPacket{localAddr: net.UDPAddrFromAddrPort(netip.MustParseAddrPort("127.0.0.1:53535")), data: []byte("ping")},
 		origin,
 	)
-	return sender, packet
 }
 
-func TestProcessPacketReusesDestinationForKernelBackedConn(t *testing.T) {
-	udp, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = udp.Close() })
+func TestProcessPacketReusesDestinationForRepeatedWrites(t *testing.T) {
+	pc := &destinationRecordingPacketConn{}
+	sender, origin := newDestinationTestFlow(t, pc)
 
-	pc := &destinationRecordingPacketConn{udp: udp}
-	sender, packet := newDestinationTestFlow(t, pc)
-
-	sender.processPacket(pc, packet)
-	sender.processPacket(pc, packet)
+	sender.processPacket(pc, newDestinationTestPacket(origin))
+	sender.processPacket(pc, newDestinationTestPacket(origin))
 
 	require.Equal(t, 2, pc.written)
 	require.True(t, pc.reused, "a repeated destination must reuse the address object")
 	require.False(t, pc.changed)
 }
 
-func TestProcessPacketKeepsFreshDestinationForQueuedConn(t *testing.T) {
+func TestProcessPacketReusesDestinationForQueuedConn(t *testing.T) {
 	pc := &destinationRecordingPacketConn{}
-	sender, packet := newDestinationTestFlow(t, pc)
+	sender, origin := newDestinationTestFlow(t, pc)
 
-	sender.processPacket(pc, packet)
-	sender.processPacket(pc, packet)
+	sender.processPacket(pc, newDestinationTestPacket(origin))
+	sender.processPacket(pc, newDestinationTestPacket(origin))
 
 	require.Equal(t, 2, pc.written)
-	require.False(t, pc.reused, "a conn that may queue the address must get a fresh object")
-	require.True(t, pc.changed)
+	require.True(t, pc.reused, "a repeated destination must reuse the address object even for a queued conn")
+	require.False(t, pc.changed)
 }
 
 func TestProcessPacketRebuildsDestinationWhenPortChanges(t *testing.T) {
-	udp, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = udp.Close() })
+	pc := &destinationRecordingPacketConn{}
+	sender, origin := newDestinationTestFlow(t, pc)
 
-	pc := &destinationRecordingPacketConn{udp: udp}
-	sender, packet := newDestinationTestFlow(t, pc)
-
-	sender.processPacket(pc, packet)
-	packet.Metadata().DstPort = 5354
-	sender.processPacket(pc, packet)
+	sender.processPacket(pc, newDestinationTestPacket(origin))
+	changedOrigin := *origin
+	changedOrigin.DstPort = 5354
+	sender.processPacket(pc, newDestinationTestPacket(&changedOrigin))
 
 	require.Equal(t, 2, pc.written)
 	require.False(t, pc.reused, "a changed destination port must rebuild the address")
 	require.True(t, pc.changed)
 }
 
-func BenchmarkProcessPacketHitKernelBacked(b *testing.B) {
-	udp, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
-	if err != nil {
-		b.Fatal(err)
-	}
-	b.Cleanup(func() { _ = udp.Close() })
-
-	pc := &destinationRecordingPacketConn{udp: udp}
-	sender := newPacketSender().(*packetSender)
-	b.Cleanup(sender.Close)
-	origin := &C.Metadata{NetWork: C.UDP, DstIP: netip.MustParseAddr("127.0.0.2"), DstPort: 5353}
-	sender.AddMapping(origin, &C.Metadata{NetWork: C.UDP, DstIP: netip.MustParseAddr("127.0.0.3"), DstPort: 5353})
-	packet := C.NewPacketAdapter(
-		deadlineTestPacket{localAddr: net.UDPAddrFromAddrPort(netip.MustParseAddrPort("127.0.0.1:53535")), data: []byte("ping")},
-		origin,
-	)
-
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		sender.processPacket(pc, packet)
-	}
-}
-
-func BenchmarkProcessPacketHitQueued(b *testing.B) {
+func BenchmarkProcessPacketHit(b *testing.B) {
 	pc := &destinationRecordingPacketConn{}
 	sender := newPacketSender().(*packetSender)
 	b.Cleanup(sender.Close)
 	origin := &C.Metadata{NetWork: C.UDP, DstIP: netip.MustParseAddr("127.0.0.2"), DstPort: 5353}
 	sender.AddMapping(origin, &C.Metadata{NetWork: C.UDP, DstIP: netip.MustParseAddr("127.0.0.3"), DstPort: 5353})
-	packet := C.NewPacketAdapter(
-		deadlineTestPacket{localAddr: net.UDPAddrFromAddrPort(netip.MustParseAddrPort("127.0.0.1:53535")), data: []byte("ping")},
-		origin,
-	)
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		sender.processPacket(pc, packet)
+		sender.processPacket(pc, newDestinationTestPacket(origin))
 	}
+}
+
+// The accepted conn is handed to the handler as-is; wrapping it in a
+// per-connection context object used to cost an allocation on every TCP conn.
+func TestHandleTCPConnEntryAllocatesNothing(t *testing.T) {
+	previousStatus := status.Load()
+	status.Store(Suspend)
+	t.Cleanup(func() { status.Store(previousStatus) })
+
+	conn, remote := net.Pipe()
+	t.Cleanup(func() {
+		_ = conn.Close()
+		_ = remote.Close()
+	})
+	metadata := &C.Metadata{NetWork: C.TCP, Type: C.HTTP}
+
+	allocations := testing.AllocsPerRun(1000, func() {
+		Tunnel.HandleTCPConn(conn, metadata)
+	})
+	require.Zero(t, allocations)
 }

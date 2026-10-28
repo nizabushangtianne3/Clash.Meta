@@ -14,7 +14,6 @@ import (
 
 	"github.com/metacubex/mihomo/common/atomic"
 	"github.com/metacubex/mihomo/component/keepalive"
-	"github.com/metacubex/mihomo/component/mptcp"
 	"github.com/metacubex/mihomo/component/resolver"
 )
 
@@ -142,20 +141,19 @@ func dialContext(ctx context.Context, network string, destination netip.Addr, po
 	destination, port = resolver.LookupIP4P(destination, port)
 	address = net.JoinHostPort(destination.String(), port)
 
-	netDialer := opt.netDialer
-	switch netDialer.(type) {
+	var dialer *net.Dialer
+	switch typedDialer := opt.netDialer.(type) {
 	case nil:
-		netDialer = &net.Dialer{}
+		dialer = &net.Dialer{}
 	case *net.Dialer:
-		_netDialer := *netDialer.(*net.Dialer)
-		netDialer = &_netDialer // make a copy
+		copiedDialer := *typedDialer
+		dialer = &copiedDialer // make a copy
 	default:
-		return netDialer.DialContext(ctx, network, address)
+		return typedDialer.DialContext(ctx, network, address)
 	}
 
-	dialer := netDialer.(*net.Dialer)
 	keepalive.SetNetDialer(dialer)
-	mptcp.SetNetDialer(dialer, opt.mpTcp)
+	dialer.SetMultipathTCP(opt.mpTcp)
 
 	if DefaultSocketHook != nil { // ignore interfaceName, routingMark and tfo when DefaultSocketHook not null (in CMFA)
 		socketHookToToDialer(dialer)

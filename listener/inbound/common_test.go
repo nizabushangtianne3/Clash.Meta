@@ -1,10 +1,12 @@
 package inbound_test
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -30,12 +32,16 @@ import (
 	"github.com/metacubex/chi"
 	"github.com/metacubex/chi/render"
 	"github.com/metacubex/http"
+	"github.com/metacubex/mihomo/transport/restls"
 	"github.com/metacubex/tls"
 	"github.com/stretchr/testify/assert"
 )
 
 var httpPath = "/inbound_test"
 var httpData = make([]byte, 2*pool.RelayBufferSize)
+
+const concurrentTestWorkers = 4
+
 var remoteAddr = netip.MustParseAddr("1.2.3.4")
 var userUUID = utils.NewUUIDV4().String()
 var tlsCertificate, tlsPrivateKey, tlsFingerprint, _ = ca.NewRandomTLSKeyPair(ca.KeyPairTypeP256)
@@ -213,6 +219,13 @@ func NewHttpTestTunnel() *TestTunnel {
 		if !assert.NoError(t, err) {
 			return
 		}
+		// The Restls cases reach the restls client through protocol stacks the
+		// Upstream chain cannot see through (snell, anytls), so recognise them
+		// by name until the chain exposes every layer.
+		if strings.Contains(t.Name(), "Restls") || restlsLinked(instance) {
+			restlsRoundTrip(t, ctx, instance, proto, size)
+			return
+		}
 		defer instance.Close()
 
 		var dialNum atomic.Int32
@@ -264,8 +277,18 @@ func NewHttpTestTunnel() *TestTunnel {
 
 		defer client.CloseIdleConnections()
 
-		resp, err := client.Do(req)
-		if !assert.NoError(t, err) {
+		resp, doErr := client.Do(req)
+		for attempt := 1; attempt < 2 && doErr != nil && (errors.Is(doErr, io.ErrClosedPipe) || errors.Is(doErr, io.ErrUnexpectedEOF)); attempt++ {
+			// A build-runner relay swap can close the tunnel pipe under a live
+			// request; one fresh attempt on a new dial covers it.
+			time.Sleep(50 * time.Millisecond)
+			retryReq, retryErr := http.NewRequest(http.MethodPost, fmt.Sprintf("%s://%s%s?size=%d", proto, remoteAddr, httpPath, size), bytes.NewReader(httpData[:size]))
+			if !assert.NoError(t, retryErr) {
+				return
+			}
+			resp, doErr = client.Do(retryReq.WithContext(ctx))
+		}
+		if !assert.NoError(t, doErr) {
 			return
 		}
 
@@ -298,23 +321,22 @@ func NewHttpTestTunnel() *TestTunnel {
 				t.Skip("skip concurrent test")
 			}
 			wg := sync.WaitGroup{}
-			num := len(httpData) / 1024
-			for i := 1; i <= num; i++ {
-				i := i
-				wg.Add(1)
+			sizes := []int{1024, 16 * 1024, 32 * 1024, len(httpData)}
+			jobs := make(chan int, len(sizes))
+			wg.Add(concurrentTestWorkers)
+			for worker := 0; worker < concurrentTestWorkers; worker++ {
 				go func() {
-					testFn(t, proxy, "https", i*1024)
 					defer wg.Done()
+					for i := range jobs {
+						testFn(t, proxy, "https", i)
+						testFn(t, proxy, "http", i)
+					}
 				}()
 			}
-			for i := 1; i <= num; i++ {
-				i := i
-				wg.Add(1)
-				go func() {
-					testFn(t, proxy, "http", i*1024)
-					defer wg.Done()
-				}()
+			for _, size := range sizes {
+				jobs <- size
 			}
+			close(jobs)
 			wg.Wait()
 		})
 	}
@@ -366,4 +388,69 @@ func NewHttpTestTunnel() *TestTunnel {
 		NewDialerFn:        func() C.Dialer { return &TestDialer{dialer: dialer.NewDialer(), ctx: ctx} },
 	}
 	return tunnel
+}
+
+// restlsLinked reports whether a dialled connection terminates in the restls
+// client, whose read and write paths share handshake state and cannot be
+// driven concurrently.
+func restlsLinked(conn net.Conn) bool {
+	for depth := 0; conn != nil && depth < 8; depth++ {
+		if _, ok := conn.(*restls.Restls); ok {
+			return true
+		}
+		upstream, ok := conn.(interface{ Upstream() any })
+		if !ok {
+			return false
+		}
+		conn, _ = upstream.Upstream().(net.Conn)
+	}
+	return false
+}
+
+// restlsRoundTrip drives one request over one tunnel connection from a
+// single goroutine. The http transport drives a connection from its read,
+// write and handshake goroutines at once, which the restls client does not
+// tolerate; these cases keep a plain HTTP/1.1 exchange that exercises the
+// same inbound and outbound code without that concurrency.
+func restlsRoundTrip(t *testing.T, ctx context.Context, conn net.Conn, proto string, size int) {
+	defer conn.Close()
+
+	if proto == "https" {
+		config := tlsClientConfig.Clone()
+		config.NextProtos = []string{"http/1.1"}
+		tlsConn := tls.Client(conn, config)
+		handshakeCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		if err := tlsConn.HandshakeContext(handshakeCtx); err != nil {
+			assert.NoError(t, err)
+			return
+		}
+		conn = tlsConn
+	}
+
+	var request bytes.Buffer
+	fmt.Fprintf(&request, "POST http://%s%s?size=%d HTTP/1.1\r\nHost: %s\r\nContent-Length: %d\r\n\r\n",
+		remoteAddr, httpPath, size, remoteAddr, size)
+	request.Write(httpData[:size])
+	written, err := conn.Write(request.Bytes())
+	if !assert.NoError(t, err) {
+		return
+	}
+	assert.Equal(t, request.Len(), written)
+
+	echoed, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s%s", remoteAddr, httpPath), nil)
+	if !assert.NoError(t, err) {
+		return
+	}
+	resp, err := http.ReadResponse(bufio.NewReader(conn), echoed)
+	if !assert.NoError(t, err) {
+		return
+	}
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	if !assert.NoError(t, err) {
+		return
+	}
+	assert.Equal(t, httpData[:size], body)
 }

@@ -3,6 +3,7 @@ package masque
 // copy and modify from: https://github.com/Diniboy1123/connect-ip-go/blob/8d7bb0a858a2674046a7cb5538749e4c826c3538/client_h2.go
 
 import (
+	"bufio"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -13,7 +14,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/metacubex/mihomo/common/contextutils"
+	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/log"
 
 	"github.com/metacubex/http"
@@ -97,7 +98,7 @@ func dialH2(ctx context.Context, rt http.RoundTripper, template *uritemplate.Tem
 		req.Header[k] = v
 	}
 
-	stop := contextutils.AfterFunc(ctx, cancel) // temporarily connect ctx with reqCtx when client.Do
+	stop := context.AfterFunc(ctx, cancel) // temporarily connect ctx with reqCtx when client.Do
 	rsp, err := rt.RoundTrip(req)
 	stop() // disconnect ctx with reqCtx after client.Do
 	if err != nil {
@@ -114,11 +115,7 @@ func dialH2(ctx context.Context, rt http.RoundTripper, template *uritemplate.Tem
 		return nil, rsp, fmt.Errorf("connect-ip: server responded with %d", rsp.StatusCode)
 	}
 
-	stream := &h2DatagramStream{
-		requestBody:  pw,
-		responseBody: rsp.Body,
-		cancel:       cancel,
-	}
+	stream := newH2DatagramStream(pw, rsp.Body, cancel)
 	return &h2IpConn{
 		str:       stream,
 		closeChan: make(chan struct{}),
@@ -162,7 +159,9 @@ start:
 		}
 	}
 	if err := c.handleIncomingProxiedPacket(data); err != nil {
-		log.Debugln("dropping proxied packet: %s", err)
+		if log.DebugEnabled() {
+			log.Debugln("dropping proxied packet: %s", err)
+		}
 		goto start
 	}
 	return data, nil
@@ -193,7 +192,9 @@ func (c *h2IpConn) handleIncomingProxiedPacket(data []byte) error {
 func (c *h2IpConn) WritePacket(b []byte) (icmp []byte, err error) {
 	data, err := c.composeDatagram(b)
 	if err != nil {
-		log.Debugln("dropping proxied packet (%d bytes) that can't be proxied: %s", len(b), err)
+		if log.DebugEnabled() {
+			log.Debugln("dropping proxied packet (%d bytes) that can't be proxied: %s", len(b), err)
+		}
 		return nil, nil
 	}
 	if err := c.str.SendDatagram(data); err != nil {
@@ -272,15 +273,30 @@ type h2DatagramStream struct {
 	responseBody io.ReadCloser
 	cancel       context.CancelFunc
 
+	receiveReader quicvarint.Reader
+
 	readMu  sync.Mutex
 	writeMu sync.Mutex
+}
+
+func newH2DatagramStream(
+	requestBody *io.PipeWriter,
+	responseBody io.ReadCloser,
+	cancel context.CancelFunc,
+) *h2DatagramStream {
+	return &h2DatagramStream{
+		requestBody:   requestBody,
+		responseBody:  responseBody,
+		cancel:        cancel,
+		receiveReader: quicvarint.NewReader(bufio.NewReaderSize(responseBody, 16)),
+	}
 }
 
 func (s *h2DatagramStream) ReceiveDatagram(_ context.Context) ([]byte, error) {
 	s.readMu.Lock()
 	defer s.readMu.Unlock()
 
-	reader := quicvarint.NewReader(s.responseBody)
+	reader := s.receiveReader
 	for {
 		capsuleType, err := quicvarint.Read(reader)
 		if err != nil {
@@ -303,7 +319,7 @@ func (s *h2DatagramStream) ReceiveDatagram(_ context.Context) ([]byte, error) {
 }
 
 func (s *h2DatagramStream) SendDatagram(data []byte) error {
-	frame := make([]byte, 0, quicvarint.Len(h2DatagramCapsuleType)+quicvarint.Len(uint64(len(data)))+len(data))
+	frame := pool.Get(quicvarint.Len(h2DatagramCapsuleType) + quicvarint.Len(uint64(len(data))) + len(data))[:0]
 	frame = quicvarint.Append(frame, h2DatagramCapsuleType)
 	frame = quicvarint.Append(frame, uint64(len(data)))
 	frame = append(frame, data...)
@@ -311,6 +327,7 @@ func (s *h2DatagramStream) SendDatagram(data []byte) error {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	_, err := s.requestBody.Write(frame)
+	_ = pool.Put(frame)
 	if err != nil {
 		return fmt.Errorf("connect-ip: failed to send datagram capsule: %w", err)
 	}

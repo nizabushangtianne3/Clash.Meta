@@ -29,30 +29,44 @@ var (
 	errPacketTooLarge  = errors.New("shadowquic: packet too large")
 )
 
+// MetadataAddr returns the target in the KIP address form. A named target goes
+// through the wire encoder; an IP target is built from its AddrPort, so an IP
+// never becomes a string only to be parsed back.
 func MetadataAddr(metadata *C.Metadata) (socks5.Addr, error) {
-	addr := socks5.ParseAddr(metadata.RemoteAddress())
-	if addr == nil {
+	if metadata.Host == "" {
+		addrPort := metadata.AddrPort()
+		if addrPort.IsValid() {
+			return socks5.AddrFromStdAddrPort(addrPort), nil
+		}
 		return nil, fmt.Errorf("%w: %s", errInvalidAddress, metadata.RemoteAddress())
 	}
-	return addr, nil
+	if addr := socks5.ParseAddr(metadata.RemoteAddress()); addr != nil {
+		return addr, nil
+	}
+	return nil, fmt.Errorf("%w: %s", errInvalidAddress, metadata.RemoteAddress())
 }
 
 func UnspecifiedAddr() socks5.Addr {
 	return socks5.AddrFromStdAddrPort(netip.AddrPortFrom(netip.IPv4Unspecified(), 0))
 }
 
-func AddrFromNetAddr(addr net.Addr) (socks5.Addr, error) {
-	if addr == nil {
-		return nil, errInvalidAddress
+// AddrPortFromNetAddr resolves the net.Addr a net.PacketConn caller hands in.
+// Every destination this relay writes back to is already an IP:port, so the
+// address crosses this one interface boundary and never becomes a socks form.
+func AddrPortFromNetAddr(addr net.Addr) (netip.AddrPort, error) {
+	switch addr := addr.(type) {
+	case nil:
+		return netip.AddrPort{}, errInvalidAddress
+	case *net.UDPAddr:
+		return addr.AddrPort(), nil
+	case *net.TCPAddr:
+		return addr.AddrPort(), nil
 	}
-	socksAddr := socks5.ParseAddrToSocksAddr(addr)
-	if socksAddr == nil {
-		socksAddr = socks5.ParseAddr(addr.String())
+	addrPort, err := netip.ParseAddrPort(addr.String())
+	if err != nil {
+		return netip.AddrPort{}, fmt.Errorf("%w: %s", errInvalidAddress, addr)
 	}
-	if socksAddr == nil {
-		return nil, fmt.Errorf("%w: %s", errInvalidAddress, addr.String())
-	}
-	return socksAddr, nil
+	return addrPort, nil
 }
 
 func AddrToNetAddr(addr socks5.Addr) net.Addr {
@@ -118,14 +132,10 @@ func ReadUDPControl(r io.Reader) (socks5.Addr, uint16, error) {
 	return addr, id, nil
 }
 
-func EncodeDatagram(id uint16, payload []byte) ([]byte, error) {
-	if len(payload) > maxUDPPacketSize {
-		return nil, errPacketTooLarge
-	}
-	packet := make([]byte, 2+len(payload))
-	binary.BigEndian.PutUint16(packet[:2], id)
-	copy(packet[2:], payload)
-	return packet, nil
+func encodeDatagramInto(dst []byte, id uint16, payload []byte) []byte {
+	binary.BigEndian.PutUint16(dst[:2], id)
+	copy(dst[2:], payload)
+	return dst[:2+len(payload)]
 }
 
 func DecodeDatagram(packet []byte) (uint16, []byte, error) {

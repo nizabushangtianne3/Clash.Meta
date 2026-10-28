@@ -1,0 +1,16 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/listener/sudoku
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkUoTPacketPath-16    	  499995	      2220 ns/op	     608 B/op	      15 allocs/op
+BenchmarkUoTPacketPath-16    	  977556	      1169 ns/op	     608 B/op	      15 allocs/op
+BenchmarkUoTPacketPath-16    	 1448857	       804.1 ns/op	     608 B/op	      15 allocs/op
+BenchmarkUoTPacketPath-16    	 1417651	       860.9 ns/op	     608 B/op	      15 allocs/op
+BenchmarkUoTPacketPath-16    	 1441318	      1062 ns/op	     608 B/op	      15 allocs/op
+BenchmarkUoTPacketPath-16    	 1684610	       751.9 ns/op	     608 B/op	      15 allocs/op
+BenchmarkUoTPacketPath-16    	 1445389	       720.9 ns/op	     608 B/op	      15 allocs/op
+BenchmarkUoTPacketPath-16    	 1630870	       683.6 ns/op	     608 B/op	      15 allocs/op
+BenchmarkUoTPacketPath-16    	 1817532	       639.7 ns/op	     608 B/op	      15 allocs/op
+BenchmarkUoTPacketPath-16    	 1936677	       691.9 ns/op	     608 B/op	      15 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/listener/sudoku	19.521s

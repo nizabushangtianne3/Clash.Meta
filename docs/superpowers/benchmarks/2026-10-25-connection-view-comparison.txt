@@ -1,0 +1,26 @@
+= the host's connection view: encoding it after the marshalers stopped standing up an encoder
+# 5000 iterations per run, three runs per side, go1.27.1 windows/amd64
+                                          │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-25-connection-view-baseline.txt │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-25-connection-view-current.txt │
+                                          │                                                                sec/op                                                                 │                                                   sec/op                                                     vs base                 │
+ManagerSnapshotEncoded/connections=100-16                                                                                                                            407.9µ ± ∞ ¹                                                                                                  278.6µ ± ∞ ¹        ~ (p=0.100 n=3) ²
+ManagerSnapshotEncoded/connections=500-16                                                                                                                            2.983m ± ∞ ¹                                                                                                  1.441m ± ∞ ¹        ~ (p=0.100 n=3) ²
+geomean                                                                                                                                                              1.103m                                                                                                        633.6µ        -42.55%
+¹ need >= 6 samples for confidence interval at level 0.95
+² need >= 4 samples to detect a difference at alpha level 0.05
+
+                                          │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-25-connection-view-baseline.txt │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-25-connection-view-current.txt │
+                                          │                                                                 B/op                                                                  │                                                    B/op                                                      vs base                 │
+ManagerSnapshotEncoded/connections=100-16                                                                                                                          352.91Ki ± ∞ ¹                                                                                                 73.80Ki ± ∞ ¹        ~ (p=0.100 n=3) ²
+ManagerSnapshotEncoded/connections=500-16                                                                                                                          1799.3Ki ± ∞ ¹                                                                                                 417.5Ki ± ∞ ¹        ~ (p=0.100 n=3) ²
+geomean                                                                                                                                                             796.9Ki                                                                                                       175.5Ki        -77.97%
+¹ need >= 6 samples for confidence interval at level 0.95
+² need >= 4 samples to detect a difference at alpha level 0.05
+
+                                          │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-25-connection-view-baseline.txt │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-25-connection-view-current.txt │
+                                          │                                                               allocs/op                                                               │                                                  allocs/op                                                   vs base                 │
+ManagerSnapshotEncoded/connections=100-16                                                                                                                            1222.0 ± ∞ ¹                                                                                                   603.0 ± ∞ ¹        ~ (p=0.100 n=3) ²
+ManagerSnapshotEncoded/connections=500-16                                                                                                                            6.032k ± ∞ ¹                                                                                                  3.004k ± ∞ ¹        ~ (p=0.100 n=3) ²
+geomean                                                                                                                                                              2.715k                                                                                                        1.346k        -50.43%
+¹ need >= 6 samples for confidence interval at level 0.95
+² need >= 4 samples to detect a difference at alpha level 0.05
+raw runs: 2026-10-25-connection-view-baseline.txt / -current.txt

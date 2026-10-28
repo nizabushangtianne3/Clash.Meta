@@ -4,51 +4,52 @@ import (
 	"encoding/binary"
 	"io"
 	"net"
+	"net/netip"
 
 	"github.com/metacubex/mihomo/common/pool"
 )
 
 type PacketConn struct {
 	net.Conn
-	rAddr net.Addr
+	rAddr      netip.AddrPort
+	readHeader [2]byte
 }
 
+// WriteTo sends the length and the payload as one frame: writing the two-byte
+// header on its own cost a second Write on the stream and an allocation.
 func (c *PacketConn) WriteTo(b []byte, addr net.Addr) (int, error) {
-	err := binary.Write(c.Conn, binary.BigEndian, uint16(len(b)))
-	if err != nil {
+	buf := pool.Get(2 + len(b))
+	defer pool.Put(buf)
+
+	binary.BigEndian.PutUint16(buf, uint16(len(b)))
+	copy(buf[2:], b)
+	if _, err := c.Conn.Write(buf[:2+len(b)]); err != nil {
 		return 0, err
 	}
-
-	return c.Conn.Write(b)
+	return len(b), nil
 }
 
 func (c *PacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
-	var length uint16
-	err := binary.Read(c.Conn, binary.BigEndian, &length)
-	if err != nil {
+	if _, err := io.ReadFull(c.Conn, c.readHeader[:]); err != nil {
 		return 0, nil, err
 	}
+	length := binary.BigEndian.Uint16(c.readHeader[:])
 	if len(b) < int(length) {
 		return 0, nil, io.ErrShortBuffer
 	}
 	n, err := io.ReadFull(c.Conn, b[:length])
-	return n, c.rAddr, err
+	return n, net.UDPAddrFromAddrPort(c.rAddr), err
 }
 
-func (c *PacketConn) WaitReadFrom() (data []byte, put func(), addr net.Addr, err error) {
-	var length uint16
-	err = binary.Read(c.Conn, binary.BigEndian, &length)
-	if err != nil {
+func (c *PacketConn) WaitReadFrom() (data []byte, addr netip.AddrPort, err error) {
+	if _, err = io.ReadFull(c.Conn, c.readHeader[:]); err != nil {
 		return
 	}
+	length := binary.BigEndian.Uint16(c.readHeader[:])
 	readBuf := pool.Get(int(length))
-	put = func() {
-		_ = pool.Put(readBuf)
-	}
 	n, err := io.ReadFull(c.Conn, readBuf)
 	if err != nil {
-		put()
-		put = nil
+		_ = pool.Put(readBuf)
 		return
 	}
 	data = readBuf[:n]

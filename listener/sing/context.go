@@ -2,17 +2,20 @@ package sing
 
 import (
 	"context"
-	"golang.org/x/exp/slices"
 	"net"
+	"slices"
 
 	"github.com/metacubex/mihomo/adapter/inbound"
 
 	"github.com/metacubex/sing/common/auth"
 )
 
-type contextKey string
+// A key travels through context.Context as an any, so a value-shaped key
+// boxes into the interface on every lookup, while a pointer is held as is.
+// Each key is its own pointer, which keeps them distinct.
+type contextKey struct{}
 
-var ctxKeyAdditions = contextKey("Additions")
+var ctxKeyAdditions = &contextKey{}
 
 func WithAdditions(ctx context.Context, additions ...inbound.Addition) context.Context {
 	return context.WithValue(ctx, ctxKeyAdditions, additions)
@@ -33,7 +36,7 @@ func getAdditions(ctx context.Context) (additions []inbound.Addition) {
 	return
 }
 
-var ctxKeyInAddr = contextKey("InAddr")
+var ctxKeyInAddr = &contextKey{}
 
 func WithInAddr(ctx context.Context, inAddr net.Addr) context.Context {
 	return context.WithValue(ctx, ctxKeyInAddr, inAddr)

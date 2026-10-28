@@ -671,11 +671,6 @@ func TestDataLockProtectsDataChannelSwap(t *testing.T) {
 	}
 }
 
-// testCAPEM returns a minimal self-signed certificate for test configs.
-func testCAPEM() []byte {
-	return []byte(testCert)
-}
-
 func TestNextKeyIDFollowsOpenVPNSequence(t *testing.T) {
 	// 0 -> 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 1
 	got := uint8(0)

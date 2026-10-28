@@ -1,0 +1,3 @@
+BenchmarkDecodeStructPlan-16	2000	3180 ns/op	984 B/op	21 allocs/op
+BenchmarkDecodeStructPlan-16	2000	2730 ns/op	984 B/op	21 allocs/op
+BenchmarkDecodeStructPlan-16	2000	2557 ns/op	984 B/op	21 allocs/op

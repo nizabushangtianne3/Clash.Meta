@@ -18,10 +18,11 @@ import (
 	"github.com/metacubex/mihomo/transport/socks5"
 	"github.com/metacubex/mihomo/transport/tuic"
 
+	"slices"
+
 	"github.com/gofrs/uuid/v5"
 	"github.com/metacubex/quic-go"
 	"github.com/metacubex/tls"
-	"golang.org/x/exp/slices"
 )
 
 const ServerMaxIncomingStreams = (1 << 32) - 1
@@ -198,12 +199,7 @@ func New(config LC.TuicServer, lc C.InboundListenConfig, tunnel C.Tunnel, additi
 		sl.servers = append(sl.servers, server)
 
 		go func() {
-			err := server.Serve()
-			if err != nil {
-				if sl.closed {
-					return
-				}
-			}
+			_ = server.Serve()
 		}()
 	}
 

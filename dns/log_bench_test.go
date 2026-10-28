@@ -51,7 +51,7 @@ func BenchmarkDNSExchangeLogArguments(b *testing.B) {
 		var sink string
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			sink = msgToDomain(msg)
+			_ = msgToDomain(msg)
 			_, sink = msgToQtype(msg)
 		}
 		logSink = sink

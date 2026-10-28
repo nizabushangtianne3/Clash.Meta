@@ -1,7 +1,7 @@
 package nat
 
 import (
-	"net"
+	"net/netip"
 	"sync/atomic"
 
 	C "github.com/metacubex/mihomo/constant"
@@ -14,7 +14,7 @@ type writeBackProxy struct {
 	wb atomic.Value
 }
 
-func (w *writeBackProxy) WriteBack(b []byte, addr net.Addr) (n int, err error) {
+func (w *writeBackProxy) WriteBack(b []byte, addr netip.AddrPort) (n int, err error) {
 	return w.wb.Load().(C.WriteBack).WriteBack(b, addr)
 }
 

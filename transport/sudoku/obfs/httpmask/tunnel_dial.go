@@ -124,11 +124,8 @@ func setEarlyDataQuery(rawURL string, payload []byte) (string, error) {
 	return u.String(), nil
 }
 
-func parseEarlyDataQuery(u *url.URL) ([]byte, error) {
-	if u == nil {
-		return nil, nil
-	}
-	val := strings.TrimSpace(u.Query().Get(tunnelEarlyDataQueryKey))
+func parseEarlyDataQuery(query url.Values) ([]byte, error) {
+	val := strings.TrimSpace(query.Get(tunnelEarlyDataQueryKey))
 	if val == "" {
 		return nil, nil
 	}
@@ -145,15 +142,10 @@ type sessionDialInfo struct {
 	headerHost string
 }
 
-func uploadURL(rawURL string, sequence uint64) (string, error) {
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return "", err
-	}
-	q := u.Query()
-	q.Set(tunnelUploadSequenceQuery, strconv.FormatUint(sequence, 10))
-	u.RawQuery = q.Encode()
-	return u.String(), nil
+// uploadURL puts the sequence ahead of pushURL's query, where encoding the sorted keys has always placed it.
+func uploadURL(pushURL string, sequence uint64) string {
+	base, query, _ := strings.Cut(pushURL, "?")
+	return base + "?" + tunnelUploadSequenceQuery + "=" + strconv.FormatUint(sequence, 10) + "&" + query
 }
 
 type tunnelHTTPTransport struct {
@@ -188,21 +180,6 @@ func (t *tunnelHTTPTransport) clearIdle() {
 type tunnelHTTPClient struct {
 	client    *http.Client
 	transport *tunnelHTTPTransport
-}
-
-func (c *tunnelHTTPClient) preconnect(ctx context.Context, req *http.Request, count int) context.CancelFunc {
-	if c == nil || c.transport == nil || c.transport.transport == nil || c.transport.dialer == nil ||
-		req == nil || req.URL == nil || count <= 0 {
-		return func() {}
-	}
-
-	if proxy := c.transport.transport.Proxy; proxy != nil {
-		proxyURL, err := proxy(req)
-		if err != nil || proxyURL != nil {
-			return func() {}
-		}
-	}
-	return c.transport.dialer.preconnect(ctx, req.URL.Scheme == "https", count)
 }
 
 type httpClientTarget struct {

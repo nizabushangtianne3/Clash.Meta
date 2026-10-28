@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/metacubex/mihomo/common/contextutils"
 	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/component/ca"
 	"github.com/metacubex/mihomo/component/resolver"
@@ -184,7 +183,7 @@ func (doq *dnsOverQUIC) exchangeQUIC(ctx context.Context, msg *D.Msg) (resp *D.M
 		return nil, err
 	}
 
-	stop := contextutils.AfterFunc(ctx, func() {
+	stop := context.AfterFunc(ctx, func() {
 		_ = stream.SetDeadline(time.Now()) // cancel any read or write operation on this stream
 	})
 	defer stop()
@@ -331,6 +330,9 @@ func (doq *dnsOverQUIC) openConnection(ctx context.Context) (quicConn *quic.Conn
 	}
 
 	p, err := strconv.Atoi(port)
+	if err != nil {
+		return nil, err
+	}
 	udpAddr := net.UDPAddr{IP: net.ParseIP(ip), Port: p}
 	packetConn, err := doq.dialer.ListenPacket(ctx, "udp", addr)
 	if err != nil {

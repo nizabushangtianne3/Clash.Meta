@@ -151,18 +151,45 @@ func (t *DomainTrie[T]) insert(parts []string, data T) {
 // 2. wildcard domain
 // 2. dot wildcard domain
 func (t *DomainTrie[T]) Search(domain string) *Node[T] {
-	normalized, err := normalizeDomain(domain)
-	if err != nil || normalized[0] == '.' {
-		return nil
+	domainEnd := len(domain)
+	if !isCanonicalSearchDomain(domain) {
+		normalized, err := normalizeDomain(domain)
+		if err != nil || normalized[0] == '.' {
+			return nil
+		}
+		domain = normalized
+		domainEnd = len(normalized)
 	}
 
-	n := t.searchFrom(t.root, normalized, len(normalized))
+	n := t.searchFrom(t.root, domain, domainEnd)
 
 	if n.isEmpty() {
 		return nil
 	}
 
 	return n
+}
+
+func isCanonicalSearchDomain(domain string) bool {
+	if domain == "" || domain[0] == '.' || domain[len(domain)-1] == '.' {
+		return false
+	}
+
+	dot := false
+	for index := 0; index < len(domain); index++ {
+		switch c := domain[index]; {
+		case c >= 'a' && c <= 'z', c >= '0' && c <= '9', c == '-', c == '_':
+			dot = false
+		case c == '.':
+			if dot {
+				return false
+			}
+			dot = true
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func (t *DomainTrie[T]) searchFrom(
@@ -190,26 +217,6 @@ func (t *DomainTrie[T]) searchFrom(
 			return match
 		}
 	}
-	return node.getChild(dotWildcard)
-}
-
-func (t *DomainTrie[T]) search(node *Node[T], parts []string) *Node[T] {
-	if len(parts) == 0 {
-		return node
-	}
-
-	if c := node.getChild(parts[len(parts)-1]); c != nil {
-		if n := t.search(c, parts[:len(parts)-1]); !n.isEmpty() {
-			return n
-		}
-	}
-
-	if c := node.getChild(wildcard); c != nil {
-		if n := t.search(c, parts[:len(parts)-1]); !n.isEmpty() {
-			return n
-		}
-	}
-
 	return node.getChild(dotWildcard)
 }
 

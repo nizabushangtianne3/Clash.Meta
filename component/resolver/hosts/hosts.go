@@ -224,14 +224,6 @@ func (f *file) readLine() (s string, ok bool) {
 	return
 }
 
-func (f *file) stat() (mtime time.Time, size int64, err error) {
-	st, err := f.file.Stat()
-	if err != nil {
-		return time.Time{}, 0, err
-	}
-	return st.ModTime(), st.Size(), nil
-}
-
 func open(name string) (*file, error) {
 	fd, err := os.Open(name)
 	if err != nil {

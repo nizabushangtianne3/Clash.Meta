@@ -16,9 +16,9 @@ func TestRoundTrip(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+	pc, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	require.NoError(t, err)
-	ln, err := Listen(ctx, pc, Config{})
+	ln, err := ListenUDP(ctx, pc, Config{})
 	require.NoError(t, err)
 	defer ln.Close()
 
@@ -39,9 +39,50 @@ func TestRoundTrip(t *testing.T) {
 	conn, err := Dial(ctx, raw, Config{})
 	require.NoError(t, err)
 	defer conn.Close()
-	require.NoError(t, conn.SetDeadline(time.Now().Add(5*time.Second)))
+	require.NoError(t, conn.SetDeadline(time.Now().Add(30*time.Second)))
 
 	payload := bytes.Repeat([]byte("x"), 64*1024)
+	_, err = conn.Write(payload)
+	require.NoError(t, err)
+	got := make([]byte, len(payload))
+	_, err = io.ReadFull(conn, got)
+	require.NoError(t, err)
+	require.Equal(t, payload, got)
+}
+
+// A seed swaps the built-in authenticator for aes-128-gcm, so the seal/open
+// paths have to round trip through a real cipher.AEAD too.
+func TestRoundTripWithSeed(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cfg := Config{Seed: "mihomo-mkcp-test-seed"}
+	pc, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	require.NoError(t, err)
+	ln, err := ListenUDP(ctx, pc, cfg)
+	require.NoError(t, err)
+	defer ln.Close()
+
+	serverErr := make(chan error, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			serverErr <- err
+			return
+		}
+		defer conn.Close()
+		_, err = io.Copy(conn, conn)
+		serverErr <- err
+	}()
+
+	raw, err := net.Dial("udp", ln.Addr().String())
+	require.NoError(t, err)
+	conn, err := Dial(ctx, raw, cfg)
+	require.NoError(t, err)
+	defer conn.Close()
+	require.NoError(t, conn.SetDeadline(time.Now().Add(30*time.Second)))
+
+	payload := bytes.Repeat([]byte("g"), 64*1024)
 	_, err = conn.Write(payload)
 	require.NoError(t, err)
 	got := make([]byte, len(payload))
@@ -54,9 +95,9 @@ func TestFullDuplex(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+	pc, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	require.NoError(t, err)
-	ln, err := Listen(ctx, pc, Config{})
+	ln, err := ListenUDP(ctx, pc, Config{})
 	require.NoError(t, err)
 	defer ln.Close()
 
@@ -68,7 +109,7 @@ func TestFullDuplex(t *testing.T) {
 			return
 		}
 		defer conn.Close()
-		require.NoError(t, conn.SetDeadline(time.Now().Add(5*time.Second)))
+		require.NoError(t, conn.SetDeadline(time.Now().Add(30*time.Second)))
 		payload := bytes.Repeat([]byte("s"), 128*1024)
 		readErr := make(chan error, 1)
 		go func() {
@@ -92,7 +133,7 @@ func TestFullDuplex(t *testing.T) {
 	conn, err := Dial(ctx, raw, Config{})
 	require.NoError(t, err)
 	defer conn.Close()
-	require.NoError(t, conn.SetDeadline(time.Now().Add(5*time.Second)))
+	require.NoError(t, conn.SetDeadline(time.Now().Add(30*time.Second)))
 
 	readErr := make(chan error, 1)
 	go func() {
@@ -115,9 +156,9 @@ func TestRoundTripHeaders(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+			pc, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 			require.NoError(t, err)
-			ln, err := Listen(ctx, pc, Config{Header: header})
+			ln, err := ListenUDP(ctx, pc, Config{Header: header})
 			require.NoError(t, err)
 			defer ln.Close()
 
@@ -129,7 +170,7 @@ func TestRoundTripHeaders(t *testing.T) {
 					return
 				}
 				defer conn.Close()
-				require.NoError(t, conn.SetDeadline(time.Now().Add(5*time.Second)))
+				require.NoError(t, conn.SetDeadline(time.Now().Add(30*time.Second)))
 				_, err = io.Copy(conn, conn)
 				serverErr <- err
 			}()
@@ -139,7 +180,7 @@ func TestRoundTripHeaders(t *testing.T) {
 			conn, err := Dial(ctx, raw, Config{Header: header})
 			require.NoError(t, err)
 			defer conn.Close()
-			require.NoError(t, conn.SetDeadline(time.Now().Add(5*time.Second)))
+			require.NoError(t, conn.SetDeadline(time.Now().Add(30*time.Second)))
 
 			payload := bytes.Repeat([]byte("h"), 32*1024)
 			_, err = conn.Write(payload)

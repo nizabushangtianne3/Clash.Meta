@@ -9,6 +9,7 @@ import (
 	"net"
 
 	"github.com/metacubex/mihomo/common/atomic"
+	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/common/utils"
 	"github.com/metacubex/mihomo/transport/vless"
 	"github.com/metacubex/mihomo/transport/vless/vision"
@@ -210,6 +211,7 @@ type serverPacketConn struct {
 	N.ExtendedConn
 	destination     M.Socksaddr
 	readWaitOptions N.ReadWaitOptions
+	readHeader      [2]byte
 }
 
 func (c *serverPacketConn) InitializeReadWaiter(options N.ReadWaitOptions) (needCopy bool) {
@@ -218,11 +220,10 @@ func (c *serverPacketConn) InitializeReadWaiter(options N.ReadWaitOptions) (need
 }
 
 func (c *serverPacketConn) WaitReadPacket() (buffer *buf.Buffer, destination M.Socksaddr, err error) {
-	var packetLen uint16
-	err = binary.Read(c.ExtendedConn, binary.BigEndian, &packetLen)
-	if err != nil {
+	if _, err = io.ReadFull(c.ExtendedConn, c.readHeader[:]); err != nil {
 		return
 	}
+	packetLen := binary.BigEndian.Uint16(c.readHeader[:])
 
 	buffer = c.readWaitOptions.NewPacketBuffer()
 	_, err = buffer.ReadFullFrom(c.ExtendedConn, int(packetLen))
@@ -237,11 +238,10 @@ func (c *serverPacketConn) WaitReadPacket() (buffer *buf.Buffer, destination M.S
 }
 
 func (c *serverPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
-	var packetLen uint16
-	err = binary.Read(c.ExtendedConn, binary.BigEndian, &packetLen)
-	if err != nil {
+	if _, err = io.ReadFull(c.ExtendedConn, c.readHeader[:]); err != nil {
 		return
 	}
+	packetLen := binary.BigEndian.Uint16(c.readHeader[:])
 	if len(p) < int(packetLen) {
 		err = io.ErrShortBuffer
 		return
@@ -258,20 +258,26 @@ func (c *serverPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) 
 	return
 }
 
+// WriteTo sends the length and the payload as one frame: writing the two-byte
+// header on its own cost a second write on the stream and an allocation.
 func (c *serverPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
-	err = binary.Write(c.ExtendedConn, binary.BigEndian, uint16(len(p)))
-	if err != nil {
+	buf := pool.Get(2 + len(p))
+	defer pool.Put(buf)
+
+	binary.BigEndian.PutUint16(buf, uint16(len(p)))
+	copy(buf[2:], p)
+	if _, err = c.ExtendedConn.Write(buf[:2+len(p)]); err != nil {
 		return
 	}
-	return c.ExtendedConn.Write(p)
+	n = len(p)
+	return
 }
 
 func (c *serverPacketConn) ReadPacket(buffer *buf.Buffer) (destination M.Socksaddr, err error) {
-	var packetLen uint16
-	err = binary.Read(c.ExtendedConn, binary.BigEndian, &packetLen)
-	if err != nil {
+	if _, err = io.ReadFull(c.ExtendedConn, c.readHeader[:]); err != nil {
 		return
 	}
+	packetLen := binary.BigEndian.Uint16(c.readHeader[:])
 
 	_, err = buffer.ReadFullFrom(c.ExtendedConn, int(packetLen))
 	if err != nil {

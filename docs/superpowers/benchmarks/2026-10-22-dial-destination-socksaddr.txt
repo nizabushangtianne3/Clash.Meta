@@ -1,0 +1,26 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/adapter/outbound
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkDestinationSocksaddr/addrport-16         	390126927	         5.015 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDestinationSocksaddr/addrport-16         	393791224	         3.004 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDestinationSocksaddr/addrport-16         	123281253	         8.657 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDestinationSocksaddr/addrport-16         	403327722	         3.420 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDestinationSocksaddr/addrport-16         	371547625	         3.155 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDestinationSocksaddr/addrport-16         	399091932	         8.225 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDestinationSocksaddr/addrport-16         	100000000	        11.16 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDestinationSocksaddr/addrport-16         	129160321	        10.33 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDestinationSocksaddr/addrport-16         	183304867	         5.501 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDestinationSocksaddr/addrport-16         	133539057	         7.609 ns/op	       0 B/op	       0 allocs/op
+BenchmarkDestinationSocksaddr/host-port-string-16 	 5867106	       198.3 ns/op	      16 B/op	       1 allocs/op
+BenchmarkDestinationSocksaddr/host-port-string-16 	10391940	       122.5 ns/op	      16 B/op	       1 allocs/op
+BenchmarkDestinationSocksaddr/host-port-string-16 	 6015950	       194.8 ns/op	      16 B/op	       1 allocs/op
+BenchmarkDestinationSocksaddr/host-port-string-16 	22185820	       131.8 ns/op	      16 B/op	       1 allocs/op
+BenchmarkDestinationSocksaddr/host-port-string-16 	14210719	       146.7 ns/op	      16 B/op	       1 allocs/op
+BenchmarkDestinationSocksaddr/host-port-string-16 	12896240	       177.1 ns/op	      16 B/op	       1 allocs/op
+BenchmarkDestinationSocksaddr/host-port-string-16 	10743231	       182.7 ns/op	      16 B/op	       1 allocs/op
+BenchmarkDestinationSocksaddr/host-port-string-16 	21548857	       122.2 ns/op	      16 B/op	       1 allocs/op
+BenchmarkDestinationSocksaddr/host-port-string-16 	19333228	       134.2 ns/op	      16 B/op	       1 allocs/op
+BenchmarkDestinationSocksaddr/host-port-string-16 	 6018198	       200.1 ns/op	      16 B/op	       1 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/adapter/outbound	48.482s

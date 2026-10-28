@@ -4,18 +4,62 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"io"
+	"sync"
+
+	"github.com/metacubex/mihomo/common/pool"
 )
 
 type packetReader struct {
-	security cipher.AEAD
-	header   packetHeader
+	security   cipher.AEAD
+	header     packetHeader
+	dataPool   *sync.Pool
+	bufferPool *sync.Pool
 }
 
-func (r packetReader) read(b []byte) []segment {
+type receiveBuffer struct {
+	data  []byte
+	refs  int
+	owner *sync.Pool
+}
+
+func receiveSize(cfg Config, security cipher.AEAD) int {
+	// V2Ray counts the AEAD nonce outside its configured MTU.
+	return int(cfg.mtu()) + security.NonceSize()
+}
+
+func (r packetReader) newReceiveBuffer(size int) *receiveBuffer {
+	buffer := r.bufferPool.Get().(*receiveBuffer)
+	buffer.data = pool.Get(size)
+	buffer.refs = 0
+	buffer.owner = r.bufferPool
+	return buffer
+}
+
+func (b *receiveBuffer) release() {
+	if b.refs > 0 {
+		b.refs--
+		if b.refs > 0 {
+			return
+		}
+	}
+	data := b.data
+	owner := b.owner
+	b.data = nil
+	b.refs = 0
+	b.owner = nil
+	_ = pool.Put(data)
+	owner.Put(b)
+}
+
+// read parses every segment into the caller's slice. Segment payloads alias b,
+// so b must stay owned and unmodified until every returned segment is released.
+func (r packetReader) read(b []byte, buffer *receiveBuffer, segments []segment) []segment {
+	segments = segments[:0]
 	if r.header != nil {
 		headerSize := r.header.size()
 		if len(b) <= headerSize {
-			return nil
+			buffer.release()
+			return segments
 		}
 		b = b[headerSize:]
 	}
@@ -23,22 +67,26 @@ func (r packetReader) read(b []byte) []segment {
 		nonceSize := r.security.NonceSize()
 		overhead := r.security.Overhead()
 		if len(b) <= nonceSize+overhead {
-			return nil
+			buffer.release()
+			return segments
 		}
 		out, err := r.security.Open(b[nonceSize:nonceSize], b[:nonceSize], b[nonceSize:], nil)
 		if err != nil {
-			return nil
+			buffer.release()
+			return segments
 		}
 		b = out
 	}
-	var segments []segment
 	for len(b) > 0 {
-		seg, extra := readSegment(b)
+		seg, extra := readSegment(b, r.dataPool, buffer)
 		if seg == nil {
 			break
 		}
 		segments = append(segments, seg)
 		b = extra
+	}
+	if buffer.refs == 0 {
+		buffer.release()
 	}
 	return segments
 }
@@ -56,7 +104,7 @@ func (w packetWriter) overhead() int {
 		}
 		return w.header.size()
 	}
-	overhead := w.security.Overhead()
+	overhead := w.security.NonceSize() + w.security.Overhead()
 	if w.header != nil {
 		overhead += w.header.size()
 	}
@@ -64,20 +112,21 @@ func (w packetWriter) overhead() int {
 }
 
 func (w packetWriter) writeSegment(seg segment) error {
-	payload := make([]byte, seg.byteSize())
-	seg.serialize(payload)
-
 	headerSize := 0
 	if w.header != nil {
 		headerSize = w.header.size()
 	}
+	segmentSize := seg.byteSize()
 
-	out := make([]byte, headerSize, headerSize+len(payload)+w.securityOverhead()+3)
+	frame := pool.Get(headerSize + segmentSize + w.securityOverhead() + 3)
+	out := frame[:headerSize]
 	if headerSize > 0 {
 		w.header.serialize(out[:headerSize])
 	}
 
 	if w.security != nil {
+		payload := pool.Get(segmentSize)
+		seg.serialize(payload)
 		nonceSize := w.security.NonceSize()
 		out = out[:headerSize+nonceSize]
 		if nonceSize > 0 {
@@ -85,11 +134,16 @@ func (w packetWriter) writeSegment(seg segment) error {
 		}
 		sealed := w.security.Seal(out[headerSize+nonceSize:headerSize+nonceSize], out[headerSize:headerSize+nonceSize], payload, nil)
 		out = append(out[:headerSize+nonceSize], sealed...)
-	} else {
-		out = append(out, payload...)
+		_ = pool.Put(payload)
+		_, err := w.writer.Write(out)
+		_ = pool.Put(frame)
+		return err
 	}
 
+	seg.serialize(frame[headerSize : headerSize+segmentSize])
+	out = frame[:headerSize+segmentSize]
 	_, err := w.writer.Write(out)
+	_ = pool.Put(frame)
 	return err
 }
 

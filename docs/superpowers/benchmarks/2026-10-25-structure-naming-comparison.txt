@@ -1,0 +1,42 @@
+= common/structure: naming a field costs one string, not a format call
+# structure benchmark: three runs per side, go1.27.1 windows/amd64
+                    │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-25-structure-naming-baseline.txt │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-25-structure-naming-current.txt │
+                    │                                                                 sec/op                                                                 │                                                      sec/op                                                       vs base             │
+DecodeStructPlan-16                                                                                                                             2.685µ ± ∞ ¹                                                                                                       2.730µ ± ∞ ¹  ~ (p=1.000 n=2+3) ²
+¹ need >= 6 samples for confidence interval at level 0.95
+² need >= 4 samples to detect a difference at alpha level 0.05
+
+                    │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-25-structure-naming-baseline.txt │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-25-structure-naming-current.txt │
+                    │                                                                  B/op                                                                  │                                                       B/op                                                        vs base             │
+DecodeStructPlan-16                                                                                                                             1105.0 ± ∞ ¹                                                                                                        984.0 ± ∞ ¹  ~ (p=0.600 n=2+3) ²
+¹ need >= 6 samples for confidence interval at level 0.95
+² need >= 4 samples to detect a difference at alpha level 0.05
+
+                    │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-25-structure-naming-baseline.txt │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-25-structure-naming-current.txt │
+                    │                                                               allocs/op                                                                │                                                    allocs/op                                                      vs base             │
+DecodeStructPlan-16                                                                                                                              27.00 ± ∞ ¹                                                                                                        21.00 ± ∞ ¹  ~ (p=0.600 n=2+3) ²
+¹ need >= 6 samples for confidence interval at level 0.95
+² need >= 4 samples to detect a difference at alpha level 0.05
+= hub/executor ParseWithBytes, same parse end to end
+# 100 iterations per run, five runs per side, proxies=200 and proxies=800 subscriptions
+                           │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-25-parse-naming-baseline.txt │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-25-parse-naming-current.txt │
+                           │                                                               sec/op                                                               │                                                  sec/op                                                    vs base                │
+ParseConfig/proxies=200-16                                                                                                                         4.707m ± ∞ ¹                                                                                                4.598m ± ∞ ¹       ~ (p=0.143 n=3+5)
+ParseConfig/proxies=800-16                                                                                                                         13.37m ± ∞ ¹                                                                                                13.49m ± ∞ ¹       ~ (p=1.000 n=3+5)
+geomean                                                                                                                                            7.934m                                                                                                      7.874m        -0.75%
+¹ need >= 6 samples for confidence interval at level 0.95
+
+                           │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-25-parse-naming-baseline.txt │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-25-parse-naming-current.txt │
+                           │                                                                B/op                                                                │                                                   B/op                                                     vs base                │
+ParseConfig/proxies=200-16                                                                                                                        1.429Mi ± ∞ ¹                                                                                               1.411Mi ± ∞ ¹  -1.28% (p=0.036 n=3+5)
+ParseConfig/proxies=800-16                                                                                                                        5.295Mi ± ∞ ¹                                                                                               5.212Mi ± ∞ ¹  -1.56% (p=0.036 n=3+5)
+geomean                                                                                                                                           2.751Mi                                                                                                     2.712Mi        -1.42%
+¹ need >= 6 samples for confidence interval at level 0.95
+
+                           │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-25-parse-naming-baseline.txt │ C:\Users\nizabushangtianne\Desktop\java项目\FlClash\core\Clash.Meta\docs\superpowers\benchmarks\2026-10-25-parse-naming-current.txt │
+                           │                                                             allocs/op                                                              │                                                 allocs/op                                                  vs base                │
+ParseConfig/proxies=200-16                                                                                                                         24.55k ± ∞ ¹                                                                                                23.55k ± ∞ ¹  -4.07% (n=3+5)
+ParseConfig/proxies=800-16                                                                                                                         97.66k ± ∞ ¹                                                                                                93.17k ± ∞ ¹  -4.60% (p=0.036 n=3+5)
+geomean                                                                                                                                            48.96k                                                                                                      46.84k        -4.33%
+¹ need >= 6 samples for confidence interval at level 0.95
+raw runs: 2026-10-25-structure-naming-{baseline,current}.txt and 2026-10-25-parse-naming-{baseline,current}.txt

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/transport/mkcp"
 
 	"github.com/metacubex/http"
@@ -18,7 +19,7 @@ import (
 type Listener struct {
 	outer      net.Listener
 	packetConn *wrappedPacketConn
-	mkcp       *mkcp.Listener
+	mkcp       *mkcp.VirtualListener
 	server     *http.Server
 	done       chan struct{}
 	once       sync.Once
@@ -27,7 +28,7 @@ type Listener struct {
 func Listen(ctx context.Context, ln net.Listener, cfg Config) (*Listener, error) {
 	packetConn := newWrappedPacketConn(ctx, ln.Addr())
 	handler := newServer(ctx, cfg, packetConn)
-	mkcpListener, err := mkcp.Listen(ctx, packetConn, cfg.KCP)
+	mkcpListener, err := mkcp.ListenVirtual(ctx, packetConn, cfg.KCP)
 	if err != nil {
 		return nil, err
 	}
@@ -188,6 +189,7 @@ func (s *serverSession) ingest(body []byte) error {
 		}
 		select {
 		case <-s.ctx.Done():
+			_ = pool.Put(packet)
 			return s.ctx.Err()
 		case s.readerChan <- packet:
 		}
@@ -253,13 +255,16 @@ func (s *serverSession) writeResponse(ctx context.Context, w http.ResponseWriter
 		case <-s.ctx.Done():
 			return
 		case packet := <-s.writerChan:
+			packetLen := len(packet)
 			if err := writePacketBundle(w, packet); err != nil {
+				_ = pool.Put(packet)
 				return
 			}
+			_ = pool.Put(packet)
 			if flusher != nil {
 				flusher.Flush()
 			}
-			bytesSent += packetBundleOverhead + len(packet)
+			bytesSent += packetBundleOverhead + packetLen
 			if s.maxWriteSize > 0 && bytesSent >= s.maxWriteSize {
 				return
 			}
@@ -274,18 +279,23 @@ func (s *serverSession) Read(p []byte) (int, error) {
 	case <-s.ctx.Done():
 		return 0, s.ctx.Err()
 	case packet := <-s.readerChan:
-		return copy(p, packet), nil
+		n := copy(p, packet)
+		_ = pool.Put(packet)
+		return n, nil
 	}
 }
 
 func (s *serverSession) Write(p []byte) (int, error) {
-	packet := append([]byte(nil), p...)
+	packet := pool.Get(len(p))
+	copy(packet, p)
 	select {
 	case <-s.ctx.Done():
+		_ = pool.Put(packet)
 		return 0, s.ctx.Err()
 	case s.writerChan <- packet:
 		return len(p), nil
 	default:
+		_ = pool.Put(packet)
 		return len(p), nil
 	}
 }

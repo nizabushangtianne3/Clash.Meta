@@ -24,13 +24,14 @@ import (
 	"github.com/metacubex/mihomo/transport/mkcp"
 	mihomoVMess "github.com/metacubex/mihomo/transport/vmess"
 
+	"slices"
+
 	"github.com/metacubex/http"
 	"github.com/metacubex/mhurl"
 	vmess "github.com/metacubex/sing-vmess"
 	"github.com/metacubex/sing/common"
 	"github.com/metacubex/sing/common/metadata"
 	"github.com/metacubex/tls"
-	"golang.org/x/exp/slices"
 )
 
 type Listener struct {
@@ -250,7 +251,8 @@ func New(config LC.VmessServer, lc C.InboundListenConfig, tunnel C.Tunnel, addit
 			if err != nil {
 				return nil, err
 			}
-			l, err = mkcp.Listen(context.Background(), pc, config.MKCPConfig.Build())
+			udpConn := pc.(*net.UDPConn)
+			l, err = mkcp.ListenUDP(context.Background(), udpConn, config.MKCPConfig.Build())
 			if err != nil {
 				_ = pc.Close()
 				return nil, err

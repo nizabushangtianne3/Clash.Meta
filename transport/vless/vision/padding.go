@@ -25,7 +25,6 @@ func ApplyPadding(buffer *buf.Buffer, command byte, userUUID *[]byte, paddingTLS
 	var paddingLen int32
 	if contentLen < 900 {
 		if paddingTLS {
-			//log.Debugln("long padding")
 			paddingLen = randv2.Int32N(500) + 900 - contentLen
 		} else {
 			paddingLen = randv2.Int32N(256)
@@ -41,7 +40,9 @@ func ApplyPadding(buffer *buf.Buffer, command byte, userUUID *[]byte, paddingTLS
 	}
 
 	buffer.Extend(int(paddingLen))
-	log.Debugln("XTLS Vision write padding: command=%d, payloadLen=%d, paddingLen=%d", command, contentLen, paddingLen)
+	if log.DebugEnabled() {
+		log.Debugln("XTLS Vision write padding: command=%d, payloadLen=%d, paddingLen=%d", command, contentLen, paddingLen)
+	}
 }
 
 const xrayBufSize = 8192

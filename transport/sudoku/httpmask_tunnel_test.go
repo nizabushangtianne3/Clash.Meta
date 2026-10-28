@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"strings"
 	"sync"
 	"testing"
@@ -197,7 +198,7 @@ func TestHTTPMaskTunnel_Stream_TCPRoundTrip(t *testing.T) {
 
 func TestHTTPMaskTunnel_Poll_UoTRoundTrip(t *testing.T) {
 	key := "tunnel-poll-key"
-	target := "8.8.8.8:53"
+	target := netip.MustParseAddrPort("8.8.8.8:53")
 	payload := []byte{0xaa, 0xbb, 0xcc, 0xdd}
 
 	serverCfg := newTunnelTestTable(t, key)
@@ -207,17 +208,17 @@ func TestHTTPMaskTunnel_Poll_UoTRoundTrip(t *testing.T) {
 		if s.Type != SessionTypeUoT {
 			return fmt.Errorf("unexpected session type: %v", s.Type)
 		}
-		gotAddr, gotPayload, err := ReadDatagram(s.Conn)
+		gotAddr, gotPayload, err := readTestDatagram(s.Conn)
 		if err != nil {
 			return fmt.Errorf("server read datagram: %w", err)
 		}
-		if gotAddr != target {
+		if gotAddr != target.String() {
 			return fmt.Errorf("uot target mismatch: %s", gotAddr)
 		}
 		if !bytes.Equal(gotPayload, payload) {
 			return fmt.Errorf("uot payload mismatch: %x", gotPayload)
 		}
-		if err := WriteDatagram(s.Conn, gotAddr, gotPayload); err != nil {
+		if err := WriteDatagram(s.Conn, netip.MustParseAddrPort(gotAddr), gotPayload); err != nil {
 			return fmt.Errorf("server write datagram: %w", err)
 		}
 		return nil
@@ -247,14 +248,14 @@ func TestHTTPMaskTunnel_Poll_UoTRoundTrip(t *testing.T) {
 	if err := WriteKIPMessage(cConn, KIPTypeStartUoT, nil); err != nil {
 		t.Fatalf("start uot: %v", err)
 	}
-	if err := WriteDatagram(cConn, target, payload); err != nil {
+	if err := WriteDatagram(cConn, netip.MustParseAddrPort(target.String()), payload); err != nil {
 		t.Fatalf("write datagram: %v", err)
 	}
-	gotAddr, gotPayload, err := ReadDatagram(cConn)
+	gotAddr, gotPayload, err := readTestDatagram(cConn)
 	if err != nil {
 		t.Fatalf("read datagram: %v", err)
 	}
-	if gotAddr != target {
+	if gotAddr != target.String() {
 		t.Fatalf("uot target mismatch: %s", gotAddr)
 	}
 	if !bytes.Equal(gotPayload, payload) {

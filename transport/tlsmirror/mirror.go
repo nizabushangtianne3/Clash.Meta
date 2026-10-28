@@ -113,28 +113,6 @@ func (m *mirrorConn) explicitNonceOverhead() int {
 	return 0
 }
 
-func (m *mirrorConn) waitC2SReady(ctx context.Context) error {
-	select {
-	case <-m.c2sReady:
-		return nil
-	case <-m.ctx.Done():
-		return m.ctx.Err()
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
-
-func (m *mirrorConn) waitS2CReady(ctx context.Context) error {
-	select {
-	case <-m.s2cReady:
-		return nil
-	case <-m.ctx.Done():
-		return m.ctx.Err()
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
-
 func (m *mirrorConn) InsertC2S(rec *record) error {
 	select {
 	case <-m.ctx.Done():

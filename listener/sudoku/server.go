@@ -6,12 +6,13 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/netip"
 	"strings"
 	"time"
 
 	"github.com/metacubex/mihomo/adapter/inbound"
 	N "github.com/metacubex/mihomo/common/net"
-	"github.com/metacubex/mihomo/common/utils"
+	"github.com/metacubex/mihomo/common/pool"
 	C "github.com/metacubex/mihomo/constant"
 	LC "github.com/metacubex/mihomo/listener/config"
 	"github.com/metacubex/mihomo/listener/inner"
@@ -145,7 +146,8 @@ func (l *Listener) handleConn(conn net.Conn, tunnel C.Tunnel, additions ...inbou
 				_ = stream.Close()
 				continue
 			}
-			go l.handler.HandleSocket(targetAddr, stream, additions...)
+			// mux streams ignore deadlines, so the 200ms sniff peek of a server-speaks-first target would never end
+			go l.handler.HandleSocket(targetAddr, N.NewDeadlineConn(stream), additions...)
 		}
 	default:
 		targetAddr := socks5.ParseAddr(session.Target)
@@ -167,55 +169,97 @@ func wrapSessionConn(conn net.Conn) net.Conn {
 
 func (l *Listener) handleUoTSession(conn net.Conn, tunnel C.Tunnel, additions ...inbound.Addition) {
 	writer := sudoku.NewUoTPacketConn(conn)
-	remoteAddr := conn.RemoteAddr()
-	connID := utils.NewUUIDV4().String() // make a new SNAT key
+	reader := sudoku.NewUoTReader(conn)
+	session := uotSession{
+		writer:    writer,
+		source:    N.AddrPortFromNetAddr(conn.RemoteAddr()),
+		tunnel:    tunnel,
+		additions: additions,
+	}
 
 	for {
-		addrStr, payload, err := sudoku.ReadDatagram(conn)
+		target, payload, err := reader.ReadDatagram()
 		if err != nil {
+			if errors.Is(err, sudoku.ErrAddrNotRepresentable) {
+				if log.DebugEnabled() {
+					log.Debugln("[Sudoku][UoT] drop datagram with a non-IP target")
+				}
+				continue
+			}
 			if !errors.Is(err, io.EOF) {
-				log.Debugln("[Sudoku][UoT] session closed: %v", err)
+				if log.DebugEnabled() {
+					log.Debugln("[Sudoku][UoT] session closed: %v", err)
+				}
 			}
 			_ = conn.Close()
 			return
 		}
-
-		target := socks5.ParseAddr(addrStr)
-		if target == nil {
-			log.Debugln("[Sudoku][UoT] drop invalid target: %s", addrStr)
-			continue
-		}
-
-		cPacket := &uotPacket{
-			payload: payload,
-			writer:  writer,
-			rAddr:   remoteAddr,
-		}
-		cPacket.rAddr = N.NewCustomAddr(C.SUDOKU.String(), connID, cPacket.rAddr) // for tunnel's handleUDPConn
-		tunnel.HandleUDPPacket(inbound.NewPacket(target, cPacket, C.SUDOKU, additions...))
+		session.handle(target, payload)
 	}
+}
+
+const uotFlowCacheSize = 256
+
+// uotSession keeps one metadata per destination, so only the first datagram of
+// a flow pays to parse one.
+type uotSession struct {
+	writer    *sudoku.UoTPacketConn
+	source    netip.AddrPort
+	tunnel    C.Tunnel
+	additions []inbound.Addition
+	flows     map[netip.AddrPort]*C.Metadata
+}
+
+func (s *uotSession) handle(target netip.AddrPort, payload []byte) {
+	metadata, ok := s.flows[target]
+	// The wrapper is allocated per datagram on purpose: a flow keeps the last
+	// packet it was handed so replies can be written back through it.
+	packet := &uotPacket{
+		payload: payload,
+		writer:  s.writer,
+		source:  s.source,
+	}
+	if !ok {
+		if s.flows == nil {
+			s.flows = make(map[netip.AddrPort]*C.Metadata, 8)
+		} else if len(s.flows) >= uotFlowCacheSize {
+			clear(s.flows)
+		}
+		_, metadata = inbound.NewPacketFromAddrPort(target, packet, C.SUDOKU, s.additions...)
+		s.flows[target] = metadata
+	}
+	s.tunnel.HandleUDPPacket(packet, metadata)
 }
 
 type uotPacket struct {
 	payload []byte
 	writer  *sudoku.UoTPacketConn
-	rAddr   net.Addr
+	source  netip.AddrPort
 }
 
 func (p *uotPacket) Data() []byte {
 	return p.payload
 }
 
-func (p *uotPacket) WriteBack(b []byte, addr net.Addr) (int, error) {
-	return p.writer.WriteTo(b, addr)
+// FlowKey returns the source address the tunnel keys this packet's flow by.
+func (p *uotPacket) FlowKey() netip.AddrPort {
+	return p.source
+}
+
+func (p *uotPacket) WriteBack(b []byte, addr netip.AddrPort) (int, error) {
+	return p.writer.WriteToAddrPort(b, addr)
 }
 
 func (p *uotPacket) Drop() {
+	if p.payload == nil {
+		return
+	}
+	_ = pool.Put(p.payload)
 	p.payload = nil
 }
 
 func (p *uotPacket) LocalAddr() net.Addr {
-	return p.rAddr
+	return net.UDPAddrFromAddrPort(p.source)
 }
 
 func relayToFallback(wrapper net.Conn, rawConn net.Conn, fallback net.Conn) {

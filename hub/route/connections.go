@@ -1,8 +1,6 @@
 package route
 
 import (
-	"bytes"
-	"encoding/json"
 	"strconv"
 	"time"
 
@@ -12,6 +10,22 @@ import (
 	"github.com/metacubex/chi/render"
 	"github.com/metacubex/http"
 )
+
+// The table is polled on a timer, so the writers append it straight into a
+// buffer they reuse instead of paying encoding/json for a document that is
+// read once and dropped.
+
+func writeConnections(w http.ResponseWriter, r *http.Request, snapshot *statistic.Snapshot) {
+	w.Header().Set("Content-Type", "application/json")
+	if status, ok := r.Context().Value(render.StatusCtxKey).(int); ok {
+		w.WriteHeader(status)
+	}
+	// One right sized buffer per request: an address, a uuid, a chain and a
+	// handful of names fit in a few hundred bytes per connection.
+	body := snapshot.AppendJSON(make([]byte, 0, 256+384*len(snapshot.Connections)))
+	// encoding/json's Encoder closed the document with a newline.
+	_, _ = w.Write(append(body, '\n'))
+}
 
 func connectionRouter() http.Handler {
 	r := chi.NewRouter()
@@ -24,7 +38,7 @@ func connectionRouter() http.Handler {
 func getConnections(w http.ResponseWriter, r *http.Request) {
 	if !(r.Header.Get("Upgrade") == "websocket") {
 		snapshot := statistic.DefaultManager.Snapshot()
-		render.JSON(w, r, snapshot)
+		writeConnections(w, r, snapshot)
 		return
 	}
 
@@ -46,15 +60,11 @@ func getConnections(w http.ResponseWriter, r *http.Request) {
 		interval = t
 	}
 
-	buf := &bytes.Buffer{}
+	var scratch []byte
 	sendSnapshot := func() error {
-		buf.Reset()
 		snapshot := statistic.DefaultManager.Snapshot()
-		if err := json.NewEncoder(buf).Encode(snapshot); err != nil {
-			return err
-		}
-
-		return wsWriteServerText(conn, buf.Bytes())
+		scratch = snapshot.AppendJSON(scratch[:0])
+		return wsWriteServerText(conn, scratch)
 	}
 
 	if err := sendSnapshot(); err != nil {

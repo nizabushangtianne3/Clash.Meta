@@ -11,7 +11,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/metacubex/mihomo/common/maphash"
+	"hash/maphash"
 
 	"github.com/metacubex/randv2"
 )
@@ -298,10 +298,7 @@ func TestMapAll_Break(t *testing.T) {
 	m.All()(func(key string, value int) bool {
 		iters++
 
-		if iters == 50 {
-			return false
-		}
-		return true
+		return iters != 50
 	})
 
 	if iters != 50 {

@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -24,6 +25,7 @@ type HealthCheckOption struct {
 type extraOption struct {
 	expectedStatus utils.IntRanges[uint16]
 	filters        map[string]struct{}
+	filter         *regexp2.Regexp
 }
 
 type HealthCheck struct {
@@ -108,11 +110,27 @@ func (hc *HealthCheck) registerHealthCheckTask(url string, expectedStatus utils.
 func splitAndAddFiltersToExtra(filter string, option *extraOption) {
 	filter = strings.TrimSpace(filter)
 	if len(filter) != 0 {
+		added := false
 		for _, regex := range strings.Split(filter, "`") {
 			regex = strings.TrimSpace(regex)
-			if len(regex) != 0 {
-				option.filters[regex] = struct{}{}
+			if len(regex) == 0 {
+				continue
 			}
+			if _, exists := option.filters[regex]; exists {
+				continue
+			}
+			option.filters[regex] = struct{}{}
+			added = true
+		}
+		if added {
+			// The set only grows through registration, so the alternation is
+			// built here rather than on every health check.
+			filters := make([]string, 0, len(option.filters))
+			for regex := range option.filters {
+				filters = append(filters, regex)
+			}
+			sort.Strings(filters) // registration order must not change the set
+			option.filter = regexp2.MustCompile(strings.Join(filters, "|"), regexp2.None)
 		}
 	}
 }
@@ -136,13 +154,9 @@ func (hc *HealthCheck) check() {
 			extra[url] = nil
 			continue
 		}
-		filters := make(map[string]struct{}, len(option.filters))
-		for filter := range option.filters {
-			filters[filter] = struct{}{}
-		}
 		extra[url] = &extraOption{
 			expectedStatus: option.expectedStatus,
-			filters:        filters,
+			filter:         option.filter,
 		}
 	}
 	url := hc.url
@@ -188,24 +202,17 @@ func (hc *HealthCheck) execute(
 		return
 	}
 
-	var filterReg *regexp2.Regexp
+	var filter *regexp2.Regexp
 	var expectedStatus utils.IntRanges[uint16]
 	if option != nil {
 		expectedStatus = option.expectedStatus
-		if len(option.filters) != 0 {
-			filters := make([]string, 0, len(option.filters))
-			for filter := range option.filters {
-				filters = append(filters, filter)
-			}
-
-			filterReg = regexp2.MustCompile(strings.Join(filters, "|"), regexp2.None)
-		}
+		filter = option.filter
 	}
 
 	for _, proxy := range proxies {
 		// skip proxies that do not require health check
-		if filterReg != nil {
-			if match, _ := filterReg.MatchString(proxy.Name()); !match {
+		if filter != nil {
+			if match, _ := filter.MatchString(proxy.Name()); !match {
 				continue
 			}
 		}

@@ -1,7 +1,6 @@
 package trusttunnel
 
 import (
-	"encoding/binary"
 	"math"
 	"net"
 
@@ -12,6 +11,46 @@ import (
 	N "github.com/metacubex/sing/common/network"
 	"github.com/metacubex/sing/common/rw"
 )
+
+func writeUint16(buffer *buf.Buffer, v uint16) error {
+	if err := buffer.WriteByte(byte(v >> 8)); err != nil {
+		return err
+	}
+	return buffer.WriteByte(byte(v))
+}
+
+func writeUint32(buffer *buf.Buffer, v uint32) error {
+	for shift := 24; shift >= 0; shift -= 8 {
+		if err := buffer.WriteByte(byte(v >> shift)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func readUint16(buffer *buf.Buffer) (uint16, error) {
+	hi, err := buffer.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	lo, err := buffer.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	return uint16(hi)<<8 | uint16(lo), nil
+}
+
+func readUint32(buffer *buf.Buffer) (uint32, error) {
+	var v uint32
+	for range 4 {
+		b, err := buffer.ReadByte()
+		if err != nil {
+			return 0, err
+		}
+		v = v<<8 | uint32(b)
+	}
+	return v, nil
+}
 
 type packetConn struct {
 	httpConn
@@ -84,12 +123,11 @@ func (u *clientPacketConn) readPacketFromServer(buffer *buf.Buffer) (destination
 	if err != nil {
 		return
 	}
-	var length uint32
-	common.Must(binary.Read(header, binary.BigEndian, &length))
+	length := common.Must1(readUint32(header))
 	var sourceAddressBuffer [16]byte
 	common.Must1(header.Read(sourceAddressBuffer[:]))
 	destination.Addr = parse16BytesIP(sourceAddressBuffer)
-	common.Must(binary.Read(header, binary.BigEndian, &destination.Port))
+	destination.Port = common.Must1(readUint16(header))
 	common.Must(rw.SkipN(header, 16+2)) // To local address:port
 	payloadLen := int(length) - (16 + 2 + 16 + 2)
 	if payloadLen < 0 {
@@ -125,11 +163,11 @@ func (u *clientPacketConn) writePacketToServer(buffer *buf.Buffer, source M.Sock
 		header = buf.NewSize(headerLen)
 		defer header.Release()
 	}
-	common.Must(binary.Write(header, binary.BigEndian, lengthField))
+	common.Must(writeUint32(header, lengthField))
 	common.Must(header.WriteZeroN(16 + 2)) // Source address:port (unknown)
 	common.Must1(header.Write(destinationAddress[:]))
-	common.Must(binary.Write(header, binary.BigEndian, source.Port))
-	common.Must(binary.Write(header, binary.BigEndian, uint8(len(appName))))
+	common.Must(writeUint16(header, source.Port))
+	common.Must(header.WriteByte(byte(len(appName))))
 	common.Must1(header.WriteString(appName))
 	if !headerInBuffer {
 		_, err := u.writer.Write(header.Bytes())
@@ -208,19 +246,15 @@ func (u *serverPacketConn) readPacketFromClient(buffer *buf.Buffer) (destination
 	if err != nil {
 		return
 	}
-	var length uint32
-	common.Must(binary.Read(header, binary.BigEndian, &length))
+	length := common.Must1(readUint32(header))
 	var sourceAddressBuffer [16]byte
 	common.Must1(header.Read(sourceAddressBuffer[:]))
-	var sourcePort uint16
-	common.Must(binary.Read(header, binary.BigEndian, &sourcePort))
-	_ = sourcePort
+	_ = common.Must1(readUint16(header))
 	var destinationAddressBuffer [16]byte
 	common.Must1(header.Read(destinationAddressBuffer[:]))
 	destination.Addr = parse16BytesIP(destinationAddressBuffer)
-	common.Must(binary.Read(header, binary.BigEndian, &destination.Port))
-	var appNameLen uint8
-	common.Must(binary.Read(header, binary.BigEndian, &appNameLen))
+	destination.Port = common.Must1(readUint16(header))
+	appNameLen := common.Must1(header.ReadByte())
 	if appNameLen > 0 {
 		err = rw.SkipN(u.body, int(appNameLen))
 		if err != nil {
@@ -258,11 +292,11 @@ func (u *serverPacketConn) writePacketToClient(buffer *buf.Buffer, source M.Sock
 		header = buf.NewSize(headerLen)
 		defer header.Release()
 	}
-	common.Must(binary.Write(header, binary.BigEndian, lengthField))
+	common.Must(writeUint32(header, lengthField))
 	common.Must1(header.Write(sourceAddress[:]))
-	common.Must(binary.Write(header, binary.BigEndian, source.Port))
+	common.Must(writeUint16(header, source.Port))
 	common.Must1(header.Write(destinationAddress[:]))
-	common.Must(binary.Write(header, binary.BigEndian, destinationPort))
+	common.Must(writeUint16(header, destinationPort))
 	if !headerInBuffer {
 		_, err := u.writer.Write(header.Bytes())
 		if err != nil {
