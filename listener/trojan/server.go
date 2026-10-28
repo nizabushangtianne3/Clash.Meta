@@ -325,7 +325,6 @@ func (l *Listener) handleConn(inMux bool, conn net.Conn, tunnel C.Tunnel, additi
 
 	switch command {
 	case trojan.CommandTCP:
-		//tunnel.HandleTCPConn(inbound.NewSocket(target, conn, C.TROJAN, additions...))
 		l.handler.HandleSocket(target, conn, additions...)
 	case trojan.CommandUDP:
 		pc := trojan.NewPacketConn(conn)

@@ -143,11 +143,7 @@ func New(config LC.ShadowQuicServer, lc C.InboundListenConfig, tunnel C.Tunnel, 
 		return nil
 	}
 	handleUdpFn := func(addr socks5.Addr, packet C.UDPPacket, _additions ...inbound.Addition) error {
-		newAdditions := additions
-		if len(_additions) > 0 {
-			newAdditions = append(append([]inbound.Addition{}, additions...), _additions...)
-		}
-		tunnel.HandleUDPPacket(inbound.NewPacket(addr, packet, C.SHADOWQUIC, newAdditions...))
+		tunnel.HandleUDPPacket(inbound.NewPacket(addr, packet, C.SHADOWQUIC, additions...))
 		return nil
 	}
 

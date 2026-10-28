@@ -191,7 +191,6 @@ func (l *Listener) HandleConn(conn net.Conn, tunnel C.Tunnel, additions ...inbou
 		return
 	}
 	l.handler.HandleSocket(target, conn, additions...)
-	//tunnel.HandleTCPConn(inbound.NewSocket(target, conn, C.SHADOWSOCKS, additions...))
 }
 
 func HandleShadowSocks(conn net.Conn, tunnel C.Tunnel, additions ...inbound.Addition) bool {

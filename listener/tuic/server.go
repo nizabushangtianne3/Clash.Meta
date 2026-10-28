@@ -18,8 +18,6 @@ import (
 	"github.com/metacubex/mihomo/transport/socks5"
 	"github.com/metacubex/mihomo/transport/tuic"
 
-	"slices"
-
 	"github.com/gofrs/uuid/v5"
 	"github.com/metacubex/quic-go"
 	"github.com/metacubex/tls"
@@ -128,23 +126,11 @@ func New(config LC.TuicServer, lc C.InboundListenConfig, tunnel C.Tunnel, additi
 	quicConfig.MaxDatagramFrameSize = int64(maxDatagramFrameSize)
 
 	handleTcpFn := func(conn net.Conn, addr socks5.Addr, _additions ...inbound.Addition) error {
-		//newAdditions := additions
-		//if len(_additions) > 0 {
-		//	newAdditions = slices.Clip(additions) // force the subsequent `append()` to copy the slice
-		//	newAdditions = append(newAdditions, _additions...)
-		//}
-		//conn, metadata := inbound.NewSocket(addr, conn, C.TUIC, newAdditions...)
-		//go tunnel.HandleTCPConn(conn, metadata)
 		go h.HandleSocket(addr, conn, _additions...) // h.HandleSocket will block, so open a new goroutine
 		return nil
 	}
 	handleUdpFn := func(addr socks5.Addr, packet C.UDPPacket, _additions ...inbound.Addition) error {
-		newAdditions := additions
-		if len(_additions) > 0 {
-			newAdditions = slices.Clip(additions) // force the subsequent `append()` to copy the slice
-			newAdditions = append(newAdditions, _additions...)
-		}
-		tunnel.HandleUDPPacket(inbound.NewPacket(addr, packet, C.TUIC, newAdditions...))
+		tunnel.HandleUDPPacket(inbound.NewPacket(addr, packet, C.TUIC, additions...))
 		return nil
 	}
 
