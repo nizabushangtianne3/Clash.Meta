@@ -19,21 +19,38 @@ import (
 // pins the startup: the mixed listener from the config must serve a proxied
 // request through the full tunnel-match-dial-relay chain.
 func TestApplyConfigStartsInboundListeners(t *testing.T) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	port := listener.Addr().(*net.TCPAddr).Port
-	_ = listener.Close()
-
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer target.Close()
 
+	// The probe port is released before the config applies it, so a busy runner
+	// can swallow the bind. Retry the whole startup with a fresh port instead of
+	// failing on one unlucky allocation.
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		lastErr = startInboundAndRequest(t, target.URL)
+		if lastErr == nil {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("the proxied request failed - the inbound listener did not start or the tunnel rejected it: %v", lastErr)
+}
+
+func startInboundAndRequest(t *testing.T, targetURL string) error {
+	t.Helper()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return err
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	_ = listener.Close()
+
 	proxyURL, err := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", port))
 	if err != nil {
-		t.Fatal(err)
+		return err
 	}
 
 	configYAML := fmt.Sprintf(`
@@ -53,11 +70,11 @@ rules:
 
 	cfg, err := config.Parse([]byte(configYAML))
 	if err != nil {
-		t.Fatalf("config parse: %v", err)
+		return err
 	}
 	executor.ApplyConfig(cfg, true)
 	t.Cleanup(func() {
-		empty, err := config.Parse([]byte("log-level: silent\n"))
+		empty, err := config.Parse([]byte("log-level: silent"))
 		if err == nil {
 			executor.ApplyConfig(empty, true)
 		}
@@ -69,12 +86,13 @@ rules:
 			Proxy: http.ProxyURL(proxyURL),
 		},
 	}
-	resp, err := client.Get(target.URL)
+	resp, err := client.Get(targetURL)
 	if err != nil {
-		t.Fatalf("the proxied request failed - the inbound listener did not start or the tunnel rejected it: %v", err)
+		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, want 200", resp.StatusCode)
+		return fmt.Errorf("status = %d, want 200", resp.StatusCode)
 	}
+	return nil
 }
