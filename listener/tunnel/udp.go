@@ -7,6 +7,7 @@ import (
 	"net/netip"
 
 	"github.com/metacubex/mihomo/adapter/inbound"
+	"github.com/metacubex/mihomo/common/lru"
 	N "github.com/metacubex/mihomo/common/net"
 	"github.com/metacubex/mihomo/common/pool"
 	C "github.com/metacubex/mihomo/constant"
@@ -19,10 +20,23 @@ type tunnelWriteBackPacketConn interface {
 }
 
 type PacketConn struct {
-	conn   net.PacketConn
-	addr   string
-	target socks5.Addr
-	proxy  string
+	conn      net.PacketConn
+	addr      string
+	target    socks5.Addr
+	proxy     string
+	additions []inbound.Addition
+	flowCache *lru.LruCache[netip.AddrPort, *tunUDPFlow]
+}
+
+// The target is the listener's, so only the source varies per flow: one
+// metadata per source address keeps a warm flow off the parse path.
+const (
+	tunUDPFlowCacheSize = 1024
+	tunUDPFlowCacheAge  = 300
+)
+
+type tunUDPFlow struct {
+	metadata *C.Metadata
 }
 
 // RawAddress implements C.Listener
@@ -56,10 +70,16 @@ func NewUDP(addr, target, proxy string, lc C.InboundListenConfig, tunnel C.Tunne
 		target: targetAddr,
 		proxy:  proxy,
 		addr:   addr,
+		flowCache: lru.New(
+			lru.WithSize[netip.AddrPort, *tunUDPFlow](tunUDPFlowCacheSize),
+			lru.WithAge[netip.AddrPort, *tunUDPFlow](tunUDPFlowCacheAge),
+		),
 	}
 
 	if proxy != "" {
-		additions = append([]inbound.Addition{inbound.WithSpecialProxy(proxy)}, additions...)
+		sl.additions = append([]inbound.Addition{inbound.WithSpecialProxy(proxy)}, additions...)
+	} else {
+		sl.additions = additions
 	}
 
 	conn := N.NewEnhancePacketConn(l)
@@ -82,9 +102,15 @@ func (l *PacketConn) serveUDP(conn N.EnhancePacketConn, tunnel C.Tunnel, additio
 }
 
 func (l *PacketConn) handleUDP(pc net.PacketConn, tunnel C.Tunnel, buf []byte, source netip.AddrPort, additions ...inbound.Addition) {
-	cPacket := newTunnelUDPPacket(pc, source, buf)
-
-	tunnel.HandleUDPPacket(inbound.NewPacket(l.target, cPacket, C.TUNNEL, additions...))
+	flow, hit := l.flowCache.Get(source)
+	if !hit {
+		cPacket := newTunnelUDPPacket(pc, source, buf)
+		_, metadata := inbound.NewPacket(l.target, cPacket, C.TUNNEL, additions...)
+		l.flowCache.Set(source, &tunUDPFlow{metadata: metadata})
+		tunnel.HandleUDPPacket(cPacket, metadata)
+		return
+	}
+	tunnel.HandleUDPPacket(newTunnelUDPPacket(pc, source, buf), flow.metadata)
 }
 
 type tunnelUDPPacket struct {

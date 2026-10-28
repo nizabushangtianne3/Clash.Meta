@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/metacubex/mihomo/common/lru"
 	"github.com/metacubex/mihomo/common/pool"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/transport/socks5"
@@ -84,8 +85,7 @@ func TestTunnelUDPPacketWrappersReleaseTheirBuffers(t *testing.T) {
 		},
 	}
 	tunnel := &tunnelDropTunnel{}
-	target := socks5.AddrFromStdAddrPort(netip.MustParseAddrPort("8.8.8.8:53"))
-	listener := &PacketConn{target: target}
+	listener := newTunnelTestListener()
 
 	listener.serveUDP(conn, tunnel)
 
@@ -117,6 +117,60 @@ func tunnelPooledData(value string) []byte {
 	return buf
 }
 
+type tunnelCaptureTunnel struct {
+	C.Tunnel
+	payloads  [][]byte
+	wrappers  []*tunnelUDPPacket
+	metadatas []*C.Metadata
+}
+
+func (c *tunnelCaptureTunnel) HandleUDPPacket(udpPacket C.UDPPacket, metadata *C.Metadata) {
+	if tunnelPacket, ok := udpPacket.(*tunnelUDPPacket); ok {
+		c.wrappers = append(c.wrappers, tunnelPacket)
+	}
+	c.payloads = append(c.payloads, append([]byte(nil), udpPacket.Data()...))
+	c.metadatas = append(c.metadatas, metadata)
+	udpPacket.Drop()
+}
+
+func newTunnelTestListener() *PacketConn {
+	return &PacketConn{
+		target: socks5.AddrFromStdAddrPort(netip.MustParseAddrPort("8.8.8.8:53")),
+		flowCache: lru.New(
+			lru.WithSize[netip.AddrPort, *tunUDPFlow](1024),
+			lru.WithAge[netip.AddrPort, *tunUDPFlow](300),
+		),
+	}
+}
+
+func TestTunnelUDPFlowCacheReusesMetadata(t *testing.T) {
+	tunnel := &tunnelCaptureTunnel{}
+	listener := newTunnelTestListener()
+	source := netip.MustParseAddrPort("192.168.1.2:54321")
+
+	listener.handleUDP(tunnelDropPacketConn{}, tunnel, tunnelPooledData("first"), source)
+	listener.handleUDP(tunnelDropPacketConn{}, tunnel, tunnelPooledData("second"), source)
+
+	require.Len(t, tunnel.metadatas, 2)
+	require.Same(t, tunnel.metadatas[0], tunnel.metadatas[1])
+	require.Equal(t, "8.8.8.8", tunnel.metadatas[0].DstIP.String())
+	require.EqualValues(t, 53, tunnel.metadatas[0].DstPort)
+	require.Equal(t, "192.168.1.2", tunnel.metadatas[0].SrcIP.String())
+	require.EqualValues(t, 54321, tunnel.metadatas[0].SrcPort)
+}
+
+func TestTunnelUDPFlowCacheSplitsSources(t *testing.T) {
+	tunnel := &tunnelCaptureTunnel{}
+	listener := newTunnelTestListener()
+
+	listener.handleUDP(tunnelDropPacketConn{}, tunnel, tunnelPooledData("first"), netip.MustParseAddrPort("192.168.1.2:54321"))
+	listener.handleUDP(tunnelDropPacketConn{}, tunnel, tunnelPooledData("second"), netip.MustParseAddrPort("192.168.1.3:54322"))
+
+	require.Len(t, tunnel.metadatas, 2)
+	require.NotSame(t, tunnel.metadatas[0], tunnel.metadatas[1])
+	require.Equal(t, "192.168.1.3", tunnel.metadatas[1].SrcIP.String())
+}
+
 type tunnelDropOnlyTunnel struct {
 	C.Tunnel
 }
@@ -127,15 +181,15 @@ func (tunnelDropOnlyTunnel) HandleUDPPacket(udpPacket C.UDPPacket, _ *C.Metadata
 
 func BenchmarkTunnelUDPHandle(b *testing.B) {
 	tunnel := tunnelDropOnlyTunnel{}
-	conn := tunnelDropPacketConn{}
-	target := socks5.AddrFromStdAddrPort(netip.MustParseAddrPort("8.8.8.8:53"))
-	listener := &PacketConn{target: target}
+	listener := newTunnelTestListener()
 	source := netip.MustParseAddrPort("192.168.1.2:54321")
-	listener.handleUDP(conn, tunnel, []byte("payload"), source)
+	buf := pool.Get(pool.UDPBufferSize)
+	copy(buf, "payload")
+	listener.handleUDP(tunnelDropPacketConn{}, tunnel, buf[:7], source)
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		listener.handleUDP(conn, tunnel, []byte("payload"), source)
+		listener.handleUDP(tunnelDropPacketConn{}, tunnel, buf[:7], source)
 	}
 }

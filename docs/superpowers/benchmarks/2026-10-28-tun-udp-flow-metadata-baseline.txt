@@ -1,0 +1,14 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/listener/tunnel
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkTunnelUDPHandle-16    	  300000	       209.0 ns/op	     507 B/op	       2 allocs/op
+BenchmarkTunnelUDPHandle-16    	  300000	       181.3 ns/op	     507 B/op	       2 allocs/op
+BenchmarkTunnelUDPHandle-16    	  300000	       183.4 ns/op	     505 B/op	       2 allocs/op
+BenchmarkTunnelUDPHandle-16    	  300000	       181.7 ns/op	     506 B/op	       2 allocs/op
+BenchmarkTunnelUDPHandle-16    	  300000	       203.3 ns/op	     506 B/op	       2 allocs/op
+BenchmarkTunnelUDPHandle-16    	  300000	       177.0 ns/op	     505 B/op	       2 allocs/op
+BenchmarkTunnelUDPHandle-16    	  300000	       182.4 ns/op	     506 B/op	       2 allocs/op
+BenchmarkTunnelUDPHandle-16    	  300000	       185.5 ns/op	     505 B/op	       2 allocs/op
+BenchmarkTunnelUDPHandle-16    	  300000	       182.4 ns/op	     507 B/op	       2 allocs/op
+BenchmarkTunnelUDPHandle-16    	  300000	       182.3 ns/op	     507 B/op	       2 allocs/op
