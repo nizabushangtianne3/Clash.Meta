@@ -1,0 +1,21 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/listener/tproxy
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkTproxyUDPHandle-16   9601312   122.2 ns/op   124 B/op   1 allocs/op
+BenchmarkTproxyUDPHandle-16   9842382   122.8 ns/op   124 B/op   1 allocs/op
+BenchmarkTproxyUDPHandle-16   7842343   141.2 ns/op   124 B/op   1 allocs/op
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/listener/tproxy
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkTproxyUDPHandle-16    	  300000	       123.3 ns/op	     122 B/op	       1 allocs/op
+BenchmarkTproxyUDPHandle-16    	  300000	       120.1 ns/op	     123 B/op	       1 allocs/op
+BenchmarkTproxyUDPHandle-16    	  300000	       124.7 ns/op	     123 B/op	       1 allocs/op
+BenchmarkTproxyUDPHandle-16    	  300000	       115.4 ns/op	     126 B/op	       1 allocs/op
+BenchmarkTproxyUDPHandle-16    	  300000	       123.1 ns/op	     123 B/op	       1 allocs/op
+BenchmarkTproxyUDPHandle-16    	  300000	       125.6 ns/op	     123 B/op	       1 allocs/op
+BenchmarkTproxyUDPHandle-16    	  300000	       128.7 ns/op	     123 B/op	       1 allocs/op
+BenchmarkTproxyUDPHandle-16    	  300000	       124.8 ns/op	     124 B/op	       1 allocs/op
+BenchmarkTproxyUDPHandle-16    	  300000	       121.2 ns/op	     124 B/op	       1 allocs/op
+BenchmarkTproxyUDPHandle-16    	  300000	       121.2 ns/op	     123 B/op	       1 allocs/op
