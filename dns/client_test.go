@@ -64,14 +64,35 @@ func startUDPDNSServer(tb testing.TB) (string, <-chan struct{}) {
 func startTruncatedDNSServers(tb testing.TB) string {
 	tb.Helper()
 
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	// Windows runners hand out ports from ranges that WSAEACCES-rejects the
+	// follow-up bind on (the TCP listener and the UDP packet conn share one
+	// port). Retry with a fresh port instead of failing the whole case.
+	var listener net.Listener
+	var packetConn net.PacketConn
+	var address string
+	var err error
+	for attempt := 0; attempt < 5; attempt++ {
+		listener, err = net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			continue
+		}
+		address = listener.Addr().String()
+		packetConn, err = net.ListenPacket("udp", address)
+		if err == nil {
+			break
+		}
+		_ = listener.Close()
+		listener, packetConn = nil, nil
+	}
 	require.NoError(tb, err)
-	tb.Cleanup(func() { _ = listener.Close() })
-
-	address := listener.Addr().String()
-	packetConn, err := net.ListenPacket("udp", address)
-	require.NoError(tb, err)
-	tb.Cleanup(func() { _ = packetConn.Close() })
+	tb.Cleanup(func() {
+		if listener != nil {
+			_ = listener.Close()
+		}
+		if packetConn != nil {
+			_ = packetConn.Close()
+		}
+	})
 
 	go func() {
 		buffer := make([]byte, 4096)
