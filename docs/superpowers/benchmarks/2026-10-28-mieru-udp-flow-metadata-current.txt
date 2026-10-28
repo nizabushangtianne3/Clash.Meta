@@ -1,0 +1,14 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/listener/mieru
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkMieruUDPHandle-16    	  300000	        93.02 ns/op	      80 B/op	       1 allocs/op
+BenchmarkMieruUDPHandle-16    	  300000	        82.89 ns/op	      80 B/op	       1 allocs/op
+BenchmarkMieruUDPHandle-16    	  300000	        85.67 ns/op	      80 B/op	       1 allocs/op
+BenchmarkMieruUDPHandle-16    	  300000	        93.29 ns/op	      80 B/op	       1 allocs/op
+BenchmarkMieruUDPHandle-16    	  300000	        86.31 ns/op	      80 B/op	       1 allocs/op
+BenchmarkMieruUDPHandle-16    	  300000	        89.82 ns/op	      80 B/op	       1 allocs/op
+BenchmarkMieruUDPHandle-16    	  300000	        86.32 ns/op	      80 B/op	       1 allocs/op
+BenchmarkMieruUDPHandle-16    	  300000	        83.87 ns/op	      80 B/op	       1 allocs/op
+BenchmarkMieruUDPHandle-16    	  300000	        81.19 ns/op	      80 B/op	       1 allocs/op
+BenchmarkMieruUDPHandle-16    	  300000	        87.12 ns/op	      80 B/op	       1 allocs/op

@@ -125,16 +125,18 @@ func (c *mieruDropTunnel) HandleUDPPacket(udpPacket C.UDPPacket, _ *C.Metadata) 
 func TestMieruUDPPacketWrappersReleaseTheirBuffers(t *testing.T) {
 	conn := &recordingPacketConn{}
 	tunnel := &mieruDropTunnel{}
+	flows := newMieruUDPFlowCache()
 	source := netip.MustParseAddrPort("192.168.1.2:54321")
 	data := append([]byte{0, 0, 0, 1}, netip.MustParseAddr("1.2.3.4").AsSlice()...)
 	data = append(data, 0x01, 0xbb, 'f', 'i', 'r', 's', 't')
 
-	handleMieruUDPPacket(conn, tunnel, data, source)
-	handleMieruUDPPacket(conn, tunnel, data, source)
+	handleMieruUDPPacket(conn, tunnel, data, source, flows)
+	handleMieruUDPPacket(conn, tunnel, data, source, flows)
 
 	require.Len(t, tunnel.wrappers, 2)
 	require.Len(t, tunnel.data, 2)
 	require.Equal(t, []byte("first"), tunnel.data[0])
+	require.Same(t, tunnel.wrappers[0].udpAddr, tunnel.wrappers[1].udpAddr)
 	for _, wrapper := range tunnel.wrappers {
 		require.Nil(t, wrapper.data)
 		require.Nil(t, wrapper.payload)
@@ -144,6 +146,16 @@ func TestMieruUDPPacketWrappersReleaseTheirBuffers(t *testing.T) {
 
 type mieruDropOnlyTunnel struct {
 	C.Tunnel
+}
+
+type mieruCaptureTunnel struct {
+	C.Tunnel
+	metadatas []*C.Metadata
+}
+
+func (c *mieruCaptureTunnel) HandleUDPPacket(udpPacket C.UDPPacket, metadata *C.Metadata) {
+	c.metadatas = append(c.metadatas, metadata)
+	udpPacket.Drop()
 }
 
 func (mieruDropOnlyTunnel) HandleUDPPacket(udpPacket C.UDPPacket, _ *C.Metadata) {
@@ -156,11 +168,35 @@ func BenchmarkMieruUDPHandle(b *testing.B) {
 	source := netip.MustParseAddrPort("192.168.1.2:54321")
 	data := append([]byte{0, 0, 0, 1}, netip.MustParseAddr("1.2.3.4").AsSlice()...)
 	data = append(data, 0x01, 0xbb, 'p', 'a', 'y')
-	handleMieruUDPPacket(conn, tunnel, data, source)
+	flows := newMieruUDPFlowCache()
+	handleMieruUDPPacket(conn, tunnel, data, source, flows)
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		handleMieruUDPPacket(conn, tunnel, data, source)
+		handleMieruUDPPacket(conn, tunnel, data, source, flows)
 	}
+}
+
+func TestMieruUDPFlowCacheReusesMetadata(t *testing.T) {
+	conn := &recordingPacketConn{}
+	tunnel := &mieruCaptureTunnel{}
+	flows := newMieruUDPFlowCache()
+	source := netip.MustParseAddrPort("192.168.1.2:54321")
+	data := append([]byte{0, 0, 0, 1}, netip.MustParseAddr("1.2.3.4").AsSlice()...)
+	data = append(data, 0x01, 0xbb, 'h', 'i')
+	other := append([]byte{0, 0, 0, 1}, netip.MustParseAddr("5.6.7.8").AsSlice()...)
+	other = append(other, 0x01, 0xbb, 'h', 'i')
+
+	handleMieruUDPPacket(conn, tunnel, data, source, flows)
+	handleMieruUDPPacket(conn, tunnel, data, source, flows)
+	handleMieruUDPPacket(conn, tunnel, other, source, flows)
+
+	require.Len(t, tunnel.metadatas, 3)
+	require.Same(t, tunnel.metadatas[0], tunnel.metadatas[1])
+	require.NotSame(t, tunnel.metadatas[0], tunnel.metadatas[2])
+	require.Equal(t, "5.6.7.8", tunnel.metadatas[2].DstIP.String())
+	require.EqualValues(t, 443, tunnel.metadatas[2].DstPort)
+	require.Equal(t, "192.168.1.2", tunnel.metadatas[0].SrcIP.String())
+	require.EqualValues(t, 54321, tunnel.metadatas[0].SrcPort)
 }

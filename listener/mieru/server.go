@@ -1,12 +1,14 @@
 package mieru
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"net"
 	"net/netip"
 
 	"github.com/metacubex/mihomo/adapter/inbound"
+	"github.com/metacubex/mihomo/common/lru"
 	N "github.com/metacubex/mihomo/common/net"
 	"github.com/metacubex/mihomo/common/pool"
 	C "github.com/metacubex/mihomo/constant"
@@ -58,6 +60,7 @@ func Handle(conn net.Conn, tunnel C.Tunnel, request *mierumodel.Request, additio
 		pc := mierucommon.NewPacketOverStreamTunnel(conn)
 		ep := N.NewEnhancePacketConn(pc)
 		defer ep.Close()
+		flows := newMieruUDPFlowCache()
 		for {
 			data, addr, err := ep.WaitReadFrom()
 			if err != nil {
@@ -71,19 +74,53 @@ func Handle(conn net.Conn, tunnel C.Tunnel, request *mierumodel.Request, additio
 				}
 				continue
 			}
-			handleMieruUDPPacket(ep, tunnel, data, addr, additions...)
+			handleMieruUDPPacket(ep, tunnel, data, addr, flows, additions...)
 		}
 	}
 }
 
-func handleMieruUDPPacket(pc net.PacketConn, tunnel C.Tunnel, data []byte, addr netip.AddrPort, additions ...inbound.Addition) {
+// A client flow repeats its destination, so the metadata parsed from the
+// datagram header is cached per source address and reused while the target
+// bytes match; one mieru session reads through this cache.
+const (
+	mieruUDPFlowCacheSize = 256
+	mieruUDPFlowCacheAge  = 300
+)
+
+type mieruUDPFlow struct {
+	metadata *C.Metadata
+	target   []byte
+	rAddr    *net.UDPAddr
+}
+
+func newMieruUDPFlowCache() *lru.LruCache[netip.AddrPort, *mieruUDPFlow] {
+	return lru.New(
+		lru.WithSize[netip.AddrPort, *mieruUDPFlow](mieruUDPFlowCacheSize),
+		lru.WithAge[netip.AddrPort, *mieruUDPFlow](mieruUDPFlowCacheAge),
+	)
+}
+
+func handleMieruUDPPacket(pc net.PacketConn, tunnel C.Tunnel, data []byte, addr netip.AddrPort, flows *lru.LruCache[netip.AddrPort, *mieruUDPFlow], additions ...inbound.Addition) {
 	target, payload, err := socks5.DecodeUDPPacket(data)
 	if err != nil {
 		_ = pool.Put(data)
 		return
 	}
-	packet := newMieruPacket(pc, net.UDPAddrFromAddrPort(addr), data, payload)
-	tunnel.HandleUDPPacket(inbound.NewPacket(target, packet, C.MIERU, additions...))
+	flow, hit := flows.Get(addr)
+	if !hit || !bytes.Equal(target, flow.target) {
+		rAddr := net.UDPAddrFromAddrPort(addr)
+		packet := newMieruPacket(pc, rAddr, data, payload)
+		_, metadata := inbound.NewPacket(target, packet, C.MIERU, additions...)
+		flow = &mieruUDPFlow{
+			metadata: metadata,
+			target:   bytes.Clone(target),
+			rAddr:    rAddr,
+		}
+		flows.Set(addr, flow)
+		tunnel.HandleUDPPacket(packet, metadata)
+		return
+	}
+	tunnel.HandleUDPPacket(newMieruPacket(pc, flow.rAddr, data, payload), flow.metadata)
 }
 
 // The wrapper is allocated per datagram on purpose: a flow keeps the packet it

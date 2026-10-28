@@ -3,7 +3,8 @@
 Date: 2026-10-28
 
 Environment: Windows, `windows/amd64`, Intel Core i9-9900, Go `1.27.1`. The
-baseline is the parent commit measured in a worktree with the identical
+baseline is the pre-cycle tip `5b5e4316` (this line minus the tproxy commit,
+which does not touch this package) measured in a worktree with the identical
 benchmark harness (pool-sized bufs, drop-only tunnel), n=10 per side.
 
 ## Change
