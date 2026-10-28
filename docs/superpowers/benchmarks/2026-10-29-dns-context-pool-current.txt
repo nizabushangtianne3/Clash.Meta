@@ -1,0 +1,24 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/dns
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkServeMsgFakeIP-16         	  500000	       238.4 ns/op	     228 B/op	       4 allocs/op
+BenchmarkServeMsgFakeIP-16         	  500000	       218.5 ns/op	     228 B/op	       4 allocs/op
+BenchmarkServeMsgFakeIP-16         	  500000	       216.0 ns/op	     228 B/op	       4 allocs/op
+BenchmarkServeMsgFakeIP-16         	  500000	       219.6 ns/op	     228 B/op	       4 allocs/op
+BenchmarkServeMsgFakeIP-16         	  500000	       220.1 ns/op	     228 B/op	       4 allocs/op
+BenchmarkServeMsgFakeIP-16         	  500000	       220.0 ns/op	     228 B/op	       4 allocs/op
+BenchmarkServeMsgFakeIP-16         	  500000	       224.3 ns/op	     228 B/op	       4 allocs/op
+BenchmarkServeMsgFakeIP-16         	  500000	       213.6 ns/op	     228 B/op	       4 allocs/op
+BenchmarkServeMsgFakeIP-16         	  500000	       212.0 ns/op	     228 B/op	       4 allocs/op
+BenchmarkServeMsgFakeIP-16         	  500000	       216.9 ns/op	     228 B/op	       4 allocs/op
+BenchmarkServeMsgFakeIPEmpty-16    	  500000	        85.89 ns/op	     144 B/op	       1 allocs/op
+BenchmarkServeMsgFakeIPEmpty-16    	  500000	        86.65 ns/op	     144 B/op	       1 allocs/op
+BenchmarkServeMsgFakeIPEmpty-16    	  500000	        78.67 ns/op	     144 B/op	       1 allocs/op
+BenchmarkServeMsgFakeIPEmpty-16    	  500000	        76.89 ns/op	     144 B/op	       1 allocs/op
+BenchmarkServeMsgFakeIPEmpty-16    	  500000	        76.82 ns/op	     144 B/op	       1 allocs/op
+BenchmarkServeMsgFakeIPEmpty-16    	  500000	        76.40 ns/op	     144 B/op	       1 allocs/op
+BenchmarkServeMsgFakeIPEmpty-16    	  500000	        85.24 ns/op	     144 B/op	       1 allocs/op
+BenchmarkServeMsgFakeIPEmpty-16    	  500000	        81.25 ns/op	     144 B/op	       1 allocs/op
+BenchmarkServeMsgFakeIPEmpty-16    	  500000	        76.75 ns/op	     144 B/op	       1 allocs/op
+BenchmarkServeMsgFakeIPEmpty-16    	  500000	        85.52 ns/op	     144 B/op	       1 allocs/op

@@ -3,6 +3,7 @@ package dns
 import (
 	"context"
 	"errors"
+	"sync"
 
 	"github.com/metacubex/mihomo/component/resolver"
 	icontext "github.com/metacubex/mihomo/context"
@@ -13,13 +14,19 @@ type Service struct {
 	handler handler
 }
 
+var dnsContextPool = sync.Pool{New: func() any { return new(icontext.DNSContext) }}
+
 // ServeMsg implement [resolver.Service] ResolveMsg
 func (s *Service) ServeMsg(ctx context.Context, msg *D.Msg) (*D.Msg, error) {
 	if len(msg.Question) == 0 {
 		return nil, errors.New("at least one question is required")
 	}
 
-	r, err := s.handler(icontext.NewDNSContext(ctx), msg)
+	dnsCtx := dnsContextPool.Get().(*icontext.DNSContext)
+	dnsCtx.Context = ctx
+	r, err := s.handler(dnsCtx, msg)
+	dnsCtx.Context = nil
+	dnsContextPool.Put(dnsCtx)
 	if err != nil {
 		return r, err
 	}
