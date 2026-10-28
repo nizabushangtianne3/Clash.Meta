@@ -11,6 +11,7 @@ import (
 	"github.com/metacubex/mihomo/adapter/inbound"
 	"github.com/metacubex/mihomo/common/atomic"
 	N "github.com/metacubex/mihomo/common/net"
+	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/common/xsync"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/transport/socks5"
@@ -221,6 +222,11 @@ func (s *serverUDPPacket) WriteBack(b []byte, addr netip.AddrPort) (n int, err e
 }
 
 func (s *serverUDPPacket) Drop() {
+	// the single-fragment read path is a pooled buffer, and Drop runs after the
+	// sender has written the datagram out
+	if data := s.packet.DATA; data != nil {
+		_ = pool.Put(data)
+	}
 	s.packet.DATA = nil
 }
 

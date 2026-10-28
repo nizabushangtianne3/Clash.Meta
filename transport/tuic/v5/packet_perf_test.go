@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"testing"
 
+	"github.com/metacubex/mihomo/common/pool"
 	"github.com/stretchr/testify/require"
 )
 
@@ -107,9 +108,13 @@ func BenchmarkReadPacket(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		if _, err := ReadPacketWithHead(head, reader); err != nil {
+		packet, err := ReadPacketWithHead(head, reader)
+		if err != nil {
 			b.Fatal(err)
 		}
+		// the single-fragment read hands a pooled buffer to one owner, which
+		// returns it once the datagram is written out or dropped
+		_ = pool.Put(packet.DATA)
 	}
 }
 

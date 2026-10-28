@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"strconv"
 
+	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/common/utils"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/transport/socks5"
@@ -304,7 +305,14 @@ func readPacketWithHead(head CommandHead, reader BufferedReader, addrScratch []b
 	if err != nil {
 		return
 	}
-	c.DATA = make([]byte, c.SIZE)
+	if c.FRAG_TOTAL <= 1 {
+		// one owner: the reader hands this buffer up and returns it to the pool
+		// once the datagram is written out or dropped
+		c.DATA = pool.Get(int(c.SIZE))
+	} else {
+		// fragments stay in the de-fragmenter until the message completes
+		c.DATA = make([]byte, c.SIZE)
+	}
 	_, err = io.ReadFull(reader, c.DATA)
 	if err != nil {
 		return
