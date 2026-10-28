@@ -44,7 +44,7 @@ type Client struct {
 	closed         bool
 
 	udpSessionMutex sync.RWMutex
-	udpSessionMap   map[uint32]chan *udpMessage
+	udpSessionMap   map[uint32]chan udpMessage
 	udpDefragger    defragger
 	hopInterval     time.Duration
 	fastOpen        bool
@@ -95,7 +95,7 @@ func (c *Client) connectToServer(dialer utils.PacketDialer) error {
 		return fmt.Errorf("auth error: %s", msg)
 	}
 	// All good
-	c.udpSessionMap = make(map[uint32]chan *udpMessage)
+	c.udpSessionMap = make(map[uint32]chan udpMessage)
 	go c.handleMessage(qs)
 	c.quicSession = qs
 	return nil
@@ -134,8 +134,8 @@ func (c *Client) handleMessage(qs *quic.Conn) {
 		if err != nil {
 			continue
 		}
-		dfMsg := c.udpDefragger.Feed(udpMsg)
-		if dfMsg == nil {
+		dfMsg, ok := c.udpDefragger.Feed(udpMsg)
+		if !ok {
 			continue
 		}
 		c.udpSessionMutex.RLock()
@@ -250,7 +250,7 @@ func (c *Client) DialUDP(dialer utils.PacketDialer) (UDPConn, error) {
 
 	// Create a session in the map
 	c.udpSessionMutex.Lock()
-	nCh := make(chan *udpMessage, 1024)
+	nCh := make(chan udpMessage, 1024)
 	// Store the current session map for CloseFunc below
 	// to ensures that we are adding and removing sessions on the same map,
 	// as reconnecting will reassign the map
@@ -354,7 +354,7 @@ type quicPktConn struct {
 	Stream       *wrappedQUICStream
 	CloseFunc    func()
 	UDPSessionID uint32
-	MsgCh        <-chan *udpMessage
+	MsgCh        <-chan udpMessage
 }
 
 func (c *quicPktConn) Hold() {
@@ -371,7 +371,7 @@ func (c *quicPktConn) Hold() {
 
 func (c *quicPktConn) ReadFrom() ([]byte, M.Socksaddr, error) {
 	msg := <-c.MsgCh
-	if msg == nil {
+	if msg.FragCount == 0 {
 		// Closed
 		return nil, M.Socksaddr{}, ErrClosed
 	}

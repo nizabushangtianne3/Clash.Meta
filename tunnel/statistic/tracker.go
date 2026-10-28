@@ -39,9 +39,15 @@ type tcpTracker struct {
 	TrackerInfo
 	manager *Manager
 	stripe  *counterStripe
+	counts  *trackerCounts
 
 	pushToManager bool `json:"-"`
 	direct        bool `json:"-"`
+}
+
+type trackerCounts struct {
+	reader []N.CountFunc
+	writer []N.CountFunc
 }
 
 func (tt *tcpTracker) pushUploaded(size int64) {
@@ -81,10 +87,7 @@ func (tt *tcpTracker) ReadBuffer(buffer *buf.Buffer) (err error) {
 }
 
 func (tt *tcpTracker) UnwrapReader() (io.Reader, []N.CountFunc) {
-	return tt.Conn, []N.CountFunc{func(download int64) {
-		tt.pushDownloaded(download)
-		tt.DownloadTotal.Add(download)
-	}}
+	return tt.Conn, tt.counts.reader
 }
 
 func (tt *tcpTracker) Write(b []byte) (int, error) {
@@ -104,10 +107,7 @@ func (tt *tcpTracker) WriteBuffer(buffer *buf.Buffer) (err error) {
 }
 
 func (tt *tcpTracker) UnwrapWriter() (io.Writer, []N.CountFunc) {
-	return tt.Conn, []N.CountFunc{func(upload int64) {
-		tt.pushUploaded(upload)
-		tt.UploadTotal.Add(upload)
-	}}
+	return tt.Conn, tt.counts.writer
 }
 
 func (tt *tcpTracker) Close() error {
@@ -139,6 +139,10 @@ func NewTCPTracker(conn C.Conn, manager *Manager, metadata *C.Metadata, rule C.R
 		pushToManager: pushToManager,
 		direct:        IsDirect(conn.Chains().Last()),
 	}
+	tt.counts = &trackerCounts{
+		reader: []N.CountFunc{tt.accountDownload},
+		writer: []N.CountFunc{tt.accountUpload},
+	}
 
 	if pushToManager {
 		if uploadTotal > 0 {
@@ -156,6 +160,16 @@ func NewTCPTracker(conn C.Conn, manager *Manager, metadata *C.Metadata, rule C.R
 
 	manager.Join(tt)
 	return tt
+}
+
+func (tt *tcpTracker) accountDownload(download int64) {
+	tt.pushDownloaded(download)
+	tt.DownloadTotal.Add(download)
+}
+
+func (tt *tcpTracker) accountUpload(upload int64) {
+	tt.pushUploaded(upload)
+	tt.UploadTotal.Add(upload)
 }
 
 type udpTracker struct {

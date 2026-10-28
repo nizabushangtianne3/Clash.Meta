@@ -3,6 +3,7 @@ package nat
 import (
 	"net"
 	"net/netip"
+	"sync"
 	"testing"
 
 	C "github.com/metacubex/mihomo/constant"
@@ -71,6 +72,31 @@ func TestLocalConnLookupStaysAllocationFree(t *testing.T) {
 		}
 	})
 	require.EqualValues(t, 0, allocations)
+}
+
+func TestDeleteForFlowDoesNotLeaveLocalConn(t *testing.T) {
+	key := netip.MustParseAddrPort("192.168.1.2:54321")
+	rAddr := netip.MustParseAddrPort("93.184.216.34:443")
+	localConn := &net.UDPConn{}
+
+	for range 100 {
+		table := New()
+		table.GetOrCreateForFlow(key, func() C.PacketSender { return nil })
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			table.DeleteForFlow(key)
+		}()
+		go func() {
+			defer wg.Done()
+			table.AddForLocalConn(key, rAddr, localConn)
+		}()
+		wg.Wait()
+
+		require.Nil(t, table.GetForLocalConn(key, rAddr))
+	}
 }
 
 func BenchmarkGetForLocalConnHit(b *testing.B) {

@@ -147,7 +147,8 @@ func Test_defragger_Feed(t *testing.T) {
 	tests := []struct {
 		name string
 		args args
-		want *udpMessage
+		want udpMessage
+		ok   bool
 	}{
 		{
 			"no frag",
@@ -162,7 +163,7 @@ func Test_defragger_Feed(t *testing.T) {
 					Data:      []byte("hello"),
 				},
 			},
-			&udpMessage{
+			udpMessage{
 				SessionID: 123,
 				Host:      "test",
 				Port:      123,
@@ -171,6 +172,7 @@ func Test_defragger_Feed(t *testing.T) {
 				FragCount: 1,
 				Data:      []byte("hello"),
 			},
+			true,
 		},
 		{
 			"frag 1 - 1/3",
@@ -185,7 +187,8 @@ func Test_defragger_Feed(t *testing.T) {
 					Data:      []byte("hello"),
 				},
 			},
-			nil,
+			udpMessage{},
+			false,
 		},
 		{
 			"frag 1 - 2/3",
@@ -200,7 +203,8 @@ func Test_defragger_Feed(t *testing.T) {
 					Data:      []byte(" shitty "),
 				},
 			},
-			nil,
+			udpMessage{},
+			false,
 		},
 		{
 			"frag 1 - 3/3",
@@ -215,7 +219,7 @@ func Test_defragger_Feed(t *testing.T) {
 					Data:      []byte("world!!"),
 				},
 			},
-			&udpMessage{
+			udpMessage{
 				SessionID: 123,
 				Host:      "test",
 				Port:      123,
@@ -224,6 +228,7 @@ func Test_defragger_Feed(t *testing.T) {
 				FragCount: 1,
 				Data:      []byte("hello shitty world!!"),
 			},
+			true,
 		},
 		{
 			"frag 2 - 1/2",
@@ -238,7 +243,8 @@ func Test_defragger_Feed(t *testing.T) {
 					Data:      []byte("hello"),
 				},
 			},
-			nil,
+			udpMessage{},
+			false,
 		},
 		{
 			"frag 3 - 2/2",
@@ -253,7 +259,8 @@ func Test_defragger_Feed(t *testing.T) {
 					Data:      []byte(" moto"),
 				},
 			},
-			nil,
+			udpMessage{},
+			false,
 		},
 		{
 			"frag 2 - 2/2",
@@ -268,7 +275,8 @@ func Test_defragger_Feed(t *testing.T) {
 					Data:      []byte(" moto"),
 				},
 			},
-			nil,
+			udpMessage{},
+			false,
 		},
 		{
 			"frag 2 - 1/2 re",
@@ -283,7 +291,7 @@ func Test_defragger_Feed(t *testing.T) {
 					Data:      []byte("hello"),
 				},
 			},
-			&udpMessage{
+			udpMessage{
 				SessionID: 123,
 				Host:      "test",
 				Port:      123,
@@ -292,13 +300,28 @@ func Test_defragger_Feed(t *testing.T) {
 				FragCount: 1,
 				Data:      []byte("hello moto"),
 			},
+			true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := d.Feed(tt.args.m); !reflect.DeepEqual(got, tt.want) {
+			got, ok := d.Feed(tt.args.m)
+			if ok != tt.ok || !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("Feed() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func Test_defragger_FeedUnfragmentedAllocatesNothing(t *testing.T) {
+	d := &defragger{}
+	m := udpMessage{FragCount: 1, Data: []byte("hello")}
+	allocations := testing.AllocsPerRun(1000, func() {
+		if _, ok := d.Feed(m); !ok {
+			t.Fatal("unexpected drop")
+		}
+	})
+	if allocations != 0 {
+		t.Fatalf("Feed() allocations = %v, want 0", allocations)
 	}
 }

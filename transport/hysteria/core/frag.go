@@ -28,26 +28,26 @@ func fragUDPMessage(m udpMessage, maxSize int) []udpMessage {
 
 type defragger struct {
 	msgID uint16
-	frags []*udpMessage
+	frags []udpMessage
 	count uint8
 }
 
-func (d *defragger) Feed(m udpMessage) *udpMessage {
+func (d *defragger) Feed(m udpMessage) (udpMessage, bool) {
 	if m.FragCount <= 1 {
-		return &m
+		return m, true
 	}
 	if m.FragID >= m.FragCount {
 		// wtf is this?
-		return nil
+		return udpMessage{}, false
 	}
 	if m.MsgID != d.msgID {
 		// new message, clear previous state
 		d.msgID = m.MsgID
-		d.frags = make([]*udpMessage, m.FragCount)
+		d.frags = make([]udpMessage, m.FragCount)
 		d.count = 1
-		d.frags[m.FragID] = &m
-	} else if d.frags[m.FragID] == nil {
-		d.frags[m.FragID] = &m
+		d.frags[m.FragID] = m
+	} else if d.frags[m.FragID].FragCount == 0 {
+		d.frags[m.FragID] = m
 		d.count++
 		if int(d.count) == len(d.frags) {
 			// all fragments received, assemble
@@ -58,8 +58,8 @@ func (d *defragger) Feed(m udpMessage) *udpMessage {
 			m.Data = data
 			m.FragID = 0
 			m.FragCount = 1
-			return &m
+			return m, true
 		}
 	}
-	return nil
+	return udpMessage{}, false
 }

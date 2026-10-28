@@ -113,6 +113,19 @@ func TestTCPTrackerSnapshotLifecycle(t *testing.T) {
 	assert.Empty(t, manager.Snapshot().Connections)
 }
 
+func TestTCPTrackerUnwrapReturnsPrebuiltCounts(t *testing.T) {
+	tracker, _ := newTestTCPTracker(t, newStripedManager(), true)
+
+	firstReader, readerCounts := tracker.UnwrapReader()
+	secondReader, readerCountsAgain := tracker.UnwrapReader()
+	firstWriter, writerCounts := tracker.UnwrapWriter()
+	secondWriter, writerCountsAgain := tracker.UnwrapWriter()
+	assert.Same(t, firstReader, secondReader)
+	assert.Same(t, firstWriter, secondWriter)
+	assert.Same(t, &readerCounts[0], &readerCountsAgain[0])
+	assert.Same(t, &writerCounts[0], &writerCountsAgain[0])
+}
+
 func TestUDPTrackerAccountsPackets(t *testing.T) {
 	manager := newStripedManager()
 	server, err := net.ListenPacket("udp", "127.0.0.1:0")

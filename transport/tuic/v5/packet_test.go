@@ -3,11 +3,38 @@ package v5
 import (
 	"bufio"
 	"bytes"
+	"net"
 	"net/netip"
 	"testing"
 
+	N "github.com/metacubex/mihomo/common/net"
 	"github.com/stretchr/testify/require"
 )
+
+type readFromConn struct {
+	net.Conn
+	r *bytes.Reader
+}
+
+func (c *readFromConn) Read(p []byte) (int, error) { return c.r.Read(p) }
+
+func TestReadFromReturnsIndependentAddresses(t *testing.T) {
+	first := NewPacket(1, 2, 1, 0, 4,
+		NewAddressAddrPort(netip.MustParseAddrPort("192.0.2.1:443")),
+		[]byte{0xaa, 0xbb, 0xcc, 0xdd})
+	second := NewPacket(1, 2, 1, 0, 4,
+		NewAddressAddrPort(netip.MustParseAddrPort("198.51.100.1:443")),
+		[]byte{0xdd, 0xcc, 0xbb, 0xaa})
+	raw := append(encodePacket(t, first), encodePacket(t, second)...)
+	conn := N.NewBufferedConn(&readFromConn{r: bytes.NewReader(raw)})
+	q := &quicStreamPacketConn{inputConn: conn}
+
+	_, firstAddr, err := q.ReadFrom(make([]byte, 4))
+	require.NoError(t, err)
+	_, _, err = q.ReadFrom(make([]byte, 4))
+	require.NoError(t, err)
+	require.True(t, firstAddr.(*net.UDPAddr).IP.Equal(net.ParseIP("192.0.2.1")))
+}
 
 func encodePacket(t *testing.T, packet Packet) []byte {
 	t.Helper()

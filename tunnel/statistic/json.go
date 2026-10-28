@@ -205,7 +205,7 @@ func appendJSONString(dst []byte, s string) []byte {
 		r, size := utf8.DecodeRuneInString(s[i:])
 		if r == utf8.RuneError && size == 1 {
 			dst = append(dst, s[start:i]...)
-			dst = append(dst, `\ufffd`...)
+			dst = utf8.AppendRune(dst, utf8.RuneError)
 			i += size
 			start = i
 			continue

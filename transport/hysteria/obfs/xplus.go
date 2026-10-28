@@ -13,6 +13,20 @@ type XPlusObfuscator struct {
 	Key []byte
 }
 
+func keyAndSaltSum(key, salt []byte) [sha256.Size]byte {
+	var buf [64]byte
+	if n := copy(buf[:], key); n == len(key) && copy(buf[n:], salt) == len(salt) {
+		return sha256.Sum256(buf[:n+len(salt)])
+	}
+
+	h := sha256.New()
+	h.Write(key)
+	h.Write(salt)
+	var sum [sha256.Size]byte
+	h.Sum(sum[:0])
+	return sum
+}
+
 func NewXPlusObfuscator(key []byte) *XPlusObfuscator {
 	return &XPlusObfuscator{
 		Key: key,
@@ -25,7 +39,7 @@ func (x *XPlusObfuscator) Deobfuscate(in []byte, out []byte) int {
 		// Invalid
 		return 0
 	}
-	key := sha256.Sum256(append(x.Key, in[:saltLen]...))
+	key := keyAndSaltSum(x.Key, in[:saltLen])
 	// Deobfuscate the payload
 	for i, c := range in[saltLen:] {
 		out[i] = c ^ key[i%sha256.Size]
@@ -36,7 +50,7 @@ func (x *XPlusObfuscator) Deobfuscate(in []byte, out []byte) int {
 func (x *XPlusObfuscator) Obfuscate(in []byte, out []byte) int {
 	_, _ = rand.Read(out[:saltLen]) // salt
 	// Obfuscate the payload
-	key := sha256.Sum256(append(x.Key, out[:saltLen]...))
+	key := keyAndSaltSum(x.Key, out[:saltLen])
 	for i, c := range in {
 		out[i+saltLen] = c ^ key[i%sha256.Size]
 	}

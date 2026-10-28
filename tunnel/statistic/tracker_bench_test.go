@@ -17,3 +17,18 @@ func BenchmarkNewTCPTracker(b *testing.B) {
 		manager.Leave(tracker)
 	}
 }
+
+func BenchmarkTCPTrackerUnwrap(b *testing.B) {
+	manager := newStripedManager()
+	local, remote := net.Pipe()
+	b.Cleanup(func() { _ = remote.Close() })
+	tracker := NewTCPTracker(newStatisticTestConn(local), manager, benchmarkMetadata(), nil, 0, 0, true)
+	b.Cleanup(func() { _ = tracker.Close() })
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		tracker.UnwrapReader()
+		tracker.UnwrapWriter()
+	}
+}

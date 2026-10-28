@@ -18,12 +18,12 @@ type stubHyUDPConn struct {
 }
 
 func (s *stubHyUDPConn) ReadFrom() ([]byte, M.Socksaddr, error) { return s.data, s.from, nil }
-func (s *stubHyUDPConn) WriteTo([]byte, M.Socksaddr) error     { return nil }
-func (s *stubHyUDPConn) Close() error                          { return nil }
-func (s *stubHyUDPConn) LocalAddr() net.Addr                   { return nil }
-func (s *stubHyUDPConn) SetDeadline(time.Time) error           { return nil }
-func (s *stubHyUDPConn) SetReadDeadline(time.Time) error       { return nil }
-func (s *stubHyUDPConn) SetWriteDeadline(time.Time) error      { return nil }
+func (s *stubHyUDPConn) WriteTo([]byte, M.Socksaddr) error      { return nil }
+func (s *stubHyUDPConn) Close() error                           { return nil }
+func (s *stubHyUDPConn) LocalAddr() net.Addr                    { return nil }
+func (s *stubHyUDPConn) SetDeadline(time.Time) error            { return nil }
+func (s *stubHyUDPConn) SetReadDeadline(time.Time) error        { return nil }
+func (s *stubHyUDPConn) SetWriteDeadline(time.Time) error       { return nil }
 
 var _ hyCore.UDPConn = (*stubHyUDPConn)(nil)
 
@@ -91,4 +91,3 @@ func BenchmarkHyPacketConnReadFrom(b *testing.B) {
 		}
 	}
 }
-

@@ -1,7 +1,6 @@
 package outbound
 
 import (
-	"bytes"
 	"context"
 	"net"
 	"net/netip"
@@ -13,23 +12,24 @@ import (
 )
 
 func serializesSocksAddr(metadata *C.Metadata) []byte {
-	var buf [][]byte
+	var scratch [262]byte
+	buf := scratch[:0]
 	addrType := metadata.AddrType()
 	p := uint(metadata.DstPort)
-	port := []byte{uint8(p >> 8), uint8(p & 0xff)}
 	switch addrType {
 	case C.AtypDomainName:
 		lenM := uint8(len(metadata.Host))
-		host := []byte(metadata.Host)
-		buf = [][]byte{{socks5.AtypDomainName, lenM}, host, port}
+		buf = append(buf, socks5.AtypDomainName, lenM)
+		buf = append(buf, metadata.Host...)
 	case C.AtypIPv4:
-		host := metadata.DstIP.AsSlice()
-		buf = [][]byte{{socks5.AtypIPv4}, host, port}
+		buf = append(buf, socks5.AtypIPv4)
+		buf = append(buf, metadata.DstIP.AsSlice()...)
 	case C.AtypIPv6:
-		host := metadata.DstIP.AsSlice()
-		buf = [][]byte{{socks5.AtypIPv6}, host, port}
+		buf = append(buf, socks5.AtypIPv6)
+		buf = append(buf, metadata.DstIP.AsSlice()...)
 	}
-	return bytes.Join(buf, nil)
+	buf = append(buf, uint8(p>>8), uint8(p&0xff))
+	return buf
 }
 
 func resolveIPWithResolver(ctx context.Context, host string, prefer C.DNSPrefer, r resolver.Resolver) (netip.Addr, error) {

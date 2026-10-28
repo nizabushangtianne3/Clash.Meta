@@ -33,14 +33,14 @@ type quicStreamPacketConn struct {
 	addrScratch [addressScratchSize]byte
 	closeOnce   sync.Once
 	closeErr    error
-	closed      bool
+	closed      atomic.Bool
 
 	deFragger
 }
 
 func (q *quicStreamPacketConn) Close() error {
 	q.closeOnce.Do(func() {
-		q.closed = true
+		q.closed.Store(true)
 		q.closeErr = q.close()
 	})
 	return q.closeErr
@@ -57,7 +57,6 @@ func (q *quicStreamPacketConn) close() (err error) {
 	}
 	if q.inputConn != nil {
 		_ = q.inputConn.Close()
-		q.inputConn = nil
 
 		buf := pool.GetBuffer()
 		defer pool.PutBuffer(buf)
@@ -100,10 +99,13 @@ func (q *quicStreamPacketConn) SetWriteDeadline(t time.Time) error {
 }
 
 func (q *quicStreamPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
+	if q.closed.Load() {
+		return 0, nil, net.ErrClosed
+	}
 	if inputConn := q.inputConn; inputConn != nil { // copy inputConn avoid be nil in for loop
 		for {
 			var packet Packet
-			packet, err = readPacketInto(inputConn, q.addrScratch[:])
+			packet, err = ReadPacket(inputConn)
 			if err != nil {
 				return
 			}
@@ -120,10 +122,13 @@ func (q *quicStreamPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err err
 }
 
 func (q *quicStreamPacketConn) WaitReadFrom() (data []byte, addr netip.AddrPort, err error) {
+	if q.closed.Load() {
+		return nil, netip.AddrPort{}, net.ErrClosed
+	}
 	if inputConn := q.inputConn; inputConn != nil { // copy inputConn avoid be nil in for loop
 		for {
 			var packet Packet
-			packet, err = ReadPacket(inputConn)
+			packet, err = readPacketInto(inputConn, q.addrScratch[:])
 			if err != nil {
 				return
 			}
@@ -143,7 +148,7 @@ func (q *quicStreamPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err erro
 	if len(p) > 0xffff { // uint16 max
 		return 0, &quic.DatagramTooLargeError{MaxDatagramPayloadSize: 0xffff}
 	}
-	if q.closed {
+	if q.closed.Load() {
 		return 0, net.ErrClosed
 	}
 	if q.writeClosed != nil && q.writeClosed.Load() {
