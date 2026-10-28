@@ -287,7 +287,6 @@ func TestServeMsgReportsTheAppQueryOnce(t *testing.T) {
 func TestAnswersThatSkipTheResolverAreNotRecorded(t *testing.T) {
 	records := recordQueries(t)
 	service := &Service{handler: func(ctx *icontext.DNSContext, m *D.Msg) (*D.Msg, error) {
-		ctx.SetType(icontext.DNSTypeFakeIP)
 		return handleMsgWithEmptyAnswer(m), nil
 	}}
 	query := new(D.Msg)
