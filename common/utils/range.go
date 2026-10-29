@@ -91,4 +91,3 @@ func parseUnsigned[T constraints.Unsigned](s string) (T, error) {
 		return 0, err
 	}
 }
-

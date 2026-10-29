@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	C "github.com/metacubex/mihomo/constant"
-	M "github.com/metacubex/sing/common/metadata"
 	"github.com/metacubex/mihomo/transport/socks5"
+	M "github.com/metacubex/sing/common/metadata"
 	"github.com/stretchr/testify/require"
 )
 

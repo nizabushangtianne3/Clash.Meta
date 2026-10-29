@@ -31,8 +31,8 @@ func (c *fakeDNSClient) ExchangeContext(ctx context.Context, m *D.Msg) (*D.Msg, 
 	return c.response, nil
 }
 
-func (c *fakeDNSClient) Address() string    { return "fake" }
-func (c *fakeDNSClient) ResetConnection()   {}
+func (c *fakeDNSClient) Address() string  { return "fake" }
+func (c *fakeDNSClient) ResetConnection() {}
 
 func testQueryMsg() *D.Msg {
 	return &D.Msg{

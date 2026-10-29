@@ -6,7 +6,6 @@ import (
 	"net"
 	"unsafe"
 
-
 	"github.com/metacubex/http"
 	"github.com/metacubex/quic-go"
 	"github.com/metacubex/quic-go/http3"

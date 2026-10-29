@@ -50,11 +50,11 @@ func (p *Pool) put(conn *Snell) {
 
 type PoolConn struct {
 	*Snell
-	pool           *Pool
+	pool *Pool
 	// writeMu serialises the data writes with the half-close zero chunk, which
 	// otherwise races with an in-flight relay write on the cipher state.
-	writeMu        sync.Mutex
-	closeWriteOnce sync.Once
+	writeMu            sync.Mutex
+	closeWriteOnce     sync.Once
 	closeWriteReusable bool
 	closeWriteErr      error
 	closeOnce          sync.Once

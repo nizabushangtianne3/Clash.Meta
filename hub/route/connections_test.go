@@ -19,10 +19,10 @@ type statisticPipeConn struct {
 	N.ExtendedConn
 }
 
-func (c *statisticPipeConn) Chains() C.Chain         { return nil }
-func (c *statisticPipeConn) ProviderChains() C.Chain { return nil }
+func (c *statisticPipeConn) Chains() C.Chain               { return nil }
+func (c *statisticPipeConn) ProviderChains() C.Chain       { return nil }
 func (c *statisticPipeConn) AppendToChains(C.ProxyAdapter) {}
-func (c *statisticPipeConn) RemoteDestination() string        { return "10.0.0.3:443" }
+func (c *statisticPipeConn) RemoteDestination() string     { return "10.0.0.3:443" }
 
 // The host reads this view on a timer, so the document it receives is pinned
 // against the values the tracker carries.
@@ -67,26 +67,26 @@ func TestRouterConnectionsView(test *testing.T) {
 	require.Equal(test, "application/json", response.Header.Get("Content-Type"))
 
 	var document struct {
-		DownloadTotal int64 `json:"downloadTotal"`
-		UploadTotal   int64 `json:"uploadTotal"`
+		DownloadTotal int64  `json:"downloadTotal"`
+		UploadTotal   int64  `json:"uploadTotal"`
 		Memory        uint64 `json:"memory"`
-		Connections []struct {
-			ID             string `json:"id"`
-			Upload         int64  `json:"upload"`
-			Download       int64  `json:"download"`
-			Start          string `json:"start"`
+		Connections   []struct {
+			ID             string   `json:"id"`
+			Upload         int64    `json:"upload"`
+			Download       int64    `json:"download"`
+			Start          string   `json:"start"`
 			Chains         []string `json:"chains"`
 			ProviderChains []string `json:"providerChains"`
 			Rule           string   `json:"rule"`
 			RulePayload    string   `json:"rulePayload"`
-			Metadata struct {
-				Network          string `json:"network"`
-				Type             string `json:"type"`
-				SourceIP         string `json:"sourceIP"`
-				SourcePort       string `json:"sourcePort"`
-				DestinationIP    string `json:"destinationIP"`
-				DestinationPort  string `json:"destinationPort"`
-				Host             string `json:"host"`
+			Metadata       struct {
+				Network           string `json:"network"`
+				Type              string `json:"type"`
+				SourceIP          string `json:"sourceIP"`
+				SourcePort        string `json:"sourcePort"`
+				DestinationIP     string `json:"destinationIP"`
+				DestinationPort   string `json:"destinationPort"`
+				Host              string `json:"host"`
 				RemoteDestination string `json:"remoteDestination"`
 			} `json:"metadata"`
 		} `json:"connections"`

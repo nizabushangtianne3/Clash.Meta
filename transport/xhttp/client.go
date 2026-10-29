@@ -361,7 +361,7 @@ func (c *Client) DialStreamOne(ctx context.Context) (net.Conn, error) {
 	gotConn := make(chan bool, 1)
 
 	reqCtx, reqCancel := context.WithCancel(c.ctx) // reqCtx must alive during conn not closed
-	stop := context.AfterFunc(ctx, reqCancel) // temporarily connect ctx with reqCtx when dialing
+	stop := context.AfterFunc(ctx, reqCancel)      // temporarily connect ctx with reqCtx when dialing
 	defer stop()                                   // disconnect ctx with reqCtx after dialing
 
 	addrCtx := httputils.NewAddrContext(&conn.NetAddr, reqCtx)
@@ -462,7 +462,7 @@ func (c *Client) DialStreamUp(ctx context.Context) (net.Conn, error) {
 	gotConn := make(chan bool, 1)
 
 	reqCtx, reqCancel := context.WithCancel(c.ctx) // reqCtx must alive during conn not closed
-	stop := context.AfterFunc(ctx, reqCancel) // temporarily connect ctx with reqCtx when dialing
+	stop := context.AfterFunc(ctx, reqCancel)      // temporarily connect ctx with reqCtx when dialing
 	defer stop()                                   // disconnect ctx with reqCtx after dialing
 
 	addrCtx := httputils.NewAddrContext(&conn.NetAddr, reqCtx)
@@ -609,7 +609,7 @@ func (c *Client) DialPacketUp(ctx context.Context) (net.Conn, error) {
 	gotConn := make(chan bool, 1)
 
 	reqCtx, reqCancel := context.WithCancel(c.ctx) // reqCtx must alive during conn not closed
-	stop := context.AfterFunc(ctx, reqCancel) // temporarily connect ctx with reqCtx when dialing
+	stop := context.AfterFunc(ctx, reqCancel)      // temporarily connect ctx with reqCtx when dialing
 	defer stop()                                   // disconnect ctx with reqCtx after dialing
 
 	addrCtx := httputils.NewAddrContext(&conn.NetAddr, reqCtx)

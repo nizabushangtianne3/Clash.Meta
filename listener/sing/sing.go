@@ -137,8 +137,8 @@ func (h *ListenerHandler) NewConnection(ctx context.Context, conn net.Conn, meta
 		NetWork: C.TCP,
 		Type:    h.Type,
 	}
-  _ = inbound.SetDstSocksaddr(cMetadata, metadata.Destination)
-  inbound.SetSrcSocksaddr(cMetadata, metadata.Source)
+	_ = inbound.SetDstSocksaddr(cMetadata, metadata.Destination)
+	inbound.SetSrcSocksaddr(cMetadata, metadata.Source)
 	inbound.SetInAddr(cMetadata, conn.LocalAddr())
 	inbound.ApplyAdditions(cMetadata, h.Additions...)
 	inbound.ApplyAdditions(cMetadata, getAdditions(ctx)...)
@@ -229,8 +229,8 @@ func (h *ListenerHandler) buildPacketMetadata(ctx context.Context, cPacket *pack
 		NetWork: C.UDP,
 		Type:    h.Type,
 	}
-  _ = inbound.SetDstSocksaddr(cMetadata, destination)
-  inbound.SetSrcSocksaddr(cMetadata, source)
+	_ = inbound.SetDstSocksaddr(cMetadata, destination)
+	inbound.SetSrcSocksaddr(cMetadata, source)
 	inbound.SetInAddr(cMetadata, cPacket.InAddr())
 	inbound.ApplyAdditions(cMetadata, h.Additions...)
 	inbound.ApplyAdditions(cMetadata, getAdditions(ctx)...)

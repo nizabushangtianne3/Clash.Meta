@@ -3,7 +3,6 @@ package net
 import (
 	"context"
 	"net"
-
 )
 
 // SetupContextForConn is a helper function that starts connection I/O interrupter.

@@ -8,7 +8,6 @@ import (
 	"net"
 	"sync"
 	"time"
-
 )
 
 type MultiplexBaseDialer func(context.Context) (net.Conn, error)
