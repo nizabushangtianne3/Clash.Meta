@@ -27,19 +27,20 @@ type ProxyAdapter interface {
 }
 
 type Base struct {
-	name   string
-	addr   string
-	tp     C.AdapterType
-	pdName string
-	udp    bool
-	xudp   bool
-	tfo    bool
-	mpTcp  bool
-	iface  string
-	rmark  int
-	prefer C.DNSPrefer
-	dialer C.Dialer
-	id     uuid.UUID
+	name        string
+	addr        string
+	tp          C.AdapterType
+	pdName      string
+	udp         bool
+	xudp        bool
+	tfo         bool
+	mpTcp       bool
+	iface       string
+	rmark       int
+	prefer      C.DNSPrefer
+	dialOptions []dialer.Option
+	dialer      C.Dialer
+	id          uuid.UUID
 }
 
 type BaseOption struct {
@@ -58,19 +59,52 @@ type BaseOption struct {
 
 func NewBase(opt BaseOption) *Base {
 	return &Base{
-		name:   opt.Name,
-		addr:   opt.Addr,
-		tp:     opt.Type,
-		pdName: opt.ProviderName,
-		udp:    opt.UDP,
-		xudp:   opt.XUDP,
-		tfo:    opt.TFO,
-		mpTcp:  opt.MPTCP,
-		iface:  opt.Interface,
-		rmark:  opt.RoutingMark,
-		prefer: opt.Prefer,
-		id:     utils.NewUUIDV4(),
+		name:        opt.Name,
+		addr:        opt.Addr,
+		tp:          opt.Type,
+		pdName:      opt.ProviderName,
+		udp:         opt.UDP,
+		xudp:        opt.XUDP,
+		tfo:         opt.TFO,
+		mpTcp:       opt.MPTCP,
+		iface:       opt.Interface,
+		rmark:       opt.RoutingMark,
+		prefer:      opt.Prefer,
+		dialOptions: buildDialOptions(opt),
+		id:          utils.NewUUIDV4(),
 	}
+}
+
+func buildDialOptions(opt BaseOption) []dialer.Option {
+	var opts []dialer.Option
+	if opt.Interface != "" {
+		opts = append(opts, dialer.WithInterface(opt.Interface))
+	}
+
+	if opt.RoutingMark != 0 {
+		opts = append(opts, dialer.WithRoutingMark(opt.RoutingMark))
+	}
+
+	switch opt.Prefer {
+	case C.IPv4Only:
+		opts = append(opts, dialer.WithOnlySingleStack(true))
+	case C.IPv6Only:
+		opts = append(opts, dialer.WithOnlySingleStack(false))
+	case C.IPv4Prefer:
+		opts = append(opts, dialer.WithPreferIPv4())
+	case C.IPv6Prefer:
+		opts = append(opts, dialer.WithPreferIPv6())
+	}
+
+	if opt.TFO {
+		opts = append(opts, dialer.WithTFO(true))
+	}
+
+	if opt.MPTCP {
+		opts = append(opts, dialer.WithMPTCP(true))
+	}
+
+	return opts
 }
 
 // Name implements C.ProxyAdapter
@@ -142,39 +176,12 @@ func (b *Base) Unwrap(metadata *C.Metadata, touch bool) C.Proxy {
 	return nil
 }
 
-// DialOptions return []dialer.Option from struct
-func (b *Base) DialOptions() (opts []dialer.Option) {
-	if b.iface != "" {
-		opts = append(opts, dialer.WithInterface(b.iface))
-	}
-
-	if b.rmark != 0 {
-		opts = append(opts, dialer.WithRoutingMark(b.rmark))
-	}
-
-	switch b.prefer {
-	case C.IPv4Only:
-		opts = append(opts, dialer.WithOnlySingleStack(true))
-	case C.IPv6Only:
-		opts = append(opts, dialer.WithOnlySingleStack(false))
-	case C.IPv4Prefer:
-		opts = append(opts, dialer.WithPreferIPv4())
-	case C.IPv6Prefer:
-		opts = append(opts, dialer.WithPreferIPv6())
-	default:
-	}
-
-	if b.tfo {
-		opts = append(opts, dialer.WithTFO(true))
-	}
-
-	if b.mpTcp {
-		opts = append(opts, dialer.WithMPTCP(true))
-	}
-
-	return opts
+// DialOptions returns the immutable options built when the adapter was
+// constructed. Length equals capacity so a caller that appends private options
+// allocates a new array instead of overwriting shared storage.
+func (b *Base) DialOptions() []dialer.Option {
+	return b.dialOptions
 }
-
 func (b *Base) ResolveUDP(ctx context.Context, metadata *C.Metadata) error {
 	if !metadata.Resolved() {
 		ip, err := resolveIPWithResolver(ctx, metadata.Host, b.prefer, resolver.DefaultResolver)
