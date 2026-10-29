@@ -7,7 +7,6 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/metacubex/mihomo/common/callback"
 	"github.com/metacubex/mihomo/common/xsync"
 	"github.com/metacubex/mihomo/component/iface"
 	C "github.com/metacubex/mihomo/constant"
@@ -49,9 +48,18 @@ func (l *Detector) NewConn(conn C.Conn) C.Conn {
 		return conn
 	}
 	l.connMap.Store(connAddr, struct{}{})
-	return callback.NewCloseCallbackConn(conn, func() {
-		l.connMap.Delete(connAddr)
-	})
+	return &trackedConn{Conn: conn, detector: l, source: connAddr}
+}
+
+type trackedConn struct {
+	C.Conn
+	detector *Detector
+	source   netip.AddrPort
+}
+
+func (c *trackedConn) Close() error {
+	c.detector.connMap.Delete(c.source)
+	return c.Conn.Close()
 }
 
 func (l *Detector) NewPacketConn(conn C.PacketConn) C.PacketConn {
@@ -68,9 +76,18 @@ func (l *Detector) NewPacketConn(conn C.PacketConn) C.PacketConn {
 	}
 	port := connAddr.Port()
 	l.packetConnMap.Store(port, struct{}{})
-	return callback.NewCloseCallbackPacketConn(conn, func() {
-		l.packetConnMap.Delete(port)
-	})
+	return &trackedPacketConn{PacketConn: conn, detector: l, source: port}
+}
+
+type trackedPacketConn struct {
+	C.PacketConn
+	detector *Detector
+	source   uint16
+}
+
+func (c *trackedPacketConn) Close() error {
+	c.detector.packetConnMap.Delete(c.source)
+	return c.PacketConn.Close()
 }
 
 func (l *Detector) CheckConn(metadata *C.Metadata) error {
