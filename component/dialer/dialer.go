@@ -469,6 +469,10 @@ func (d Dialer) DialContext(ctx context.Context, network, address string) (net.C
 	return DialContext(ctx, network, address, WithOption(d.Opt))
 }
 
+func (d Dialer) DialContextAddrPort(ctx context.Context, network string, rAddrPort netip.AddrPort) (net.Conn, error) {
+	return DialContextAddrPort(ctx, network, rAddrPort, WithOption(d.Opt))
+}
+
 func (d Dialer) ListenPacket(ctx context.Context, network, address string, rAddrPort netip.AddrPort) (net.PacketConn, error) {
 	return ListenPacket(ctx, ParseNetwork(network, rAddrPort.Addr()), address, rAddrPort, WithOption(d.Opt))
 }

@@ -14,6 +14,7 @@ import (
 type Direct struct {
 	*Base
 	loopBack *loopback.Detector
+	dialer   dialer.Dialer
 }
 
 type DirectOption struct {
@@ -34,9 +35,9 @@ func (d *Direct) DialContext(ctx context.Context, metadata *C.Metadata) (C.Conn,
 		err error
 	)
 	if addrPort := metadata.AddrPort(); addrPort.IsValid() {
-		c, err = dialer.DialContextAddrPort(ctx, "tcp", addrPort, opts...)
+		c, err = d.dialer.DialContextAddrPort(ctx, "tcp", addrPort)
 	} else {
-		c, err = dialer.DialContext(ctx, "tcp", metadata.RemoteAddress(), opts...)
+		c, err = d.dialer.DialContext(ctx, "tcp", metadata.RemoteAddress())
 	}
 	if err != nil {
 		return nil, err
@@ -52,7 +53,7 @@ func (d *Direct) ListenPacketContext(ctx context.Context, metadata *C.Metadata) 
 	if err := d.ResolveUDP(ctx, metadata); err != nil {
 		return nil, err
 	}
-	pc, err := dialer.NewDialer(d.DialOptions()...).ListenPacket(ctx, "udp", "", metadata.AddrPort())
+	pc, err := d.dialer.ListenPacket(ctx, "udp", "", metadata.AddrPort())
 	if err != nil {
 		return nil, err
 	}
@@ -75,42 +76,39 @@ func (d *Direct) IsL3Protocol(metadata *C.Metadata) bool {
 }
 
 func NewDirectWithOption(option DirectOption) *Direct {
-	return &Direct{
-		Base: NewBase(BaseOption{
-			Name:         option.Name,
-			Type:         C.Direct,
-			ProviderName: option.ProviderName,
-			UDP:          true,
-			TFO:          option.TFO,
-			MPTCP:        option.MPTCP,
-			Interface:    option.Interface,
-			RoutingMark:  option.RoutingMark,
-			Prefer:       option.IPVersion,
-		}),
-		loopBack: loopback.NewDetector(),
-	}
+	base := NewBase(BaseOption{
+		Name:         option.Name,
+		Type:         C.Direct,
+		ProviderName: option.ProviderName,
+		UDP:          true,
+		TFO:          option.TFO,
+		MPTCP:        option.MPTCP,
+		Interface:    option.Interface,
+		RoutingMark:  option.RoutingMark,
+		Prefer:       option.IPVersion,
+	})
+	directDialer := dialer.NewDialer(append(base.DialOptions(), dialer.WithResolver(resolver.DirectHostResolver))...)
+	return &Direct{Base: base, loopBack: loopback.NewDetector(), dialer: directDialer}
 }
 
 func NewDirect() *Direct {
-	return &Direct{
-		Base: NewBase(BaseOption{
-			Name:   "DIRECT",
-			Type:   C.Direct,
-			UDP:    true,
-			Prefer: C.DualStack,
-		}),
-		loopBack: loopback.NewDetector(),
-	}
+	base := NewBase(BaseOption{
+		Name:   "DIRECT",
+		Type:   C.Direct,
+		UDP:    true,
+		Prefer: C.DualStack,
+	})
+	directDialer := dialer.NewDialer(dialer.WithResolver(resolver.DirectHostResolver))
+	return &Direct{Base: base, loopBack: loopback.NewDetector(), dialer: directDialer}
 }
 
 func NewCompatible() *Direct {
-	return &Direct{
-		Base: NewBase(BaseOption{
-			Name:   "COMPATIBLE",
-			Type:   C.Compatible,
-			UDP:    true,
-			Prefer: C.DualStack,
-		}),
-		loopBack: loopback.NewDetector(),
-	}
+	base := NewBase(BaseOption{
+		Name:   "COMPATIBLE",
+		Type:   C.Compatible,
+		UDP:    true,
+		Prefer: C.DualStack,
+	})
+	directDialer := dialer.NewDialer(dialer.WithResolver(resolver.DirectHostResolver))
+	return &Direct{Base: base, loopBack: loopback.NewDetector(), dialer: directDialer}
 }
