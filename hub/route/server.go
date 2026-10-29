@@ -9,6 +9,7 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unicode/utf8"
@@ -33,10 +34,11 @@ import (
 var (
 	uiPath = ""
 
-	httpServer *http.Server
-	tlsServer  *http.Server
-	unixServer *http.Server
-	pipeServer *http.Server
+	httpServerMu sync.Mutex
+	httpServer   *http.Server
+	tlsServer    *http.Server
+	unixServer   *http.Server
+	pipeServer   *http.Server
 
 	embedMode = false
 )
@@ -160,29 +162,32 @@ func router(isDebug bool, secret string, dohServer string, cors Cors) *chi.Mux {
 }
 
 func start(cfg *Config) {
-	// first stop existing server
+	httpServerMu.Lock()
+	defer httpServerMu.Unlock()
+
 	if httpServer != nil {
 		_ = httpServer.Close()
 		httpServer = nil
 	}
 
-	// handle addr
-	if len(cfg.Addr) > 0 {
-		lc := inbound.NewListenConfig()
-		lc.SetRouteMark(cfg.RoutingMark)
-		l, err := lc.Listen(context.Background(), "tcp", cfg.Addr)
-		if err != nil {
-			log.Errorln("External controller listen error: %s", err)
-			return
-		}
-		log.Infoln("RESTful API listening at: %s", l.Addr().String())
-
-		server := &http.Server{
-			Handler: router(cfg.IsDebug, cfg.Secret, cfg.DohServer, cfg.Cors),
-		}
-		httpServer = server
-		_ = server.Serve(l)
+	if len(cfg.Addr) == 0 {
+		return
 	}
+
+	lc := inbound.NewListenConfig()
+	lc.SetRouteMark(cfg.RoutingMark)
+	l, err := lc.Listen(context.Background(), "tcp", cfg.Addr)
+	if err != nil {
+		log.Errorln("External controller listen error: %s", err)
+		return
+	}
+	log.Infoln("RESTful API listening at: %s", l.Addr().String())
+
+	server := &http.Server{
+		Handler: router(cfg.IsDebug, cfg.Secret, cfg.DohServer, cfg.Cors),
+	}
+	httpServer = server
+	go func() { _ = server.Serve(l) }()
 }
 
 func startTLS(cfg *Config) {
