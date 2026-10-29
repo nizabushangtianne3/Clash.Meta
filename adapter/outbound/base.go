@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"net"
 	"runtime"
+	"strconv"
 	"sync"
+	"sync/atomic"
 	"syscall"
 
 	N "github.com/metacubex/mihomo/common/net"
@@ -302,6 +304,8 @@ func NewConn(c net.Conn, a C.ProxyAdapter) C.Conn {
 	return cc
 }
 
+var packetConnID atomic.Uint64
+
 type packetConn struct {
 	N.EnhancePacketConn
 	chain       C.Chain
@@ -360,7 +364,7 @@ func (c *packetConn) AddRef(ref any) {
 
 func NewPacketConn(pc net.PacketConn, a ProxyAdapter) C.PacketConn {
 	epc := N.NewEnhancePacketConn(pc)
-	cpc := &packetConn{epc, nil, nil, a.Name(), utils.NewUUIDV4().String(), a.Addr(), a.ResolveUDP}
+	cpc := &packetConn{epc, nil, nil, a.Name(), strconv.FormatUint(packetConnID.Add(1), 10), a.Addr(), a.ResolveUDP}
 	cpc.AppendToChains(a)
 	return cpc
 }
