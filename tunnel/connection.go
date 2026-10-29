@@ -23,16 +23,18 @@ type packetSender struct {
 	closed atomic.Bool
 	active atomic.Int64
 
-	mappingMutex   sync.RWMutex
-	originToTarget map[packetOrigin]netip.Addr
-	targetToOrigin map[netip.Addr]netip.Addr
+	mappingMutex sync.RWMutex
 
-	// originCache is confined to the Process loop; readCache is confined to
-	// the handleUDPToLocal read loop. Neither is shared across goroutines, so
-	// both stay plain and reset in place.
+	// Most UDP flows carry exactly one origin/destination pair. Keep it inline
+	// and allocate the indexed maps only when a second origin appears.
 	originCacheKey    packetOrigin
 	originCacheTarget netip.Addr
 	originCacheValid  bool
+	singleTarget      netip.Addr
+	singleOrigin      netip.Addr
+	singleMapped      bool
+	originToTarget    map[packetOrigin]netip.Addr
+	targetToOrigin    map[netip.Addr]netip.Addr
 	readCache         packetReadMapping
 
 	// Only the Process goroutine touches this; the read loop keeps its own copy.
@@ -68,24 +70,43 @@ func packetOriginKey(metadata *C.Metadata) packetOrigin {
 func newPacketSender() C.PacketSender {
 	ctx, cancel := context.WithCancel(context.Background())
 	ch := make(chan C.PacketAdapter, senderCapacity)
-	sender := &packetSender{
-		ctx:            ctx,
-		cancel:         cancel,
-		ch:             ch,
-		originToTarget: make(map[packetOrigin]netip.Addr),
-		targetToOrigin: make(map[netip.Addr]netip.Addr),
-	}
-	return sender
+	return &packetSender{ctx: ctx, cancel: cancel, ch: ch}
 }
 
 func (s *packetSender) AddMapping(originMetadata *C.Metadata, metadata *C.Metadata) {
-	s.mappingMutex.Lock()
-	defer s.mappingMutex.Unlock()
-
 	originKey := packetOriginKey(originMetadata)
 	originAddr := originMetadata.DstIP
 	targetAddr := metadata.DstIP
 
+	s.mappingMutex.Lock()
+	defer s.mappingMutex.Unlock()
+
+	if !s.singleMapped {
+		s.singleMapped = true
+		s.singleTarget = targetAddr
+		s.singleOrigin = originAddr
+		s.originCacheKey = originKey
+		s.originCacheTarget = targetAddr
+		s.originCacheValid = true
+		return
+	}
+
+	if s.originCacheKey == originKey {
+		if !s.singleTarget.IsValid() {
+			s.singleTarget = targetAddr
+			s.originCacheTarget = targetAddr
+		}
+		if targetAddr == s.singleTarget {
+			if !s.singleOrigin.IsValid() {
+				s.singleOrigin = originAddr
+			}
+			return
+		}
+	}
+
+	if s.originToTarget == nil {
+		s.promoteSingleMapping()
+	}
 	if target, exists := s.originToTarget[originKey]; !exists || !target.IsValid() {
 		s.originToTarget[originKey] = targetAddr
 	}
@@ -94,13 +115,25 @@ func (s *packetSender) AddMapping(originMetadata *C.Metadata, metadata *C.Metada
 	}
 }
 
+func (s *packetSender) promoteSingleMapping() {
+	s.originToTarget = make(map[packetOrigin]netip.Addr)
+	s.targetToOrigin = make(map[netip.Addr]netip.Addr)
+	s.originToTarget[s.originCacheKey] = s.singleTarget
+	s.targetToOrigin[s.singleTarget] = s.singleOrigin
+}
+
 func (s *packetSender) RestoreReadFrom(addr netip.Addr) netip.Addr {
 	if s.readCache.valid && addr == s.readCache.target {
 		return s.readCache.origin
 	}
 
 	s.mappingMutex.RLock()
-	originAddr := s.targetToOrigin[addr]
+	var originAddr netip.Addr
+	if s.singleMapped && addr == s.singleTarget {
+		originAddr = s.singleOrigin
+	} else {
+		originAddr = s.targetToOrigin[addr]
+	}
 	s.mappingMutex.RUnlock()
 	if originAddr.IsValid() {
 		s.readCache.target = addr
