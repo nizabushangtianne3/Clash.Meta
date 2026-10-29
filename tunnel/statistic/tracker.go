@@ -1,19 +1,32 @@
 package statistic
 
 import (
+	"encoding/binary"
 	"io"
 	"net"
 	"net/netip"
+	syncatomic "sync/atomic"
 	"time"
 
 	"github.com/metacubex/mihomo/common/atomic"
 	"github.com/metacubex/mihomo/common/buf"
 	N "github.com/metacubex/mihomo/common/net"
-	"github.com/metacubex/mihomo/common/utils"
 	C "github.com/metacubex/mihomo/constant"
 
 	"github.com/gofrs/uuid/v5"
 )
+
+var trackerID syncatomic.Uint64
+
+// Tracker IDs are local API handles, not security tokens. A process-local
+// counter gives the same uniqueness as CSPRNG UUIDs without one per connection.
+func newTrackerID() uuid.UUID {
+	var id uuid.UUID
+	binary.LittleEndian.PutUint64(id[:8], trackerID.Add(1))
+	id[6] = (id[6] & 0x0f) | 0x40
+	id[8] = (id[8] & 0x3f) | 0x80
+	return id
+}
 
 type Tracker interface {
 	ID() string
@@ -122,7 +135,7 @@ func NewTCPTracker(conn C.Conn, manager *Manager, metadata *C.Metadata, rule C.R
 		manager: manager,
 		stripe:  manager.bindStripe(),
 		TrackerInfo: TrackerInfo{
-			UUID:          utils.NewUUIDV4(),
+			UUID:          newTrackerID(),
 			Start:         time.Now(),
 			Metadata:      metadata,
 			Chain:         conn.Chains(),
@@ -236,7 +249,7 @@ func NewUDPTracker(conn C.PacketConn, manager *Manager, metadata *C.Metadata, ru
 		manager:    manager,
 		stripe:     manager.bindStripe(),
 		TrackerInfo: TrackerInfo{
-			UUID:          utils.NewUUIDV4(),
+			UUID:          newTrackerID(),
 			Start:         time.Now(),
 			Metadata:      metadata,
 			Chain:         conn.Chains(),
