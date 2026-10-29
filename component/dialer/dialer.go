@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -39,14 +40,9 @@ func GetTcpConcurrent() bool {
 func DialContext(ctx context.Context, network, address string, options ...Option) (net.Conn, error) {
 	opt := applyOptions(options...)
 
-	if opt.network == 4 || opt.network == 6 {
-		if strings.Contains(network, "tcp") {
-			network = "tcp"
-		} else {
-			network = "udp"
-		}
-
-		network = fmt.Sprintf("%s%d", network, opt.network)
+	network, err := normalizeDialNetwork(network, opt.network)
+	if err != nil {
+		return nil, err
 	}
 
 	ips, port, err := parseAddr(ctx, network, address, opt.resolver)
@@ -72,6 +68,51 @@ func DialContext(ctx context.Context, network, address string, options ...Option
 		return dualStackDialContext(ctx, serialDialContext, network, ips, port, opt)
 	default:
 		return nil, ErrorInvalidedNetworkStack
+	}
+}
+
+// DialContextAddrPort dials an already resolved target without the
+// AddrPort-to-string-to-AddrPort round trip.
+func DialContextAddrPort(ctx context.Context, network string, rAddrPort netip.AddrPort, options ...Option) (net.Conn, error) {
+	if !rAddrPort.IsValid() {
+		return nil, ErrorNoIpAddress
+	}
+	opt := applyOptions(options...)
+	network, err := normalizeDialNetwork(network, opt.network)
+	if err != nil {
+		return nil, err
+	}
+	addrPort, _ := resolver.LookupIP4PAddrPort(rAddrPort)
+	switch network {
+	case "tcp4", "udp4":
+		if !addrPort.Addr().Is4() {
+			return nil, ErrorNoIpAddress
+		}
+	case "tcp6", "udp6":
+		if !addrPort.Addr().Is6() {
+			return nil, ErrorNoIpAddress
+		}
+	}
+	return dialContext(ctx, network, addrPort, opt)
+}
+
+func normalizeDialNetwork(network string, forcedIPVersion int) (string, error) {
+	base := ""
+	switch {
+	case strings.Contains(network, "tcp"):
+		base = "tcp"
+	case strings.Contains(network, "udp"):
+		base = "udp"
+	default:
+		return "", ErrorInvalidedNetworkStack
+	}
+	switch forcedIPVersion {
+	case 4:
+		return base + "4", nil
+	case 6:
+		return base + "6", nil
+	default:
+		return base, nil
 	}
 }
 
@@ -136,10 +177,10 @@ func listenConfig(network, address string, rAddrPort netip.AddrPort, opt option)
 	return lc, address, nil
 }
 
-func dialContext(ctx context.Context, network string, destination netip.Addr, port string, opt option) (net.Conn, error) {
-	var address string
-	destination, port = resolver.LookupIP4P(destination, port)
-	address = net.JoinHostPort(destination.String(), port)
+func dialContext(ctx context.Context, network string, addrPort netip.AddrPort, opt option) (net.Conn, error) {
+	addrPort, _ = resolver.LookupIP4PAddrPort(addrPort)
+	destination := addrPort.Addr()
+	address := addrPort.String()
 
 	var dialer *net.Dialer
 	switch typedDialer := opt.netDialer.(type) {
@@ -217,9 +258,9 @@ func ICMPControl(destination netip.Addr) func(network, address string, conn sysc
 	}
 }
 
-type dialFunc func(ctx context.Context, network string, ips []netip.Addr, port string, opt option) (net.Conn, error)
+type dialFunc func(ctx context.Context, network string, ips []netip.Addr, port uint16, opt option) (net.Conn, error)
 
-func dualStackDialContext(ctx context.Context, dialFn dialFunc, network string, ips []netip.Addr, port string, opt option) (net.Conn, error) {
+func dualStackDialContext(ctx context.Context, dialFn dialFunc, network string, ips []netip.Addr, port uint16, opt option) (net.Conn, error) {
 	ipv4s, ipv6s := resolver.SortationAddr(ips)
 	if len(ipv4s) == 0 && len(ipv6s) == 0 {
 		return nil, ErrorNoIpAddress
@@ -311,12 +352,12 @@ loop:
 	return nil, errors.Join(errs...)
 }
 
-func parallelDialContext(ctx context.Context, network string, ips []netip.Addr, port string, opt option) (net.Conn, error) {
+func parallelDialContext(ctx context.Context, network string, ips []netip.Addr, port uint16, opt option) (net.Conn, error) {
 	if len(ips) == 0 {
 		return nil, ErrorNoIpAddress
 	}
 	if len(ips) == 1 {
-		return dialContext(ctx, network, ips[0], port, opt)
+		return dialContext(ctx, network, netip.AddrPortFrom(ips[0], port), opt)
 	}
 	results := make(chan dialResult)
 	returned := make(chan struct{})
@@ -332,7 +373,7 @@ func parallelDialContext(ctx context.Context, network string, ips []netip.Addr, 
 				}
 			}
 		}()
-		result.Conn, result.error = dialContext(ctx, network, ip, port, opt)
+		result.Conn, result.error = dialContext(ctx, network, netip.AddrPortFrom(ip, port), opt)
 	}
 
 	for _, ip := range ips {
@@ -353,13 +394,13 @@ func parallelDialContext(ctx context.Context, network string, ips []netip.Addr, 
 	return nil, os.ErrDeadlineExceeded
 }
 
-func serialDialContext(ctx context.Context, network string, ips []netip.Addr, port string, opt option) (net.Conn, error) {
+func serialDialContext(ctx context.Context, network string, ips []netip.Addr, port uint16, opt option) (net.Conn, error) {
 	if len(ips) == 0 {
 		return nil, ErrorNoIpAddress
 	}
 	var errs []error
 	for _, ip := range ips {
-		if conn, err := dialContext(ctx, network, ip, port, opt); err == nil {
+		if conn, err := dialContext(ctx, network, netip.AddrPortFrom(ip, port), opt); err == nil {
 			return conn, nil
 		} else {
 			errs = append(errs, err)
@@ -375,10 +416,10 @@ type dialResult struct {
 	isPrimary bool
 }
 
-func parseAddr(ctx context.Context, network, address string, preferResolver resolver.Resolver) ([]netip.Addr, string, error) {
+func parseAddr(ctx context.Context, network, address string, preferResolver resolver.Resolver) ([]netip.Addr, uint16, error) {
 	host, port, err := net.SplitHostPort(address)
 	if err != nil {
-		return nil, "-1", err
+		return nil, 0, err
 	}
 
 	if preferResolver == nil {
@@ -396,14 +437,19 @@ func parseAddr(ctx context.Context, network, address string, preferResolver reso
 		ips, err = resolver.LookupIPWithResolver(ctx, host, preferResolver)
 	}
 	if err != nil {
-		return nil, "-1", fmt.Errorf("dns resolve failed: %w", err)
+		return nil, 0, fmt.Errorf("dns resolve failed: %w", err)
 	}
+	portNum64, err := strconv.ParseUint(port, 10, 16)
+	if err != nil {
+		return nil, 0, fmt.Errorf("invalid port %s: %w", port, err)
+	}
+	portNum := uint16(portNum64)
 	for i, ip := range ips {
 		if ip.Is4In6() {
 			ips[i] = ip.Unmap()
 		}
 	}
-	return ips, port, nil
+	return ips, portNum, nil
 }
 
 func listenAddressIsLoopback(address string) bool {

@@ -3,6 +3,7 @@ package outbound
 import (
 	"context"
 	"fmt"
+	"net"
 
 	"github.com/metacubex/mihomo/component/dialer"
 	"github.com/metacubex/mihomo/component/loopback"
@@ -27,7 +28,16 @@ func (d *Direct) DialContext(ctx context.Context, metadata *C.Metadata) (C.Conn,
 	}
 	opts := d.DialOptions()
 	opts = append(opts, dialer.WithResolver(resolver.DirectHostResolver))
-	c, err := dialer.DialContext(resolver.WithInitiator(ctx, resolver.InitiatorDirect), "tcp", metadata.RemoteAddress(), opts...)
+	ctx = resolver.WithInitiator(ctx, resolver.InitiatorDirect)
+	var (
+		c   net.Conn
+		err error
+	)
+	if addrPort := metadata.AddrPort(); addrPort.IsValid() {
+		c, err = dialer.DialContextAddrPort(ctx, "tcp", addrPort, opts...)
+	} else {
+		c, err = dialer.DialContext(ctx, "tcp", metadata.RemoteAddress(), opts...)
+	}
 	if err != nil {
 		return nil, err
 	}
