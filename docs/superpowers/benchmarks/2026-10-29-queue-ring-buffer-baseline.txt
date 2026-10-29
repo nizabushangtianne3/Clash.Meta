@@ -1,0 +1,14 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/common/queue
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkQueueSaturatedPutPop-16    	22781680	        58.16 ns/op	      16 B/op	       0 allocs/op
+BenchmarkQueueSaturatedPutPop-16    	22525608	        51.58 ns/op	      16 B/op	       0 allocs/op
+BenchmarkQueueSaturatedPutPop-16    	22330192	       106.7 ns/op	      16 B/op	       0 allocs/op
+BenchmarkQueueSaturatedPutPop-16    	13619892	       150.6 ns/op	      16 B/op	       0 allocs/op
+BenchmarkQueueSaturatedPutPop-16    	23713118	        86.78 ns/op	      16 B/op	       0 allocs/op
+BenchmarkQueueSaturatedPutPop-16    	21665068	        75.25 ns/op	      16 B/op	       0 allocs/op
+BenchmarkQueueSaturatedPutPop-16    	21658890	       111.8 ns/op	      16 B/op	       0 allocs/op
+BenchmarkQueueSaturatedPutPop-16    	14486583	       130.4 ns/op	      16 B/op	       0 allocs/op
+BenchmarkQueueSaturatedPutPop-16    	 6191780	       182.1 ns/op	      16 B/op	       0 allocs/op
+BenchmarkQueueSaturatedPutPop-16    	 7167174	       144.4 ns/op	      16 B/op	       0 allocs/op

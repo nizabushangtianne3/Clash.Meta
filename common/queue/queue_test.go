@@ -107,6 +107,18 @@ func TestQueueLen(t *testing.T) {
 	assert.Equal(t, int64(1), q.Len(), "Queue length should be 1 after popping one item")
 }
 
+func TestQueueRingKeepsOrderAcrossTheArrayBoundary(t *testing.T) {
+	q := NewWithCapacity[int](3)
+	q.Put(1, 2, 3)
+	assert.Equal(t, 1, q.Pop(), "queue should pop the oldest item")
+
+	q.Put(4)
+	items := q.Copy()
+	assert.Equal(t, []int{2, 3, 4}, items)
+	assert.Equal(t, int64(3), q.Len())
+	assert.Equal(t, 4, q.Last())
+}
+
 // TestQueueNew tests the New constructor
 func TestQueueNew(t *testing.T) {
 	// Test creating a new queue with different hints
@@ -142,7 +154,7 @@ func TestQueueConcurrency(t *testing.T) {
 		go func(id int) {
 			defer wg.Done()
 			for j := 0; j < operations; j++ {
-				q.Put(id*operations + j)
+				q.Put(id*operations + j + 1)
 				// Small sleep to increase chance of race conditions
 				time.Sleep(time.Microsecond)
 			}
@@ -156,15 +168,8 @@ func TestQueueConcurrency(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < operations; j++ {
 				// Try to pop an item, but don't block if queue is empty
-				// Use a mutex to avoid race condition between Len() check and Pop()
-				q.lock.Lock()
-				if len(q.items) > 0 {
-					item := q.items[0]
-					q.items = q.items[1:]
-					q.lock.Unlock()
+				if item := q.Pop(); item != 0 {
 					consumed <- item
-				} else {
-					q.lock.Unlock()
 				}
 				// Small sleep to increase chance of race conditions
 				time.Sleep(time.Microsecond)
