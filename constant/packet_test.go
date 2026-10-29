@@ -41,6 +41,10 @@ func TestPacketAdapterFlowKey(t *testing.T) {
 			name: "snat wrapped",
 			addr: N.NewCustomAddr("TROJAN", "0f4b5a2c", &net.UDPAddr{IP: net.IPv4(192, 168, 1, 2), Port: 54321}),
 			want: netip.MustParseAddrPort("192.168.1.2:54321"),
+		}, {
+			name: "zoned ipv6",
+			addr: &net.UDPAddr{IP: net.ParseIP("fe80::1"), Port: 54321, Zone: "eth0"},
+			want: netip.MustParseAddrPort("[fe80::1%eth0]:54321"),
 		},
 	}
 	for _, test := range tests {
@@ -49,9 +53,7 @@ func TestPacketAdapterFlowKey(t *testing.T) {
 				fixedLocalPacket{localAddr: test.addr},
 				&C.Metadata{},
 			)
-			flowAdapter, ok := adapter.(interface{ FlowKey() netip.AddrPort })
-			require.True(t, ok)
-			require.Equal(t, test.want, flowAdapter.FlowKey())
+			require.Equal(t, test.want, adapter.FlowKey())
 		})
 	}
 }
@@ -92,13 +94,39 @@ func (*countingDropPacket) LocalAddr() net.Addr {
 	return net.UDPAddrFromAddrPort(netip.MustParseAddrPort("192.168.1.2:54321"))
 }
 
+func BenchmarkPacketAdapterUDPAddrLifecycle(b *testing.B) {
+	packet := &fixedLocalPacket{
+		localAddr: &net.UDPAddr{IP: net.IPv4(192, 168, 1, 2), Port: 54321},
+	}
+	metadata := &C.Metadata{}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		C.NewPacketAdapter(packet, metadata).Drop()
+	}
+}
+func BenchmarkPacketAdapterZonedUDPAddrLifecycle(b *testing.B) {
+	packet := &fixedLocalPacket{
+		localAddr: &net.UDPAddr{
+			IP:   net.ParseIP("fe80::1"),
+			Port: 54321,
+			Zone: "eth0",
+		},
+	}
+	metadata := &C.Metadata{}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		C.NewPacketAdapter(packet, metadata).Drop()
+	}
+}
 func TestNewPacketAdapterPrefersThePacketsFlowKey(t *testing.T) {
 	key := netip.MustParseAddrPort("192.168.1.2:54321")
 
 	adapter := C.NewPacketAdapter(&flowKeyOnlyPacket{flowKey: key}, &C.Metadata{})
-	flowAdapter, ok := adapter.(interface{ FlowKey() netip.AddrPort })
-	require.True(t, ok)
-	require.Equal(t, key, flowAdapter.FlowKey())
+	require.Equal(t, key, adapter.FlowKey())
 }
 
 func TestNewPacketAdapterWithFlowKeyAllocatesOnlyTheAdapter(t *testing.T) {
@@ -118,7 +146,7 @@ func TestPacketAdapterDropIsSingleUse(t *testing.T) {
 	metadata := &C.Metadata{}
 	adapter := C.NewPacketAdapter(packet, metadata)
 	require.Equal(t, metadata, adapter.Metadata())
-	require.Equal(t, "192.168.1.2:54321", adapter.Key())
+	require.Equal(t, "192.168.1.2:54321", adapter.FlowKey().String())
 
 	adapter.Drop()
 	adapter.Drop()

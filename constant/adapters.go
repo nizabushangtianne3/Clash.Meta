@@ -288,8 +288,8 @@ type PacketAdapter interface {
 	UDPPacket
 	// Metadata returns destination metadata
 	Metadata() *Metadata
-	// Key is a SNAT key
-	Key() string
+	// FlowKey is the binary SNAT key
+	FlowKey() netip.AddrPort
 }
 
 type packetAdapter struct {
@@ -302,11 +302,6 @@ type packetAdapter struct {
 // Metadata returns destination metadata
 func (s *packetAdapter) Metadata() *Metadata {
 	return s.metadata
-}
-
-// Key is a SNAT key
-func (s *packetAdapter) Key() string {
-	return s.UDPPacket.LocalAddr().String()
 }
 
 func (s *packetAdapter) FlowKey() netip.AddrPort {
@@ -375,11 +370,7 @@ func addrPortFromLocalAddr(addr net.Addr) netip.AddrPort {
 		return netip.AddrPort{}
 	}
 	if zone != "" {
-		zoned, err := netip.ParseAddr(ip.String())
-		if err != nil {
-			return netip.AddrPort{}
-		}
-		parsed = zoned.WithZone(zone)
+		parsed = parsed.WithZone(zone)
 	}
 	return netip.AddrPortFrom(parsed.Unmap(), uint16(port))
 }

@@ -159,6 +159,15 @@ func BenchmarkPacketSenderSend(b *testing.B) {
 	})
 }
 
+type fixedLocalAddrPacket struct {
+	C.UDPPacket
+	localAddr net.Addr
+}
+
+func (packet fixedLocalAddrPacket) LocalAddr() net.Addr {
+	return packet.localAddr
+}
+
 type blockingDropPacket struct {
 	C.PacketAdapter
 	drops *atomic.Int32

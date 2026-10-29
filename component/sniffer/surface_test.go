@@ -15,8 +15,8 @@ type surfaceUDPPacket struct {
 	metadata *C.Metadata
 }
 
-func (s *surfaceUDPPacket) Metadata() *C.Metadata { return s.metadata }
-func (s *surfaceUDPPacket) Key() string           { return "" }
+func (s *surfaceUDPPacket) Metadata() *C.Metadata   { return s.metadata }
+func (s *surfaceUDPPacket) FlowKey() netip.AddrPort { return netip.AddrPort{} }
 func TestNeedAtLeastDataError(test *testing.T) {
 	err := needAtLeast(42)
 	assert.Contains(test, err.Error(), "42")
