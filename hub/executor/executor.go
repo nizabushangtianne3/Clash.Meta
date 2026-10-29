@@ -113,9 +113,9 @@ func ApplyConfig(cfg *config.Config, force bool) {
 	loadProvider(cfg.Providers)
 	updateProfile(cfg)
 	loadProvider(cfg.RuleProviders)
-	// Reclaim the provider-parse garbage without stalling the running config
-	// apply; the collect runs alongside the resumed tunnels.
-	go runtime.GC()
+	// Reclaim provider-parse garbage after an apply burst has settled instead
+	// of paying a full collection per reload.
+	runtimeGCScheduler.Schedule()
 	tunnel.OnRunning()
 	updateUpdater(cfg)
 
