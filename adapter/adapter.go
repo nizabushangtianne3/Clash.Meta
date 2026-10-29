@@ -278,9 +278,13 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 		return
 	}
 
-	tlsConfig, err := ca.GetTLSConfig(ca.Option{})
-	if err != nil {
-		return
+	secure := req.URL.Scheme == "https"
+	var tlsConfig *tls.Config
+	if secure {
+		tlsConfig, err = ca.GetTLSConfig(ca.Option{})
+		if err != nil {
+			return
+		}
 	}
 
 	exchange, err := newURLTestExchange(ctx, instance, req.URL.Hostname(), req.URL.Scheme == "https", tlsConfig)
