@@ -51,25 +51,23 @@ func TestReadPacketIntoKeepsTheAddrPort(t *testing.T) {
 		packet := NewPacket(1, 2, 1, 0, 4,
 			NewAddressAddrPort(target), []byte{0xaa, 0xbb, 0xcc, 0xdd})
 		raw := encodePacket(t, packet)
-		scratch := make([]byte, addressScratchSize)
 		reader := bufio.NewReaderSize(bytes.NewReader(raw), 4096)
 
-		got, err := readPacketInto(reader, scratch)
+		got, err := readPacketInto(reader)
 		require.NoError(t, err)
 		require.Equal(t, target, got.ADDR.AddrPort())
 		require.Equal(t, packet.DATA, got.DATA)
 	}
 }
 
-func TestReadPacketIntoAllocatesAddressForFragments(t *testing.T) {
-	packet := NewPacket(1, 2, 2, 0, 4,
+func TestReadPacketIntoRejectsUnknownAddressType(t *testing.T) {
+	packet := NewPacket(1, 2, 1, 0, 4,
 		NewAddressAddrPort(netip.MustParseAddrPort("203.0.113.7:443")),
 		[]byte{0xaa, 0xbb, 0xcc, 0xdd})
 	raw := encodePacket(t, packet)
-	scratch := make([]byte, addressScratchSize)
+	raw[packetFrameHeaderLen] = 0xfe
 	reader := bufio.NewReaderSize(bytes.NewReader(raw), 4096)
 
-	got, err := readPacketInto(reader, scratch)
-	require.NoError(t, err)
-	require.False(t, &scratch[0] == &got.ADDR.ADDR[0])
+	_, err := readPacketInto(reader)
+	require.Error(t, err)
 }

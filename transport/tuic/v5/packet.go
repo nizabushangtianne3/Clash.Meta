@@ -18,8 +18,6 @@ import (
 )
 
 const (
-	addressScratchSize = 256
-
 	packetCommandHeadLen   = 2
 	packetRoutingHeaderLen = 6
 	packetFrameHeaderLen   = packetCommandHeadLen + packetRoutingHeaderLen + 2
@@ -71,10 +69,9 @@ type quicStreamPacketConn struct {
 	closeDeferFn    func()
 	writeClosed     *atomic.Bool
 
-	addrScratch [addressScratchSize]byte
-	closeOnce   sync.Once
-	closeErr    error
-	closed      atomic.Bool
+	closeOnce sync.Once
+	closeErr  error
+	closed    atomic.Bool
 
 	deFragger
 }
@@ -173,7 +170,7 @@ func (q *quicStreamPacketConn) WaitReadFrom() (data []byte, addr netip.AddrPort,
 	if inputConn := q.inputConn; inputConn != nil { // copy inputConn avoid be nil in for loop
 		for {
 			var packet Packet
-			packet, err = readPacketInto(inputConn, q.addrScratch[:])
+			packet, err = readPacketInto(inputConn)
 			if err != nil {
 				return
 			}

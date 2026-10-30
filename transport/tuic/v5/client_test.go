@@ -36,16 +36,12 @@ func TestRawPacketFrameLen(t *testing.T) {
 				[]byte{0xaa, 0xbb, 0xcc, 0xdd}),
 		},
 		{
-			name: "domain",
-			packet: NewPacket(1, 2, 1, 0, 4, Address{
-				TYPE: AtypDomainName,
-				ADDR: []byte{11, 'e', 'x', 'a', 'm', 'p', 'l', 'e', '.', 'c', 'o', 'm'},
-				PORT: 443,
-			}, []byte{0xaa, 0xbb, 0xcc, 0xdd}),
+			name:   "domain",
+			packet: NewPacket(1, 2, 1, 0, 4, Address{typ: AtypDomainName, domain: []byte{11, 'e', 'x', 'a', 'm', 'p', 'l', 'e', '.', 'c', 'o', 'm'}, port: 443}, []byte{0xaa, 0xbb, 0xcc, 0xdd}),
 		},
 		{
 			name: "fragment without address",
-			packet: NewPacket(1, 2, 2, 1, 2, Address{TYPE: AtypNone},
+			packet: NewPacket(1, 2, 2, 1, 2, Address{typ: AtypNone},
 				[]byte{0xaa, 0xbb}),
 		},
 	}

@@ -265,18 +265,18 @@ func NewPacket(ASSOC_ID uint16, PKT_ID uint16, FRGA_TOTAL uint8, FRAG_ID uint8, 
 }
 
 func ReadPacketWithHead(head CommandHead, reader BufferedReader) (c Packet, err error) {
-	return readPacketWithHead(head, reader, nil)
+	return readPacketWithHead(head, reader)
 }
 
-func readPacketInto(reader BufferedReader, addrScratch []byte) (c Packet, err error) {
+func readPacketInto(reader BufferedReader) (c Packet, err error) {
 	head, err := ReadCommandHead(reader)
 	if err != nil {
 		return
 	}
-	return readPacketWithHead(head, reader, addrScratch)
+	return readPacketWithHead(head, reader)
 }
 
-func readPacketWithHead(head CommandHead, reader BufferedReader, addrScratch []byte) (c Packet, err error) {
+func readPacketWithHead(head CommandHead, reader BufferedReader) (c Packet, err error) {
 	c.CommandHead = head
 	if c.CommandHead.TYPE != PacketType {
 		err = fmt.Errorf("error command type: %s", c.CommandHead.TYPE)
@@ -297,23 +297,14 @@ func readPacketWithHead(head CommandHead, reader BufferedReader, addrScratch []b
 	if c.SIZE, err = readUint16(reader); err != nil {
 		return
 	}
-	if c.FRAG_TOTAL <= 1 {
-		c.ADDR, err = readAddress(reader, addrScratch)
-	} else {
-		c.ADDR, err = ReadAddress(reader)
-	}
+	// every payload is a pooled buffer owned by one reader: single fragments are
+	// handed to the caller, fragments are retained by the de-fragmenter until
+	// assembly returns the assembled buffer
+	c.ADDR, err = ReadAddress(reader)
 	if err != nil {
 		return
 	}
-	if c.FRAG_TOTAL <= 1 {
-		// one owner: the reader hands this buffer up and returns it to the pool
-		// once the datagram is written out or dropped
-		c.DATA = pool.Get(int(c.SIZE))
-	} else {
-		// fragment payloads are pooled values owned by the de-fragmenter until
-		// assembly returns one assembled payload
-		c.DATA = pool.Get(int(c.SIZE))
-	}
+	c.DATA = pool.Get(int(c.SIZE))
 	_, err = io.ReadFull(reader, c.DATA)
 	if err != nil {
 		return
@@ -322,7 +313,7 @@ func readPacketWithHead(head CommandHead, reader BufferedReader, addrScratch []b
 }
 
 func ReadPacket(reader BufferedReader) (c Packet, err error) {
-	return readPacketInto(reader, nil)
+	return readPacketInto(reader)
 }
 
 func (c Packet) WriteTo(writer BufferedWriter) (err error) {
@@ -440,38 +431,33 @@ const (
 )
 
 type Address struct {
-	TYPE byte
-	ADDR []byte
-	PORT uint16
+	typ    byte
+	ip     netip.Addr
+	domain []byte // length-prefixed on the wire
+	port   uint16
 }
 
 func NewAddress(metadata *C.Metadata) Address {
-	var addrType byte
-	var addr []byte
+	addr := Address{port: metadata.DstPort}
 	switch metadata.AddrType() {
 	case C.AtypIPv4:
-		addrType = AtypIPv4
-		addr = metadata.DstIP.AsSlice()
+		addr.typ = AtypIPv4
+		addr.ip = metadata.DstIP.Unmap()
 	case C.AtypIPv6:
-		addrType = AtypIPv6
-		addr = metadata.DstIP.AsSlice()
+		addr.typ = AtypIPv6
+		addr.ip = metadata.DstIP
 	case C.AtypDomainName:
-		addrType = AtypDomainName
-		addr = make([]byte, len(metadata.Host)+1)
-		addr[0] = byte(len(metadata.Host))
-		copy(addr[1:], metadata.Host)
+		addr.typ = AtypDomainName
+		addr.domain = make([]byte, len(metadata.Host)+1)
+		addr.domain[0] = byte(len(metadata.Host))
+		copy(addr.domain[1:], metadata.Host)
 	}
-
-	return Address{
-		TYPE: addrType,
-		ADDR: addr,
-		PORT: metadata.DstPort,
-	}
+	return addr
 }
 
 func NewAddressNetAddr(addr net.Addr) (Address, error) {
 	if addr, ok := addr.(interface{ AddrPort() netip.AddrPort }); ok {
-		if addrPort := addr.AddrPort(); addrPort.IsValid() { // sing's M.Socksaddr maybe return an invalid AddrPort if it's a DomainName
+		if addrPort := addr.AddrPort(); addrPort.IsValid() { // sing's M.Socksaddr may return an invalid AddrPort for a domain
 			return NewAddressAddrPort(addrPort), nil
 		}
 	}
@@ -487,112 +473,112 @@ func NewAddressNetAddr(addr net.Addr) (Address, error) {
 }
 
 func NewAddressAddrPort(addrPort netip.AddrPort) Address {
-	var addrType byte
-	port := addrPort.Port()
 	addr := addrPort.Addr().Unmap()
+	typ := AtypIPv6
 	if addr.Is4() {
-		addrType = AtypIPv4
-	} else {
-		addrType = AtypIPv6
+		typ = AtypIPv4
 	}
-	return Address{
-		TYPE: addrType,
-		ADDR: addr.AsSlice(),
-		PORT: port,
-	}
+	return Address{typ: typ, ip: addr, port: addrPort.Port()}
 }
 
 func ReadAddress(reader BufferedReader) (c Address, err error) {
-	return readAddress(reader, nil)
-}
-
-func readAddress(reader BufferedReader, scratch []byte) (c Address, err error) {
-	c.TYPE, err = reader.ReadByte()
+	c.typ, err = reader.ReadByte()
 	if err != nil {
 		return
 	}
-	switch c.TYPE {
+	switch c.typ {
 	case AtypIPv4:
-		c.ADDR, err = addressBuffer(net.IPv4len, scratch)
-		if err != nil {
-			return
+		var ip [4]byte
+		for i := range ip {
+			if ip[i], err = reader.ReadByte(); err != nil {
+				return
+			}
 		}
-		_, err = io.ReadFull(reader, c.ADDR)
-		if err != nil {
-			return
-		}
+		c.ip = netip.AddrFrom4(ip)
 	case AtypIPv6:
-		c.ADDR, err = addressBuffer(net.IPv6len, scratch)
-		if err != nil {
-			return
+		var ip [16]byte
+		for i := range ip {
+			if ip[i], err = reader.ReadByte(); err != nil {
+				return
+			}
 		}
-		_, err = io.ReadFull(reader, c.ADDR)
-		if err != nil {
-			return
-		}
+		c.ip = netip.AddrFrom16(ip)
 	case AtypDomainName:
 		var addrLen byte
-		addrLen, err = reader.ReadByte()
-		if err != nil {
+		if addrLen, err = reader.ReadByte(); err != nil {
 			return
 		}
-		c.ADDR, err = addressBuffer(int(addrLen)+1, scratch)
-		if err != nil {
+		c.domain = make([]byte, int(addrLen)+1)
+		c.domain[0] = addrLen
+		if _, err = io.ReadFull(reader, c.domain[1:]); err != nil {
 			return
 		}
-		c.ADDR[0] = addrLen
-		_, err = io.ReadFull(reader, c.ADDR[1:])
-		if err != nil {
-			return
-		}
-	}
-
-	if c.TYPE == AtypNone {
+	case AtypNone:
+		return
+	default:
+		err = fmt.Errorf("unknown address type: %#x", c.typ)
 		return
 	}
-	c.PORT, err = readUint16(reader)
+	c.port, err = readUint16(reader)
 	return
 }
 
-func addressBuffer(size int, scratch []byte) ([]byte, error) {
-	if scratch == nil {
-		return make([]byte, size), nil
-	}
-	if size > len(scratch) {
-		return nil, io.ErrShortBuffer
-	}
-	return scratch[:size], nil
+func (a Address) withoutAddress() Address {
+	a.typ = AtypNone
+	a.ip = netip.Addr{}
+	a.domain = nil
+	return a
 }
 
-func (c Address) WriteTo(writer BufferedWriter) (err error) {
-	err = writer.WriteByte(c.TYPE)
+func (a Address) WriteTo(writer BufferedWriter) (err error) {
+	if err = writer.WriteByte(a.typ); err != nil {
+		return
+	}
+	if a.typ == AtypNone {
+		return
+	}
+	if a.typ == AtypDomainName {
+		_, err = writer.Write(a.domain)
+	} else if a.ip.Is4() {
+		// WriteByte keeps fixed-width addresses off the writer interface escape path.
+		for _, b := range a.ip.As4() {
+			if err = writer.WriteByte(b); err != nil {
+				return
+			}
+		}
+	} else {
+		for _, b := range a.ip.As16() {
+			if err = writer.WriteByte(b); err != nil {
+				return
+			}
+		}
+	}
 	if err != nil {
 		return
 	}
-	if c.TYPE == AtypNone {
-		return
-	}
-	_, err = writer.Write(c.ADDR[:])
-	if err != nil {
-		return
-	}
-	return writeUint16(writer, c.PORT)
+	return writeUint16(writer, a.port)
 }
 
-func (c Address) String() string {
-	switch c.TYPE {
-	case AtypDomainName:
-		return net.JoinHostPort(string(c.ADDR[1:]), strconv.Itoa(int(c.PORT)))
-	default:
-		addr, _ := netip.AddrFromSlice(c.ADDR)
-		addrPort := netip.AddrPortFrom(addr, c.PORT)
-		return addrPort.String()
+func (a Address) String() string {
+	if a.typ == AtypDomainName {
+		return net.JoinHostPort(string(a.domain[1:]), strconv.Itoa(int(a.port)))
 	}
+	return netip.AddrPortFrom(a.ip.Unmap(), a.port).String()
 }
 
-func (c Address) SocksAddr() socks5.Addr {
-	addr := make([]byte, 1+len(c.ADDR)+2)
-	switch c.TYPE {
+func (a Address) SocksAddr() socks5.Addr {
+	var body []byte
+	if a.typ == AtypDomainName {
+		body = a.domain
+	} else if a.ip.Is4() {
+		ip4 := a.ip.As4()
+		body = ip4[:]
+	} else {
+		ip16 := a.ip.As16()
+		body = ip16[:]
+	}
+	addr := make([]byte, 1+len(body)+2)
+	switch a.typ {
 	case AtypIPv4:
 		addr[0] = socks5.AtypIPv4
 	case AtypIPv6:
@@ -600,35 +586,32 @@ func (c Address) SocksAddr() socks5.Addr {
 	case AtypDomainName:
 		addr[0] = socks5.AtypDomainName
 	}
-	copy(addr[1:], c.ADDR)
-	binary.BigEndian.PutUint16(addr[len(addr)-2:], c.PORT)
+	copy(addr[1:], body)
+	binary.BigEndian.PutUint16(addr[len(addr)-2:], a.port)
 	return addr
 }
 
-func (c Address) UDPAddr() *net.UDPAddr {
-	return &net.UDPAddr{
-		IP:   c.ADDR,
-		Port: int(c.PORT),
-		Zone: "",
+func (a Address) UDPAddr() *net.UDPAddr {
+	return &net.UDPAddr{IP: a.ip.AsSlice(), Port: int(a.port), Zone: ""}
+}
+
+func (a Address) AddrPort() netip.AddrPort {
+	switch a.typ {
+	case AtypIPv4, AtypIPv6:
+		return netip.AddrPortFrom(a.ip.Unmap(), a.port)
+	default:
+		return netip.AddrPort{}
 	}
 }
 
-func (c Address) AddrPort() netip.AddrPort {
-	switch c.TYPE {
-	case AtypIPv4:
-		var ip [net.IPv4len]byte
-		_ = copy(ip[:], c.ADDR)
-		return netip.AddrPortFrom(netip.AddrFrom4(ip), c.PORT)
-	case AtypIPv6:
-		var ip [net.IPv6len]byte
-		_ = copy(ip[:], c.ADDR)
-		return netip.AddrPortFrom(netip.AddrFrom16(ip), c.PORT)
+func (a Address) BytesLen() int {
+	if a.typ == AtypNone {
+		return 1
 	}
-	return netip.AddrPort{}
-}
-
-func (c Address) BytesLen() int {
-	return 1 + len(c.ADDR) + 2
+	if a.typ == AtypDomainName {
+		return 1 + len(a.domain) + 2
+	}
+	return 1 + a.ip.BitLen()/8 + 2
 }
 
 const (

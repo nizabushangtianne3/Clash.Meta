@@ -43,7 +43,7 @@ func fragWriteNative(quicConn *quic.Conn, packet Packet, buf *bytes.Buffer, frag
 		if err != nil {
 			return
 		}
-		packet.ADDR.TYPE = AtypNone // avoid "fragment 2/2: address in non-first fragment"
+		packet.ADDR = packet.ADDR.withoutAddress() // avoid "fragment 2/2: address in non-first fragment"
 	}
 	return
 }
@@ -57,7 +57,8 @@ type deFragger struct {
 const maxPartialMessages = 64
 
 type packetBag struct {
-	frags    []Packet
+	first    Packet
+	frags    [][]byte
 	filled   [4]uint64
 	count    uint8
 	lastSeen uint64
@@ -67,10 +68,11 @@ type packetBag struct {
 func newPacketBag() *packetBag { return new(packetBag) }
 
 func (b *packetBag) reset() {
-	for i := range b.frags {
-		_ = pool.Put(b.frags[i].DATA)
-		b.frags[i] = Packet{}
+	for _, data := range b.frags {
+		_ = pool.Put(data)
 	}
+	clear(b.frags)
+	b.first = Packet{}
 	b.filled = [4]uint64{}
 	b.count = 0
 }
@@ -78,7 +80,7 @@ func (b *packetBag) reset() {
 func (b *packetBag) reserve(size uint8) {
 	clear(b.frags)
 	if cap(b.frags) < int(size) {
-		b.frags = make([]Packet, size)
+		b.frags = make([][]byte, size)
 		return
 	}
 	b.frags = b.frags[:size]
@@ -86,17 +88,17 @@ func (b *packetBag) reserve(size uint8) {
 
 func (b *packetBag) assemble() Packet {
 	size := 0
-	for _, frag := range b.frags {
-		size += len(frag.DATA)
+	for _, data := range b.frags {
+		size += len(data)
 	}
 
 	data := pool.Get(size)
 	offset := 0
-	for _, frag := range b.frags {
-		offset += copy(data[offset:], frag.DATA)
+	for _, fragment := range b.frags {
+		offset += copy(data[offset:], fragment)
 	}
 
-	packet := b.frags[0]
+	packet := b.first
 	packet.SIZE = uint16(size)
 	packet.DATA = data[:size]
 	packet.FRAG_ID = 0
@@ -166,9 +168,10 @@ func (d *deFragger) feedLocked(m *Packet, bag *packetBag) (packet Packet, ok boo
 	if int(m.FRAG_TOTAL) != len(bag.frags) {
 		// A new message invalidates any partially received message in the bag.
 		bag.reset()
+		bag.first = *m
 		bag.reserve(m.FRAG_TOTAL)
 		bag.count = 1
-		bag.frags[m.FRAG_ID] = *m
+		bag.frags[m.FRAG_ID] = m.DATA
 		bag.filled[m.FRAG_ID>>6] |= 1 << (m.FRAG_ID & 63)
 		return Packet{}, false
 	}
@@ -177,7 +180,7 @@ func (d *deFragger) feedLocked(m *Packet, bag *packetBag) (packet Packet, ok boo
 		m.DATA = nil
 		return Packet{}, false
 	}
-	bag.frags[m.FRAG_ID] = *m
+	bag.frags[m.FRAG_ID] = m.DATA
 	bag.filled[m.FRAG_ID>>6] |= 1 << (m.FRAG_ID & 63)
 	bag.count++
 	if int(bag.count) != len(bag.frags) {

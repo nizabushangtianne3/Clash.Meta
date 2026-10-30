@@ -23,7 +23,7 @@ func fragmentPacket(id, total uint8, size uint16, data []byte) Packet {
 		DATA:        data,
 	}
 	if id != 0 {
-		packet.ADDR = Address{TYPE: AtypNone}
+		packet.ADDR = Address{typ: AtypNone}
 	}
 	return packet
 }
@@ -122,7 +122,6 @@ func BenchmarkFeedFragmentedReceive(b *testing.B) {
 		}
 		raw = append(raw, wire.Bytes())
 	}
-	scratch := make([]byte, addressScratchSize)
 	rawReader := bytes.NewReader(nil)
 	buffered := bufio.NewReaderSize(rawReader, 4096)
 	assembled := Packet{}
@@ -133,7 +132,7 @@ func BenchmarkFeedFragmentedReceive(b *testing.B) {
 		for _, frame := range raw {
 			rawReader.Reset(frame)
 			buffered.Reset(rawReader)
-			packet, err := readPacketInto(buffered, scratch)
+			packet, err := readPacketInto(buffered)
 			if err != nil {
 				b.Fatal(err)
 			}
