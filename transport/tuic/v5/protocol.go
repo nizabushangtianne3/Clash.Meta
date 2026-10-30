@@ -1,6 +1,7 @@
 package v5
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -539,24 +540,44 @@ func (a Address) WriteTo(writer BufferedWriter) (err error) {
 	}
 	if a.typ == AtypDomainName {
 		_, err = writer.Write(a.domain)
-	} else if a.ip.Is4() {
-		// WriteByte keeps fixed-width addresses off the writer interface escape path.
-		for _, b := range a.ip.As4() {
-			if err = writer.WriteByte(b); err != nil {
-				return
+		if err != nil {
+			return
+		}
+		return writeUint16(writer, a.port)
+	}
+	buffer, ok := writer.(*bytes.Buffer)
+	if !ok {
+		if a.ip.Is4() {
+			for _, b := range a.ip.As4() {
+				if err = writer.WriteByte(b); err != nil {
+					return
+				}
+			}
+		} else {
+			for _, b := range a.ip.As16() {
+				if err = writer.WriteByte(b); err != nil {
+					return
+				}
 			}
 		}
+		return writeUint16(writer, a.port)
+	}
+	// The concrete path keeps fixed-width address arrays on the stack and folds
+	// the six fixed-width bytes into two writes.
+	if a.ip.Is4() {
+		ip4 := a.ip.As4()
+		_, err = buffer.Write(ip4[:])
 	} else {
-		for _, b := range a.ip.As16() {
-			if err = writer.WriteByte(b); err != nil {
-				return
-			}
-		}
+		ip16 := a.ip.As16()
+		_, err = buffer.Write(ip16[:])
 	}
 	if err != nil {
 		return
 	}
-	return writeUint16(writer, a.port)
+	var port [2]byte
+	binary.BigEndian.PutUint16(port[:], a.port)
+	_, err = buffer.Write(port[:])
+	return
 }
 
 func (a Address) String() string {

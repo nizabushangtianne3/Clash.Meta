@@ -1,6 +1,7 @@
 package v5
 
 import (
+	"bytes"
 	"net/netip"
 	"testing"
 
@@ -18,4 +19,31 @@ func TestAddressAddrPortRoundTrip(t *testing.T) {
 func TestAddressAddrPortRejectsADomainAddress(t *testing.T) {
 	domain := NewAddress(&C.Metadata{Host: "example.com", DstPort: 5353})
 	require.False(t, domain.AddrPort().IsValid())
+}
+
+type fallbackBufferedWriter struct {
+	bytes.Buffer
+}
+
+func (w *fallbackBufferedWriter) WriteByte(b byte) error {
+	w.Buffer.WriteByte(b)
+	return nil
+}
+
+func TestAddressConcreteAndFallbackWritersKeepWireShape(t *testing.T) {
+	addresses := []Address{
+		NewAddressAddrPort(netip.MustParseAddrPort("203.0.113.7:443")),
+		NewAddressAddrPort(netip.MustParseAddrPort("[2001:db8::7]:443")),
+		NewAddress(&C.Metadata{Host: "example.com", DstPort: 443}),
+		{typ: AtypNone},
+	}
+	for _, addr := range addresses {
+		var fast bytes.Buffer
+		require.NoError(t, addr.WriteTo(&fast))
+
+		var fallback fallbackBufferedWriter
+		require.NoError(t, addr.WriteTo(&fallback))
+		require.Equal(t, fast.Bytes(), fallback.Bytes())
+		require.Equal(t, addr.BytesLen(), fast.Len())
+	}
 }
