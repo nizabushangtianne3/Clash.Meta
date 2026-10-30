@@ -99,8 +99,8 @@ func (s *serverHandler) parsePacket(packet *Packet, udpRelayMode types.UdpRelayM
 	if input.writeClosed.Load() {
 		return nil
 	}
-	packetPtr := input.Feed(packet)
-	if packetPtr == nil {
+	assembled, ok := input.Feed(packet)
+	if !ok {
 		return
 	}
 
@@ -115,9 +115,9 @@ func (s *serverHandler) parsePacket(packet *Packet, udpRelayMode types.UdpRelayM
 		writeClosed:           &input.writeClosed,
 	}
 
-	return s.HandleUdpFn(packetPtr.ADDR.SocksAddr(), &serverUDPPacket{
+	return s.HandleUdpFn(assembled.ADDR.SocksAddr(), &serverUDPPacket{
 		pc:     pc,
-		packet: packetPtr,
+		packet: assembled,
 		rAddr:  N.NewCustomAddr("tuic", fmt.Sprintf("tuic-%s-%d", s.uuid, assocId), s.quicConn.RemoteAddr()), // for tunnel's handleUDPConn
 	}, inbound.WithInUser(s.authUUID.Load()))
 }
@@ -201,7 +201,7 @@ type serverUDPInput struct {
 
 type serverUDPPacket struct {
 	pc     *quicStreamPacketConn
-	packet *Packet
+	packet Packet
 	rAddr  net.Addr
 }
 

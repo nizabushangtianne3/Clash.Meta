@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"sync"
 
-	"github.com/metacubex/mihomo/common/lru"
+	"github.com/metacubex/mihomo/common/pool"
 
 	"github.com/metacubex/quic-go"
 )
@@ -49,68 +49,142 @@ func fragWriteNative(quicConn *quic.Conn, packet Packet, buf *bytes.Buffer, frag
 }
 
 type deFragger struct {
-	lru  *lru.LruCache[uint16, *packetBag]
-	once sync.Once
-}
-
-type packetBag struct {
-	frags []*Packet
-	count uint8
+	bags  map[uint16]*packetBag
+	next  uint64
 	mutex sync.Mutex
 }
 
-func newPacketBag() *packetBag {
-	return new(packetBag)
+const maxPartialMessages = 64
+
+type packetBag struct {
+	frags    []Packet
+	filled   [4]uint64
+	count    uint8
+	lastSeen uint64
+	mutex    sync.Mutex
 }
 
-func (d *deFragger) init() {
-	if d.lru == nil {
-		d.lru = lru.New(
-			lru.WithAge[uint16, *packetBag](10),
-			lru.WithUpdateAgeOnGet[uint16, *packetBag](),
-		)
+func newPacketBag() *packetBag { return new(packetBag) }
+
+func (b *packetBag) reset() {
+	for i := range b.frags {
+		_ = pool.Put(b.frags[i].DATA)
+		b.frags[i] = Packet{}
 	}
+	b.filled = [4]uint64{}
+	b.count = 0
 }
 
-func (d *deFragger) Feed(m *Packet) *Packet {
-	if m.FRAG_TOTAL <= 1 {
-		return m
+func (b *packetBag) reserve(size uint8) {
+	clear(b.frags)
+	if cap(b.frags) < int(size) {
+		b.frags = make([]Packet, size)
+		return
 	}
-	if m.FRAG_ID >= m.FRAG_TOTAL {
-		// wtf is this?
-		return nil
+	b.frags = b.frags[:size]
+}
+
+func (b *packetBag) assemble() Packet {
+	size := 0
+	for _, frag := range b.frags {
+		size += len(frag.DATA)
 	}
-	d.once.Do(d.init) // lazy init
-	bag, _ := d.lru.GetOrStore(m.PKT_ID, newPacketBag)
+
+	data := pool.Get(size)
+	offset := 0
+	for _, frag := range b.frags {
+		offset += copy(data[offset:], frag.DATA)
+	}
+
+	packet := b.frags[0]
+	packet.SIZE = uint16(size)
+	packet.DATA = data[:size]
+	packet.FRAG_ID = 0
+	packet.FRAG_TOTAL = 1
+	return packet
+}
+
+func (d *deFragger) bagFor(m *Packet) *packetBag {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+	if d.bags == nil {
+		d.bags = make(map[uint16]*packetBag)
+	}
+	bag, ok := d.bags[m.PKT_ID]
+	if ok {
+		d.touch(bag)
+		return bag
+	}
+	if len(d.bags) >= maxPartialMessages {
+		d.evictOldest()
+	}
+	bag = newPacketBag()
+	bag.lastSeen = d.next
+	d.next++
+	d.bags[m.PKT_ID] = bag
+	return bag
+}
+
+func (d *deFragger) touch(bag *packetBag) {
+	bag.lastSeen = d.next
+	d.next++
+}
+
+func (d *deFragger) evictOldest() {
+	var oldest *packetBag
+	var oldestKey uint16
+	for key, bag := range d.bags {
+		if oldest == nil || bag.lastSeen < oldest.lastSeen {
+			oldest, oldestKey = bag, key
+		}
+	}
+	if oldest == nil {
+		return
+	}
+	oldest.mutex.Lock()
+	oldest.reset()
+	oldest.mutex.Unlock()
+	delete(d.bags, oldestKey)
+}
+
+func (d *deFragger) Feed(m *Packet) (Packet, bool) {
+	bag := d.bagFor(m)
 	bag.mutex.Lock()
 	defer bag.mutex.Unlock()
+	return d.feedLocked(m, bag)
+}
+
+func (d *deFragger) feedLocked(m *Packet, bag *packetBag) (packet Packet, ok bool) {
+	if m.FRAG_TOTAL <= 1 {
+		return *m, true
+	}
+	if m.FRAG_ID >= m.FRAG_TOTAL {
+		_ = pool.Put(m.DATA)
+		m.DATA = nil
+		return Packet{}, false
+	}
 	if int(m.FRAG_TOTAL) != len(bag.frags) {
-		// new message, clear previous state
-		bag.frags = make([]*Packet, m.FRAG_TOTAL)
+		// A new message invalidates any partially received message in the bag.
+		bag.reset()
+		bag.reserve(m.FRAG_TOTAL)
 		bag.count = 1
-		bag.frags[m.FRAG_ID] = m
-		return nil
+		bag.frags[m.FRAG_ID] = *m
+		bag.filled[m.FRAG_ID>>6] |= 1 << (m.FRAG_ID & 63)
+		return Packet{}, false
 	}
-	if bag.frags[m.FRAG_ID] != nil {
-		return nil
+	if bag.filled[m.FRAG_ID>>6]&(1<<(m.FRAG_ID&63)) != 0 {
+		_ = pool.Put(m.DATA)
+		m.DATA = nil
+		return Packet{}, false
 	}
-	bag.frags[m.FRAG_ID] = m
+	bag.frags[m.FRAG_ID] = *m
+	bag.filled[m.FRAG_ID>>6] |= 1 << (m.FRAG_ID & 63)
 	bag.count++
 	if int(bag.count) != len(bag.frags) {
-		return nil
+		return Packet{}, false
 	}
 
-	// all fragments received, assemble
-	var data []byte
-	for _, frag := range bag.frags {
-		data = append(data, frag.DATA...)
-	}
-	p := *bag.frags[0] // recover from first fragment
-	p.SIZE = uint16(len(data))
-	p.DATA = data
-	p.FRAG_ID = 0
-	p.FRAG_TOTAL = 1
-	bag.frags = nil
-	d.lru.Delete(m.PKT_ID)
-	return &p
+	packet = bag.assemble()
+	bag.reset()
+	return packet, true
 }

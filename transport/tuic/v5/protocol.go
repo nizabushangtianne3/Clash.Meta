@@ -310,8 +310,9 @@ func readPacketWithHead(head CommandHead, reader BufferedReader, addrScratch []b
 		// once the datagram is written out or dropped
 		c.DATA = pool.Get(int(c.SIZE))
 	} else {
-		// fragments stay in the de-fragmenter until the message completes
-		c.DATA = make([]byte, c.SIZE)
+		// fragment payloads are pooled values owned by the de-fragmenter until
+		// assembly returns one assembled payload
+		c.DATA = pool.Get(int(c.SIZE))
 	}
 	_, err = io.ReadFull(reader, c.DATA)
 	if err != nil {

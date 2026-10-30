@@ -150,11 +150,13 @@ func (q *quicStreamPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err err
 			if err != nil {
 				return
 			}
-			if packetPtr := q.deFragger.Feed(&packet); packetPtr != nil {
-				n = copy(p, packetPtr.DATA)
-				addr = packetPtr.ADDR.UDPAddr()
+			packet, ok := q.deFragger.Feed(&packet)
+			if ok {
+				n = copy(p, packet.DATA)
+				addr = packet.ADDR.UDPAddr()
 				// the caller copied the payload; the read no longer owns it
-				_ = pool.Put(packetPtr.DATA)
+				_ = pool.Put(packet.DATA)
+				packet.DATA = nil
 				return
 			}
 		}
@@ -175,9 +177,10 @@ func (q *quicStreamPacketConn) WaitReadFrom() (data []byte, addr netip.AddrPort,
 			if err != nil {
 				return
 			}
-			if packetPtr := q.deFragger.Feed(&packet); packetPtr != nil {
-				data = packetPtr.DATA
-				addr = packetPtr.ADDR.AddrPort()
+			packet, ok := q.deFragger.Feed(&packet)
+			if ok {
+				data = packet.DATA
+				addr = packet.ADDR.AddrPort()
 				return
 			}
 		}
