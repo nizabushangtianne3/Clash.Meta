@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/netip"
 	"strconv"
+	"strings"
 
 	M "github.com/metacubex/sing/common/metadata"
 )
@@ -221,7 +222,15 @@ type Metadata struct {
 }
 
 func (m *Metadata) RemoteAddress() string {
-	return net.JoinHostPort(m.String(), strconv.FormatUint(uint64(m.DstPort), 10))
+	if m.Host == "" && m.DstIP.IsValid() {
+		return netip.AddrPortFrom(m.DstIP.Unmap(), m.DstPort).String()
+	}
+
+	host := m.String()
+	if strings.Contains(host, ":") {
+		return "[" + host + "]:" + strconv.FormatUint(uint64(m.DstPort), 10)
+	}
+	return host + ":" + strconv.FormatUint(uint64(m.DstPort), 10)
 }
 
 func (m *Metadata) SourceAddress() string {
