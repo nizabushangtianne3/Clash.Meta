@@ -34,7 +34,7 @@ func NewEnhancePacketConn(pc net.PacketConn) EnhancePacketConn {
 		return newEnhanceSingPacketConn(singPC)
 	}
 	if withBufferPC, isWithBufferPC := pc.(withBufferPacketConn); isWithBufferPC {
-		return &enhanceWithBufferPacketConn{withBufferPacketConn: withBufferPC}
+		return newEnhanceWithBufferPacketConn(withBufferPC)
 	}
 	return &enhancePacketConn{PacketConn: pc}
 }

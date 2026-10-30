@@ -114,10 +114,11 @@ func testPayloadName(size int) string {
 }
 
 type bufferReadConn struct {
-	closed  bool
-	payload []byte
-	read    bool
-	err     error
+	closed   bool
+	payload  []byte
+	read     bool
+	err      error
+	peerAddr net.Addr
 }
 
 func (c *bufferReadConn) Close() error {
@@ -151,14 +152,15 @@ func (c *bufferReadConn) ReadFromWithBuffer(getBuffer func(sizeHint int) []byte)
 	c.read = true
 	buf := getBuffer(len(c.payload))
 	copy(buf, c.payload)
-	return len(c.payload), &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 53}, nil
+	return len(c.payload), c.peerAddr, nil
 }
 
 func TestWaitReadFromWithBufferReturnsPayload(t *testing.T) {
 	payload := []byte("with-buffer")
-	conn := &enhanceWithBufferPacketConn{
-		withBufferPacketConn: &bufferReadConn{payload: payload},
-	}
+	conn := newEnhanceWithBufferPacketConn(&bufferReadConn{
+		payload:  payload,
+		peerAddr: &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 53},
+	})
 
 	data, addr, err := conn.WaitReadFrom()
 	require.NoError(t, err)
@@ -170,9 +172,10 @@ func TestWaitReadFromWithBufferReturnsPayload(t *testing.T) {
 
 func BenchmarkWaitReadFromWithBuffer(b *testing.B) {
 	payload := make([]byte, 1500)
-	conn := &enhanceWithBufferPacketConn{
-		withBufferPacketConn: &bufferReadConn{payload: payload},
-	}
+	conn := newEnhanceWithBufferPacketConn(&bufferReadConn{
+		payload:  payload,
+		peerAddr: &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 53},
+	})
 	b.ReportAllocs()
 	b.SetBytes(int64(len(payload)))
 	b.ResetTimer()

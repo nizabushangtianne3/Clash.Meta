@@ -14,7 +14,14 @@ type withBufferPacketConn interface {
 
 type enhanceWithBufferPacketConn struct {
 	withBufferPacketConn
-	readBuf []byte
+	readBuf         []byte
+	getReadBufferFn func(sizeHint int) []byte
+}
+
+func newEnhanceWithBufferPacketConn(pc withBufferPacketConn) *enhanceWithBufferPacketConn {
+	c := &enhanceWithBufferPacketConn{withBufferPacketConn: pc}
+	c.getReadBufferFn = c.getReadBuffer
+	return c
 }
 
 func (c *enhanceWithBufferPacketConn) getReadBuffer(sizeHint int) []byte {
@@ -27,7 +34,7 @@ func (c *enhanceWithBufferPacketConn) WaitReadFrom() (data []byte, addr netip.Ad
 		readN   int
 		rawAddr net.Addr
 	)
-	readN, rawAddr, err = c.ReadFromWithBuffer(c.getReadBuffer)
+	readN, rawAddr, err = c.ReadFromWithBuffer(c.getReadBufferFn)
 	addr = AddrPortFromNetAddr(rawAddr)
 	if err != nil && c.readBuf != nil {
 		_ = pool.Put(c.readBuf)
