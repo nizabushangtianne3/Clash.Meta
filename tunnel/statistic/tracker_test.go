@@ -126,6 +126,32 @@ func TestTCPTrackerUnwrapReturnsPrebuiltCounts(t *testing.T) {
 	assert.Same(t, &writerCounts[0], &writerCountsAgain[0])
 }
 
+func TestTrackerClonesMetadataIntoCreationSnapshot(t *testing.T) {
+	manager := newStripedManager()
+	metadata := &C.Metadata{
+		NetWork: C.TCP,
+		Host:    "original.example",
+		DstPort: 443,
+	}
+	conn, remote := net.Pipe()
+	t.Cleanup(func() {
+		_ = conn.Close()
+		_ = remote.Close()
+	})
+	tracker := NewTCPTracker(newStatisticTestConn(conn), manager, metadata, nil, 0, 0, false)
+
+	metadata.Host = "mutated.example"
+	metadata.SpecialRules = "mutated"
+
+	snapshot := tracker.Info()
+	assert.Equal(t, "original.example", snapshot.Metadata.Host)
+	assert.Empty(t, snapshot.Metadata.SpecialRules)
+
+	var output []byte
+	output = snapshot.appendJSON(output)
+	assert.Contains(t, string(output), `"host":"original.example"`)
+	assert.NotContains(t, string(output), `"host":"mutated.example"`)
+}
 func TestUDPTrackerAccountsPackets(t *testing.T) {
 	manager := newStripedManager()
 	server, err := net.ListenPacket("udp", "127.0.0.1:0")

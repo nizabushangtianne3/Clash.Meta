@@ -51,6 +51,8 @@ type TrackerInfo struct {
 	// RFC3339Nano wire form.
 	startJSON     []byte
 	startJSONOnce sync.Once
+	metadataJSON  []byte
+	metadataOnce  sync.Once
 }
 
 type tcpTracker struct {
@@ -134,7 +136,8 @@ func (tt *tcpTracker) Upstream() any {
 }
 
 func NewTCPTracker(conn C.Conn, manager *Manager, metadata *C.Metadata, rule C.Rule, uploadTotal int64, downloadTotal int64, pushToManager bool) *tcpTracker {
-	metadata.RemoteDst = conn.RemoteDestination()
+	snapshot := metadata.Clone()
+	snapshot.RemoteDst = conn.RemoteDestination()
 
 	tt := &tcpTracker{
 		Conn:    conn,
@@ -143,7 +146,7 @@ func NewTCPTracker(conn C.Conn, manager *Manager, metadata *C.Metadata, rule C.R
 		TrackerInfo: TrackerInfo{
 			UUID:          newTrackerID(),
 			Start:         time.Now(),
-			Metadata:      metadata,
+			Metadata:      snapshot,
 			Chain:         conn.Chains(),
 			ProviderChain: conn.ProviderChains(),
 			Rule:          "",
@@ -248,7 +251,8 @@ func (ut *udpTracker) Upstream() any {
 }
 
 func NewUDPTracker(conn C.PacketConn, manager *Manager, metadata *C.Metadata, rule C.Rule, uploadTotal int64, downloadTotal int64, pushToManager bool) *udpTracker {
-	metadata.RemoteDst = conn.RemoteDestination()
+	snapshot := metadata.Clone()
+	snapshot.RemoteDst = conn.RemoteDestination()
 
 	ut := &udpTracker{
 		PacketConn: conn,
@@ -257,7 +261,7 @@ func NewUDPTracker(conn C.PacketConn, manager *Manager, metadata *C.Metadata, ru
 		TrackerInfo: TrackerInfo{
 			UUID:          newTrackerID(),
 			Start:         time.Now(),
-			Metadata:      metadata,
+			Metadata:      snapshot,
 			Chain:         conn.Chains(),
 			ProviderChain: conn.ProviderChains(),
 			Rule:          "",

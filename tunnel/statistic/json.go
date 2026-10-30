@@ -49,9 +49,7 @@ func (i *TrackerInfo) appendJSON(dst []byte) []byte {
 	if i.Metadata == nil {
 		dst = append(dst, 'n', 'u', 'l', 'l')
 	} else {
-		dst = append(dst, '{')
-		dst = appendMetadataJSON(dst, i.Metadata)
-		dst = append(dst, '}')
+		dst = i.appendMetadataJSON(dst)
 	}
 	dst = append(dst, `,"upload":`...)
 	dst = strconv.AppendInt(dst, i.UploadTotal.Load(), 10)
@@ -77,6 +75,17 @@ func (i *TrackerInfo) appendStartJSON(dst []byte) []byte {
 	dst = append(dst, '"')
 	dst = append(dst, i.startJSON...)
 	return append(dst, '"')
+}
+
+func (i *TrackerInfo) appendMetadataJSON(dst []byte) []byte {
+	i.metadataOnce.Do(func() {
+		buf := make([]byte, 0, 512)
+		buf = append(buf, '{')
+		buf = appendMetadataJSON(buf, i.Metadata)
+		buf = append(buf, '}')
+		i.metadataJSON = buf
+	})
+	return append(dst, i.metadataJSON...)
 }
 
 func appendMetadataJSON(dst []byte, md *C.Metadata) []byte {
