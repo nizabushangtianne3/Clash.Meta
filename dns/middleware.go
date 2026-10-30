@@ -181,19 +181,17 @@ func withFakeIP(skipper *fakeip.Skipper, fakePool *fakeip.Pool, fakePool6 *fakei
 				return next(ctx, r)
 			}
 
-			// The reply carries the query's own header, question and EDNS0 record;
-			// none of them gets written to, so copying the message would only clone
-			// what this answers unchanged.
-			msg := *r
-			msg.Response = true
-			msg.Rcode = D.RcodeSuccess
-			msg.Answer = []D.RR{rr}
+			// The request is owned by this DNS exchange, so the reply reuses its
+			// header, question and EDNS0 record instead of cloning them.
+			r.Response = true
+			r.Rcode = D.RcodeSuccess
+			r.Answer = []D.RR{rr}
 
-			setMsgTTL(&msg, uint32(fakeIPTTL))
-			msg.Authoritative = true
-			msg.RecursionAvailable = true
+			setMsgTTL(r, uint32(fakeIPTTL))
+			r.Authoritative = true
+			r.RecursionAvailable = true
 
-			return &msg, nil
+			return r, nil
 		}
 	}
 }

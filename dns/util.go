@@ -291,18 +291,15 @@ func wrapClientWithEdns0Subnet(c dnsClient, params map[string]string) dnsClient 
 	return c
 }
 
-// handleMsgWithEmptyAnswer answers a query the pool has nothing for. It
-// carries the query's own header, question and EDNS0 record, none of which is
-// written to, so copying the message would only clone what comes back
-// unchanged.
+// handleMsgWithEmptyAnswer reuses the request owned by this DNS exchange and
+// keeps its header, question and EDNS0 record.
 func handleMsgWithEmptyAnswer(r *D.Msg) *D.Msg {
-	msg := *r
-	msg.Answer = []D.RR{}
-	msg.Response = true
-	msg.Rcode = D.RcodeSuccess
-	msg.Authoritative = true
-	msg.RecursionAvailable = true
-	return &msg
+	r.Answer = r.Answer[:0]
+	r.Response = true
+	r.Rcode = D.RcodeSuccess
+	r.Authoritative = true
+	r.RecursionAvailable = true
+	return r
 }
 
 func msgToIP(msg *D.Msg) (ips []netip.Addr) {
