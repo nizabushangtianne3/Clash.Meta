@@ -50,10 +50,9 @@ func TestReadPacketIntoKeepsTheAddrPort(t *testing.T) {
 	} {
 		packet := NewPacket(1, 4, NewAddressAddrPort(target), []byte{0xaa, 0xbb, 0xcc, 0xdd})
 		raw := encodePacket(t, packet)
-		scratch := make([]byte, addressScratchSize)
 		reader := bufio.NewReaderSize(bytes.NewReader(raw), 4096)
 
-		got, err := readPacketInto(reader, scratch)
+		got, err := readPacketInto(reader)
 		require.NoError(t, err)
 		require.Equal(t, target, got.ADDR.AddrPort())
 		require.Equal(t, packet.DATA, got.DATA)

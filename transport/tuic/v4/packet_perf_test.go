@@ -88,11 +88,10 @@ func TestReadPacketIntoAllocatesPayloadOnly(t *testing.T) {
 
 	rawReader := bytes.NewReader(raw)
 	reader := bufio.NewReaderSize(rawReader, 4096)
-	scratch := make([]byte, addressScratchSize)
 	allocations := testing.AllocsPerRun(1000, func() {
 		rawReader.Reset(raw)
 		reader.Reset(rawReader)
-		if _, err := readPacketInto(reader, scratch); err != nil {
+		if _, err := readPacketInto(reader); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -149,13 +148,12 @@ func BenchmarkReadPacketInto(b *testing.B) {
 
 	rawReader := bytes.NewReader(raw)
 	reader := bufio.NewReaderSize(rawReader, 4096)
-	scratch := make([]byte, addressScratchSize)
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		rawReader.Reset(raw)
 		reader.Reset(rawReader)
-		packet, err := readPacketInto(reader, scratch)
+		packet, err := readPacketInto(reader)
 		if err != nil {
 			b.Fatal(err)
 		}
