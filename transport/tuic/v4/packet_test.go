@@ -58,3 +58,31 @@ func TestReadPacketIntoKeepsTheAddrPort(t *testing.T) {
 		require.Equal(t, packet.DATA, got.DATA)
 	}
 }
+
+type fallbackBufferedWriter struct {
+	bytes.Buffer
+}
+
+func (w *fallbackBufferedWriter) WriteByte(b byte) error {
+	w.Buffer.WriteByte(b)
+	return nil
+}
+
+func TestPacketConcreteAndFallbackWritersKeepWireShape(t *testing.T) {
+	packet := NewPacket(1, 1350,
+		NewAddressAddrPort(netip.MustParseAddrPort("203.0.113.7:443")),
+		make([]byte, 1350))
+	var fast bytes.Buffer
+	require.NoError(t, packet.WriteTo(&fast))
+
+	var fallback fallbackBufferedWriter
+	require.NoError(t, packet.WriteTo(&fallback))
+	require.Equal(t, fast.Bytes(), fallback.Bytes())
+
+	got, err := ReadPacket(&fallback)
+	require.NoError(t, err)
+	require.Equal(t, packet.ASSOC_ID, got.ASSOC_ID)
+	require.Equal(t, packet.LEN, got.LEN)
+	require.Equal(t, packet.ADDR, got.ADDR)
+	require.Equal(t, packet.DATA, got.DATA)
+}

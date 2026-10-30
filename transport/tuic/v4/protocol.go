@@ -289,12 +289,12 @@ func readPacketWithHead(head CommandHead, reader BufferedReader) (c Packet, err 
 		err = fmt.Errorf("error command type: %s", c.CommandHead.TYPE)
 		return
 	}
-	if c.ASSOC_ID, err = readUint32(reader); err != nil {
+	var header [6]byte
+	if err = readFixed(reader, header[:]); err != nil {
 		return
 	}
-	if c.LEN, err = readUint16(reader); err != nil {
-		return
-	}
+	c.ASSOC_ID = binary.BigEndian.Uint32(header[0:])
+	c.LEN = binary.BigEndian.Uint16(header[4:])
 	c.ADDR, err = ReadAddress(reader)
 	if err != nil {
 		return
@@ -314,6 +314,22 @@ func ReadPacket(reader BufferedReader) (c Packet, err error) {
 }
 
 func (c Packet) WriteTo(writer BufferedWriter) (err error) {
+	if buffer, ok := writer.(*bytes.Buffer); ok {
+		var prefix [8]byte
+		prefix[0] = c.VER
+		prefix[1] = byte(c.TYPE)
+		binary.BigEndian.PutUint32(prefix[2:], c.ASSOC_ID)
+		binary.BigEndian.PutUint16(prefix[6:], c.LEN)
+		if _, err = buffer.Write(prefix[:]); err != nil {
+			return
+		}
+		if err = c.ADDR.writeToBuffer(buffer); err != nil {
+			return
+		}
+		_, err = buffer.Write(c.DATA)
+		return
+	}
+
 	err = c.CommandHead.WriteTo(writer)
 	if err != nil {
 		return
@@ -538,7 +554,7 @@ func NewAddressAddrPort(addrPort netip.AddrPort) Address {
 	return Address{typ: typ, ip: addr, port: addrPort.Port()}
 }
 
-func readFixedAddress(reader BufferedReader, dst []byte) (err error) {
+func readFixed(reader BufferedReader, dst []byte) (err error) {
 	switch src := reader.(type) {
 	case *bufio.Reader:
 		var wire []byte
@@ -574,13 +590,13 @@ func ReadAddress(reader BufferedReader) (c Address, err error) {
 	switch c.typ {
 	case AtypIPv4:
 		var ip [4]byte
-		if err = readFixedAddress(reader, ip[:]); err != nil {
+		if err = readFixed(reader, ip[:]); err != nil {
 			return
 		}
 		c.ip = netip.AddrFrom4(ip)
 	case AtypIPv6:
 		var ip [16]byte
-		if err = readFixedAddress(reader, ip[:]); err != nil {
+		if err = readFixed(reader, ip[:]); err != nil {
 			return
 		}
 		c.ip = netip.AddrFrom16(ip)
@@ -598,25 +614,48 @@ func ReadAddress(reader BufferedReader) (c Address, err error) {
 		err = fmt.Errorf("unknown address type: %#x", c.typ)
 		return
 	}
-	c.port, err = readUint16(reader)
+	var port [2]byte
+	if err = readFixed(reader, port[:]); err != nil {
+		return
+	}
+	c.port = binary.BigEndian.Uint16(port[:])
+	return
+}
+
+func (a Address) writeToBuffer(buffer *bytes.Buffer) (err error) {
+	if err = buffer.WriteByte(a.typ); err != nil {
+		return
+	}
+	if a.typ == AtypDomainName {
+		if _, err = buffer.Write(a.domain); err != nil {
+			return
+		}
+	} else if a.ip.Is4() {
+		ip4 := a.ip.As4()
+		if _, err = buffer.Write(ip4[:]); err != nil {
+			return
+		}
+	} else {
+		ip16 := a.ip.As16()
+		if _, err = buffer.Write(ip16[:]); err != nil {
+			return
+		}
+	}
+	var port [2]byte
+	binary.BigEndian.PutUint16(port[:], a.port)
+	_, err = buffer.Write(port[:])
 	return
 }
 
 func (a Address) WriteTo(writer BufferedWriter) (err error) {
+	if buffer, ok := writer.(*bytes.Buffer); ok {
+		return a.writeToBuffer(buffer)
+	}
 	if err = writer.WriteByte(a.typ); err != nil {
 		return
 	}
 	if a.typ == AtypDomainName {
 		_, err = writer.Write(a.domain)
-	} else if buffer, ok := writer.(*bytes.Buffer); ok {
-		// The concrete path keeps fixed-width address arrays on the stack.
-		if a.ip.Is4() {
-			ip4 := a.ip.As4()
-			_, err = buffer.Write(ip4[:])
-		} else {
-			ip16 := a.ip.As16()
-			_, err = buffer.Write(ip16[:])
-		}
 	} else if a.ip.Is4() {
 		for _, b := range a.ip.As4() {
 			if err = writer.WriteByte(b); err != nil {
