@@ -1,8 +1,10 @@
 package packet
 
 import (
+	"errors"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/metacubex/mihomo/common/pool"
 	"github.com/stretchr/testify/require"
@@ -109,4 +111,77 @@ func testPayloadName(size int) string {
 		return "1500B"
 	}
 	return "small"
+}
+
+type bufferReadConn struct {
+	closed  bool
+	payload []byte
+	read    bool
+	err     error
+}
+
+func (c *bufferReadConn) Close() error {
+	c.closed = true
+	return nil
+}
+
+func (c *bufferReadConn) LocalAddr() net.Addr {
+	return &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 53}
+}
+
+func (c *bufferReadConn) ReadFrom(p []byte) (int, net.Addr, error) {
+	return 0, nil, errors.New("ReadFrom is unused")
+}
+
+func (c *bufferReadConn) SetDeadline(time.Time) error      { return nil }
+func (c *bufferReadConn) SetReadDeadline(time.Time) error  { return nil }
+func (c *bufferReadConn) SetWriteDeadline(time.Time) error { return nil }
+
+func (c *bufferReadConn) WriteTo(p []byte, _ net.Addr) (int, error) {
+	return len(p), nil
+}
+
+func (c *bufferReadConn) ReadFromWithBuffer(getBuffer func(sizeHint int) []byte) (int, net.Addr, error) {
+	if c.closed {
+		return 0, nil, errors.New("closed")
+	}
+	if c.read {
+		return 0, nil, errors.New("already read")
+	}
+	c.read = true
+	buf := getBuffer(len(c.payload))
+	copy(buf, c.payload)
+	return len(c.payload), &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 53}, nil
+}
+
+func TestWaitReadFromWithBufferReturnsPayload(t *testing.T) {
+	payload := []byte("with-buffer")
+	conn := &enhanceWithBufferPacketConn{
+		withBufferPacketConn: &bufferReadConn{payload: payload},
+	}
+
+	data, addr, err := conn.WaitReadFrom()
+	require.NoError(t, err)
+	defer pool.Put(data)
+	require.Equal(t, payload, data)
+	require.True(t, addr.Addr().Is4In6())
+	require.EqualValues(t, 53, addr.Port())
+}
+
+func BenchmarkWaitReadFromWithBuffer(b *testing.B) {
+	payload := make([]byte, 1500)
+	conn := &enhanceWithBufferPacketConn{
+		withBufferPacketConn: &bufferReadConn{payload: payload},
+	}
+	b.ReportAllocs()
+	b.SetBytes(int64(len(payload)))
+	b.ResetTimer()
+	for index := 0; index < b.N; index++ {
+		data, _, err := conn.WaitReadFrom()
+		if err != nil {
+			b.Fatal(err)
+		}
+		pool.Put(data)
+		conn.withBufferPacketConn.(*bufferReadConn).read = false
+	}
 }
