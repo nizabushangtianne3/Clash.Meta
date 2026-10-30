@@ -175,6 +175,9 @@ func appendJSONStringSlice(dst []byte, values []string) []byte {
 // escaping on, which is what both the reflection writer and the websocket
 // writer in hub/route apply.
 func appendJSONString(dst []byte, s string) []byte {
+	if s == "" {
+		return append(dst, '"', '"')
+	}
 	dst = append(dst, '"')
 	start := 0
 	for i := 0; i < len(s); {
