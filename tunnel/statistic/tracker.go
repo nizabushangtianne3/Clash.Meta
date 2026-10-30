@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"sync"
 	syncatomic "sync/atomic"
 	"time"
 
@@ -45,6 +46,11 @@ type TrackerInfo struct {
 	ProviderChain C.Chain      `json:"providerChains"`
 	Rule          string       `json:"rule"`
 	RulePayload   string       `json:"rulePayload"`
+
+	// Start is fixed when the tracker is created, so repeated polls reuse its
+	// RFC3339Nano wire form.
+	startJSON     []byte
+	startJSONOnce sync.Once
 }
 
 type tcpTracker struct {

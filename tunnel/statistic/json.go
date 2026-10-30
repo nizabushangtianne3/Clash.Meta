@@ -58,9 +58,7 @@ func (i *TrackerInfo) appendJSON(dst []byte) []byte {
 	dst = append(dst, `,"download":`...)
 	dst = strconv.AppendInt(dst, i.DownloadTotal.Load(), 10)
 	dst = append(dst, `,"start":`...)
-	dst = append(dst, '"')
-	dst = i.Start.AppendFormat(dst, time.RFC3339Nano)
-	dst = append(dst, '"')
+	dst = i.appendStartJSON(dst)
 	dst = append(dst, `,"chains":`...)
 	dst = appendJSONStringSlice(dst, i.Chain)
 	dst = append(dst, `,"providerChains":`...)
@@ -70,6 +68,15 @@ func (i *TrackerInfo) appendJSON(dst []byte) []byte {
 	dst = append(dst, `,"rulePayload":`...)
 	dst = appendJSONString(dst, i.RulePayload)
 	return append(dst, '}')
+}
+
+func (i *TrackerInfo) appendStartJSON(dst []byte) []byte {
+	i.startJSONOnce.Do(func() {
+		i.startJSON = i.Start.AppendFormat(make([]byte, 0, len(time.RFC3339Nano)+18), time.RFC3339Nano)
+	})
+	dst = append(dst, '"')
+	dst = append(dst, i.startJSON...)
+	return append(dst, '"')
 }
 
 func appendMetadataJSON(dst []byte, md *C.Metadata) []byte {
