@@ -109,17 +109,23 @@ func (n *Node[T]) setData(data T) {
 	n.inited = true
 }
 
-func (n *Node[T]) getChildren() map[string]*Node[T] {
-	if n.childMap == nil {
-		if n.childNode != nil {
-			m := make(map[string]*Node[T])
-			m[n.childStr] = n.childNode
-			return m
+func (n *Node[T]) eachChild(fn func(label string, child *Node[T]) bool) bool {
+	if n.childMap != nil {
+		for label, child := range n.childMap {
+			if !fn(label, child) {
+				return false
+			}
 		}
-	} else {
-		return n.childMap
+		return true
 	}
-	return nil
+	if n.childNode != nil {
+		return fn(n.childStr, n.childNode)
+	}
+	return true
+}
+
+func (n *Node[T]) hasChildren() bool {
+	return n.childNode != nil || len(n.childMap) != 0
 }
 func (n *Node[T]) Data() T {
 	return n.data

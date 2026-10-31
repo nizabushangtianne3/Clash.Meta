@@ -230,41 +230,58 @@ func (t *DomainTrie[T]) Optimize() {
 // patterns are separate entries; "+." shorthand is not emitted. Each pattern
 // and its value can be passed to Insert independently to reproduce the mappings.
 func (t *DomainTrie[T]) Foreach(fn func(domain string, data T) bool) {
-	for key, data := range t.root.getChildren() {
-		recursion([]string{key}, data, fn)
-		if !data.isEmpty() {
-			if !fn(joinDomain([]string{key}), data.data) {
-				return
-			}
+	labels := make([]string, 0, 8)
+	t.root.eachChild(func(key string, child *Node[T]) bool {
+		labels = append(labels[:0], key)
+		if !recursion(labels, child, fn) {
+			labels = labels[:0]
+			return false
 		}
-	}
+		labels = labels[:0]
+		if child.isEmpty() {
+			return true
+		}
+		return fn(key, child.data)
+	})
 }
 
 func (t *DomainTrie[T]) IsEmpty() bool {
 	if t == nil || t.root == nil {
 		return true
 	}
-	return len(t.root.getChildren()) == 0
+	return !t.root.hasChildren()
 }
 
-func recursion[T any](items []string, node *Node[T], fn func(domain string, data T) bool) bool {
-	for key, data := range node.getChildren() {
-		newItems := append([]string{key}, items...)
-		if !data.isEmpty() {
-			domain := joinDomain(newItems)
-			if !fn(domain, data.Data()) {
-				return false
-			}
+func recursion[T any](path []string, node *Node[T], fn func(domain string, data T) bool) bool {
+	return node.eachChild(func(key string, child *Node[T]) bool {
+		next := len(path) + 1
+		path = append(path, key)
+		keep := true
+		if !child.isEmpty() {
+			keep = fn(joinDomainReversed(path), child.Data())
 		}
-		if !recursion(newItems, data, fn) {
-			return false
+		if keep {
+			keep = recursion(path, child, fn)
 		}
+		path = path[:next-1]
+		return keep
+	})
+}
+
+func joinDomainReversed(labels []string) string {
+	var builder strings.Builder
+	capacity := len(labels[0])
+	for _, label := range labels[1:] {
+		capacity += len(domainStep) + len(label)
 	}
-	return true
-}
-
-func joinDomain(items []string) string {
-	return strings.Join(items, domainStep)
+	builder.Grow(capacity)
+	for index := len(labels) - 1; index >= 0; index-- {
+		if index != len(labels)-1 {
+			builder.WriteString(domainStep)
+		}
+		builder.WriteString(labels[index])
+	}
+	return builder.String()
 }
 
 // New returns a new, empty Trie.
