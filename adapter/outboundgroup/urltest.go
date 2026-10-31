@@ -1,8 +1,8 @@
 package outboundgroup
 
 import (
+	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"sync"
 	"sync/atomic"
@@ -10,6 +10,7 @@ import (
 
 	"github.com/metacubex/mihomo/common/callback"
 	N "github.com/metacubex/mihomo/common/net"
+	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/common/singledo"
 	"github.com/metacubex/mihomo/common/utils"
 	C "github.com/metacubex/mihomo/constant"
@@ -295,19 +296,22 @@ func (u *URLTest) IsL3Protocol(metadata *C.Metadata) bool {
 
 // MarshalJSON implements C.ProxyAdapter
 func (u *URLTest) MarshalJSON() ([]byte, error) {
-	all := memberNames(u.GetProxies(false))
-	return json.Marshal(probedView{
-		Type:           u.Type().String(),
-		Name:           u.Name(),
-		Now:            u.Now(),
-		All:            all,
-		TestURL:        u.testUrl,
-		ExpectedStatus: u.expectedStatus,
-		Fixed:          u.selectedName(),
-		Hidden:         u.Hidden(),
-		Icon:           u.Icon(),
-		EmptyFallback:  u.EmptyFallback().Name(),
-	})
+	buf := pool.GetBuffer()
+	defer pool.PutBuffer(buf)
+	buf.WriteString(`{"type":"URLTest","name":`)
+	writeJSONString(buf, u.Name())
+	buf.WriteString(`,"now":`)
+	writeJSONString(buf, u.Now())
+	buf.WriteString(`,"all":`)
+	writeGroupNames(buf, u.GetProxies(false))
+	writeStringField(buf, "testUrl", u.testUrl)
+	writeStringField(buf, "expectedStatus", u.expectedStatus)
+	writeStringField(buf, "fixed", u.selectedName())
+	writeBoolField(buf, "hidden", u.Hidden())
+	writeStringField(buf, "icon", u.Icon())
+	writeStringField(buf, "emptyFallback", u.EmptyFallback().Name())
+	buf.WriteByte('}')
+	return bytes.Clone(buf.Bytes()), nil
 }
 
 func (u *URLTest) Providers() []P.ProxyProvider {

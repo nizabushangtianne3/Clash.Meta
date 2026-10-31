@@ -1,11 +1,12 @@
 package outboundgroup
 
 import (
+	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"sync"
 
+	"github.com/metacubex/mihomo/common/pool"
 	C "github.com/metacubex/mihomo/constant"
 	P "github.com/metacubex/mihomo/constant/provider"
 )
@@ -56,24 +57,24 @@ func (s *Selector) IsL3Protocol(metadata *C.Metadata) bool {
 
 // MarshalJSON implements C.ProxyAdapter
 func (s *Selector) MarshalJSON() ([]byte, error) {
-	all := memberNames(s.GetProxies(false))
-	// When testurl is the default value
-	// do not append a value to ensure that the web dashboard follows the settings of the dashboard
-	var url string
-	if s.testUrl != C.DefaultTestURL {
-		url = s.testUrl
+	buf := pool.GetBuffer()
+	defer pool.PutBuffer(buf)
+	buf.WriteString(`{"type":"Selector","name":`)
+	writeJSONString(buf, s.Name())
+	buf.WriteString(`,"now":`)
+	writeJSONString(buf, s.Now())
+	buf.WriteString(`,"all":`)
+	writeGroupNames(buf, s.GetProxies(false))
+	if s.testUrl == C.DefaultTestURL {
+		buf.WriteString(`,"testUrl":""`)
+	} else {
+		writeStringField(buf, "testUrl", s.testUrl)
 	}
-
-	return json.Marshal(selectorView{
-		Type:          s.Type().String(),
-		Name:          s.Name(),
-		Now:           s.Now(),
-		All:           all,
-		TestURL:       url,
-		Hidden:        s.Hidden(),
-		Icon:          s.Icon(),
-		EmptyFallback: s.EmptyFallback().Name(),
-	})
+	writeBoolField(buf, "hidden", s.Hidden())
+	writeStringField(buf, "icon", s.Icon())
+	writeStringField(buf, "emptyFallback", s.EmptyFallback().Name())
+	buf.WriteByte('}')
+	return bytes.Clone(buf.Bytes()), nil
 }
 
 func (s *Selector) Now() string {

@@ -94,6 +94,45 @@ func TestGroupViewKeySet(t *testing.T) {
 	}
 }
 
+func TestGroupMarshalJSONEscapesLikeEncodingJSON(t *testing.T) {
+	members := []C.Proxy{
+		adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{
+			Name: `quote"slash\\html<&>line\n`,
+		})),
+		adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{
+			Name: "unicode\u2028\u2029\ufffd",
+		})),
+	}
+	groupName := `group<&>"\u2028"`
+	group, err := NewSelector(
+		GroupCommonOption{Name: groupName},
+		SelectorOption{},
+		adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "COMPATIBLE"})),
+		[]P.ProxyProvider{failoverProvider(t, members)},
+	)
+	require.NoError(t, err)
+
+	data, err := adapter.NewProxy(group).Adapter().MarshalJSON()
+	require.NoError(t, err)
+	var view map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(data, &view))
+
+	for key, raw := range map[string]any{
+		"type":          "Selector",
+		"name":          groupName,
+		"now":           members[0].Name(),
+		"all":           []string{members[0].Name(), members[1].Name()},
+		"testUrl":       "",
+		"hidden":        false,
+		"icon":          "",
+		"emptyFallback": "COMPATIBLE",
+	} {
+		expected, err := json.Marshal(raw)
+		require.NoError(t, err, key)
+		require.JSONEq(t, string(expected), string(view[key]), key)
+	}
+}
+
 func BenchmarkGroupViewMarshalOnly(b *testing.B) {
 	for _, size := range []int{20, 200} {
 		b.Run(fmt.Sprintf("members=%d", size), func(b *testing.B) {

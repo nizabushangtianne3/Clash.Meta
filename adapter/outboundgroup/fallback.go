@@ -1,8 +1,8 @@
 package outboundgroup
 
 import (
+	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"sync"
 	"sync/atomic"
@@ -10,6 +10,7 @@ import (
 
 	"github.com/metacubex/mihomo/common/callback"
 	N "github.com/metacubex/mihomo/common/net"
+	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/common/utils"
 	C "github.com/metacubex/mihomo/constant"
 	P "github.com/metacubex/mihomo/constant/provider"
@@ -159,19 +160,22 @@ func (f *Fallback) IsL3Protocol(metadata *C.Metadata) bool {
 
 // MarshalJSON implements C.ProxyAdapter
 func (f *Fallback) MarshalJSON() ([]byte, error) {
-	all := memberNames(f.GetProxies(false))
-	return json.Marshal(probedView{
-		Type:           f.Type().String(),
-		Name:           f.Name(),
-		Now:            f.Now(),
-		All:            all,
-		TestURL:        f.testUrl,
-		ExpectedStatus: f.expectedStatus,
-		Fixed:          f.selectedName(),
-		Hidden:         f.Hidden(),
-		Icon:           f.Icon(),
-		EmptyFallback:  f.EmptyFallback().Name(),
-	})
+	buf := pool.GetBuffer()
+	defer pool.PutBuffer(buf)
+	buf.WriteString(`{"type":"Fallback","name":`)
+	writeJSONString(buf, f.Name())
+	buf.WriteString(`,"now":`)
+	writeJSONString(buf, f.Now())
+	buf.WriteString(`,"all":`)
+	writeGroupNames(buf, f.GetProxies(false))
+	writeStringField(buf, "testUrl", f.testUrl)
+	writeStringField(buf, "expectedStatus", f.expectedStatus)
+	writeStringField(buf, "fixed", f.selectedName())
+	writeBoolField(buf, "hidden", f.Hidden())
+	writeStringField(buf, "icon", f.Icon())
+	writeStringField(buf, "emptyFallback", f.EmptyFallback().Name())
+	buf.WriteByte('}')
+	return bytes.Clone(buf.Bytes()), nil
 }
 
 // Unwrap implements C.ProxyAdapter
