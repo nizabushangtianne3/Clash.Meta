@@ -45,6 +45,8 @@ var (
 )
 
 type Resolver interface {
+	// Lookup results may be shared cached answers and must be treated as
+	// read-only; callers clone before in-place edits.
 	LookupIP(ctx context.Context, host string) (ips []netip.Addr, err error)
 	LookupIPv4(ctx context.Context, host string) (ips []netip.Addr, err error)
 	LookupIPv6(ctx context.Context, host string) (ips []netip.Addr, err error)

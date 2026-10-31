@@ -59,6 +59,12 @@ func (r *Resolver) lookupIPFromCachePair(ctx context.Context, host string) ([]ne
 	r.traceCacheHit(ctx, ipv4.msg.Question[0], ipv4.msg)
 	r.traceCacheHit(ctx, ipv6.msg.Question[0], ipv6.msg)
 
+	if len(ipv4.ips) == 0 {
+		return ipv6.ips, true
+	}
+	if len(ipv6.ips) == 0 {
+		return ipv4.ips, true
+	}
 	combined := make([]netip.Addr, 0, len(ipv4.ips)+len(ipv6.ips))
 	combined = append(combined, ipv4.ips...)
 	return append(combined, ipv6.ips...), true
@@ -85,7 +91,10 @@ func (r *Resolver) lookupIPCached(ctx context.Context, host string, dnsType uint
 		if entry.msg != nil {
 			r.traceCacheHit(ctx, entry.msg.Question[0], entry.msg)
 		}
-		return slices.Clone(entry.ips), nil
+		// The cache owns this slice and never mutates it; callers receive it as
+		// read-only data. The only in-place rewriter is dialer.parseAddr, which
+		// clones first when it must unmap IPv4-in-IPv6 addresses.
+		return entry.ips, nil
 	}
 
 	query := &D.Msg{}

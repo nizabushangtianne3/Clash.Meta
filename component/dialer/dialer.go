@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -444,8 +445,18 @@ func parseAddr(ctx context.Context, network, address string, preferResolver reso
 		return nil, 0, fmt.Errorf("invalid port %s: %w", port, err)
 	}
 	portNum := uint16(portNum64)
-	for i, ip := range ips {
+	// Resolver cache results are shared, so clone only when this caller is the
+	// one that needs to rewrite IPv4-in-IPv6 addresses in place.
+	needsUnmap := false
+	for _, ip := range ips {
 		if ip.Is4In6() {
+			needsUnmap = true
+			break
+		}
+	}
+	if needsUnmap {
+		ips = slices.Clone(ips)
+		for i, ip := range ips {
 			ips[i] = ip.Unmap()
 		}
 	}
