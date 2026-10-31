@@ -107,6 +107,22 @@ func TestExchangeContextCacheHitCopiesAnswerPayload(t *testing.T) {
 		"a caller mutation must not corrupt the cached answer")
 }
 
+func TestCopyCachedMsgCopiesMixedAnswerPayloads(t *testing.T) {
+	source := &D.Msg{Answer: []D.RR{
+		&D.A{Hdr: D.RR_Header{Name: "example.org.", Rrtype: D.TypeA}, A: net.IP{93, 184, 216, 34}},
+		&D.AAAA{Hdr: D.RR_Header{Name: "example.org.", Rrtype: D.TypeAAAA}, AAAA: net.ParseIP("2001:db8::1").To16()},
+	}}
+
+	copied := copyCachedMsg(source)
+	copied.Answer[0].(*D.A).A[0] = 127
+	copied.Answer[1].(*D.AAAA).AAAA[0] = 0x20
+
+	require.Equal(t, byte(93), source.Answer[0].(*D.A).A[0])
+	require.Equal(t, byte(0x20), source.Answer[1].(*D.AAAA).AAAA[0])
+	require.Equal(t, byte(127), copied.Answer[0].(*D.A).A[0])
+	require.Equal(t, byte(0x20), copied.Answer[1].(*D.AAAA).AAAA[0])
+}
+
 func TestExchangeContextExpiredCacheHitRefreshes(t *testing.T) {
 	client := &fakeDNSClient{response: testAResponseMsg()}
 	resolver := testResolver(client)

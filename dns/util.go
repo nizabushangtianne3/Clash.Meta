@@ -56,29 +56,39 @@ func getMsgFromCache(c dnsCache, q D.Question) (*D.Msg, time.Time, bool) {
 	return msg, expireTime, hit
 }
 
-// copyCachedMsg batches the fixed A and AAAA payloads that dominate cached
-// DNS traffic. Question is immutable by dns.Msg contract.
+// cacheA and cacheAAAA keep their variable-length RDDATA in a fixed tail, so a
+// slab of records needs one allocation instead of separate record, payload and
+// interface-slice allocations.
+type cacheA struct {
+	header D.A
+	data   [4]byte
+}
+
+type cacheAAAA struct {
+	header D.AAAA
+	data   [16]byte
+}
+
+// copyCachedMsg returns an independently mutable copy of a cached message.
+// Question remains shared because dns.Msg treats it as immutable.
 func copyCachedMsg(src *D.Msg) *D.Msg {
 	dst := &D.Msg{}
 	dst.MsgHdr = src.MsgHdr
 	dst.Compress = src.Compress
 	dst.Question = src.Question
 
-	aCount, aaaaCount, rdataLen := 0, 0, 0
+	aCount, aaaaCount := 0, 0
 	for _, rr := range src.Answer {
-		switch value := rr.(type) {
+		switch rr.(type) {
 		case *D.A:
 			aCount++
-			rdataLen += len(value.A)
 		case *D.AAAA:
 			aaaaCount++
-			rdataLen += len(value.AAAA)
 		}
 	}
-	rdata := make([]byte, rdataLen)
-	aValues := make([]D.A, aCount)
-	aaaaValues := make([]D.AAAA, aaaaCount)
-	aIndex, aaaaIndex, offset := 0, 0, 0
+	aRecords := make([]cacheA, aCount)
+	aaaaRecords := make([]cacheAAAA, aaaaCount)
+	aIndex, aaaaIndex := 0, 0
 
 	rrArr := make([]D.RR, len(src.Answer)+len(src.Ns)+len(src.Extra))
 	dst.Answer, rrArr = rrArr[:0:len(src.Answer)], rrArr[len(src.Answer):]
@@ -88,23 +98,19 @@ func copyCachedMsg(src *D.Msg) *D.Msg {
 	for _, rr := range src.Answer {
 		switch value := rr.(type) {
 		case *D.A:
-			n := len(value.A)
-			copied := &aValues[aIndex]
+			record := &aRecords[aIndex]
 			aIndex++
-			*copied = *value
-			copy(rdata[offset:], value.A)
-			copied.A = rdata[offset : offset+n : offset+n]
-			offset += n
-			dst.Answer = append(dst.Answer, copied)
+			record.header = *value
+			copy(record.data[:], value.A)
+			record.header.A = record.data[:]
+			dst.Answer = append(dst.Answer, &record.header)
 		case *D.AAAA:
-			n := len(value.AAAA)
-			copied := &aaaaValues[aaaaIndex]
+			record := &aaaaRecords[aaaaIndex]
 			aaaaIndex++
-			*copied = *value
-			copy(rdata[offset:], value.AAAA)
-			copied.AAAA = rdata[offset : offset+n : offset+n]
-			offset += n
-			dst.Answer = append(dst.Answer, copied)
+			record.header = *value
+			copy(record.data[:], value.AAAA)
+			record.header.AAAA = record.data[:]
+			dst.Answer = append(dst.Answer, &record.header)
 		default:
 			dst.Answer = append(dst.Answer, D.Copy(rr))
 		}
