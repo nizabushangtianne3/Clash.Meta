@@ -38,6 +38,7 @@ type Tracker interface {
 
 type TrackerInfo struct {
 	UUID          uuid.UUID    `json:"id"`
+	metadata      C.Metadata   `json:"-"`
 	Metadata      *C.Metadata  `json:"metadata"`
 	UploadTotal   atomic.Int64 `json:"upload"`
 	DownloadTotal atomic.Int64 `json:"download"`
@@ -136,9 +137,6 @@ func (tt *tcpTracker) Upstream() any {
 }
 
 func NewTCPTracker(conn C.Conn, manager *Manager, metadata *C.Metadata, rule C.Rule, uploadTotal int64, downloadTotal int64, pushToManager bool) *tcpTracker {
-	snapshot := metadata.Clone()
-	snapshot.RemoteDst = conn.RemoteDestination()
-
 	tt := &tcpTracker{
 		Conn:    conn,
 		manager: manager,
@@ -146,7 +144,6 @@ func NewTCPTracker(conn C.Conn, manager *Manager, metadata *C.Metadata, rule C.R
 		TrackerInfo: TrackerInfo{
 			UUID:          newTrackerID(),
 			Start:         time.Now(),
-			Metadata:      snapshot,
 			Chain:         cloneChain(conn.Chains()),
 			ProviderChain: cloneChain(conn.ProviderChains()),
 			Rule:          "",
@@ -156,6 +153,9 @@ func NewTCPTracker(conn C.Conn, manager *Manager, metadata *C.Metadata, rule C.R
 		pushToManager: pushToManager,
 		direct:        IsDirect(conn.Chains().Last()),
 	}
+	tt.metadata = *metadata
+	tt.Metadata = &tt.metadata
+	tt.metadata.RemoteDst = conn.RemoteDestination()
 	tt.counts[0] = tt.accountDownload
 	tt.counts[1] = tt.accountUpload
 
@@ -251,9 +251,6 @@ func (ut *udpTracker) Upstream() any {
 }
 
 func NewUDPTracker(conn C.PacketConn, manager *Manager, metadata *C.Metadata, rule C.Rule, uploadTotal int64, downloadTotal int64, pushToManager bool) *udpTracker {
-	snapshot := metadata.Clone()
-	snapshot.RemoteDst = conn.RemoteDestination()
-
 	ut := &udpTracker{
 		PacketConn: conn,
 		manager:    manager,
@@ -261,7 +258,6 @@ func NewUDPTracker(conn C.PacketConn, manager *Manager, metadata *C.Metadata, ru
 		TrackerInfo: TrackerInfo{
 			UUID:          newTrackerID(),
 			Start:         time.Now(),
-			Metadata:      snapshot,
 			Chain:         cloneChain(conn.Chains()),
 			ProviderChain: cloneChain(conn.ProviderChains()),
 			Rule:          "",
@@ -271,6 +267,9 @@ func NewUDPTracker(conn C.PacketConn, manager *Manager, metadata *C.Metadata, ru
 		pushToManager: pushToManager,
 		direct:        IsDirect(conn.Chains().Last()),
 	}
+	ut.metadata = *metadata
+	ut.Metadata = &ut.metadata
+	ut.metadata.RemoteDst = conn.RemoteDestination()
 
 	if pushToManager {
 		if uploadTotal > 0 {

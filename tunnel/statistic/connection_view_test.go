@@ -20,69 +20,66 @@ import (
 // format break the host would see.
 
 func goldenSnapshot() *Snapshot {
+	metadata := C.Metadata{
+		NetWork:      C.TCP,
+		Type:         C.HTTP,
+		SrcIP:        netip.MustParseAddr("192.168.100.17"),
+		DstIP:        netip.MustParseAddr("fe80::1%eth0"),
+		SrcGeoIP:     []string{"CN", "US"},
+		DstGeoIP:     []string{},
+		SrcIPASN:     "AS4134",
+		SrcPort:      54321,
+		DstPort:      65535,
+		InIP:         netip.MustParseAddr("::ffff:10.10.10.10"),
+		InName:       "mixed",
+		InUser:       "user<one>&two",
+		Host:         "example.com</script>",
+		DNSMode:      C.DNSFakeIP,
+		Uid:          1001,
+		Process:      "chrome.exe\u2028line",
+		ProcessPath:  `C:\Program Files\Google\Chrome\app.exe`,
+		SpecialProxy: "Proxy",
+		SpecialRules: "Rule",
+		RemoteDst:    "198.18.0.1:443",
+		DSCP:         34,
+		SniffHost:    "sniff.example.com",
+	}
 	rich := &TrackerInfo{
-		UUID: uuid.Must(uuid.FromString("0f8fad5b-d9cb-469f-a165-70867728950e")),
-		Metadata: &C.Metadata{
-			NetWork:      C.TCP,
-			Type:         C.HTTP,
-			SrcIP:        netip.MustParseAddr("192.168.100.17"),
-			DstIP:        netip.MustParseAddr("fe80::1%eth0"),
-			SrcGeoIP:     []string{"CN", "US"},
-			DstGeoIP:     []string{},
-			SrcIPASN:     "AS4134",
-			SrcPort:      54321,
-			DstPort:      65535,
-			InIP:         netip.MustParseAddr("::ffff:10.10.10.10"),
-			InName:       "mixed",
-			InUser:       "user<one>&two",
-			Host:         "example.com</script>",
-			DNSMode:      C.DNSFakeIP,
-			Uid:          1001,
-			Process:      "chrome.exe\u2028line",
-			ProcessPath:  `C:\Program Files\Google\Chrome\app.exe`,
-			SpecialProxy: "Proxy",
-			SpecialRules: "Rule",
-			RemoteDst:    "198.18.0.1:443",
-			DSCP:         34,
-			SniffHost:    "sniff.example.com",
-		},
+		UUID:        uuid.Must(uuid.FromString("0f8fad5b-d9cb-469f-a165-70867728950e")),
 		Start:       time.Date(2026, 10, 26, 3, 4, 5, 123456789, time.FixedZone("weird", 5*3600+1800)),
 		Chain:       C.Chain{"DIRECT", "Proxy"},
 		Rule:        "DOMAIN-SUFFIX,example.com",
 		RulePayload: "payload",
 	}
+	rich.metadata = metadata
+	rich.Metadata = &rich.metadata
 	rich.UploadTotal.Store(9876543210)
 	rich.DownloadTotal.Store(-42)
 
 	zero := &TrackerInfo{
-		Metadata:      &C.Metadata{},
 		Start:         time.Date(1, 1, 1, 0, 0, 0, 0, time.UTC),
 		Chain:         C.Chain{},
 		ProviderChain: C.Chain{"one"},
 	}
+	zero.metadata = C.Metadata{}
+	zero.Metadata = &zero.metadata
 
 	unknown := &TrackerInfo{
-		UUID: uuid.Must(uuid.FromString("ffffffff-ffff-ffff-ffff-ffffffffffff")),
-		Metadata: &C.Metadata{
-			NetWork: C.NetWork(77),
-			Type:    C.Type(88),
-			DNSMode: C.DNSMode(99),
-		},
+		UUID:  uuid.Must(uuid.FromString("ffffffff-ffff-ffff-ffff-ffffffffffff")),
 		Start: time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC),
 	}
-
-	noMetadata := &TrackerInfo{
-		UUID:  uuid.Must(uuid.FromString("12345678-1234-5678-1234-567812345678")),
-		Start: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+	unknown.metadata = C.Metadata{
+		NetWork: C.NetWork(77),
+		Type:    C.Type(88),
+		DNSMode: C.DNSMode(99),
 	}
-	noMetadata.UploadTotal.Store(1)
-	noMetadata.DownloadTotal.Store(2)
+	unknown.Metadata = &unknown.metadata
 
 	return &Snapshot{
 		DownloadTotal: 1234567890123,
 		UploadTotal:   -987654321,
 		Memory:        4096,
-		Connections:   []*TrackerInfo{rich, zero, unknown, noMetadata, nil},
+		Connections:   []*TrackerInfo{rich, zero, unknown, nil},
 	}
 }
 

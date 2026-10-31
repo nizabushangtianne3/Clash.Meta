@@ -56,14 +56,9 @@ func (i *TrackerInfo) appendPrefixJSON(dst []byte) []byte {
 		buf := make([]byte, 0, 512)
 		buf = append(buf, `{"id":"`...)
 		buf = appendUUID(buf, i.UUID)
-		buf = append(buf, `","metadata":`...)
-		if i.Metadata == nil {
-			buf = append(buf, 'n', 'u', 'l', 'l')
-		} else {
-			buf = append(buf, '{')
-			buf = appendMetadataJSON(buf, i.Metadata)
-			buf = append(buf, '}')
-		}
+		buf = append(buf, `","metadata":{`...)
+		buf = appendMetadataJSON(buf, i.Metadata)
+		buf = append(buf, '}')
 		i.prefixJSON = buf
 	})
 	return append(dst, i.prefixJSON...)
