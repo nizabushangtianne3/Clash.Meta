@@ -19,18 +19,14 @@ import (
 
 var connectionsBodyPool = sync.Pool{New: func() any { return new([]byte) }}
 
-func writeConnections(w http.ResponseWriter, r *http.Request, snapshot *statistic.Snapshot) {
+func writeConnections(w http.ResponseWriter, r *http.Request, body []byte) {
 	w.Header().Set("Content-Type", "application/json")
 	if status, ok := r.Context().Value(render.StatusCtxKey).(int); ok {
 		w.WriteHeader(status)
 	}
-	bufp := connectionsBodyPool.Get().(*[]byte)
-	body := snapshot.AppendJSON((*bufp)[:0])
 	// encoding/json's Encoder closed the document with a newline.
 	body = append(body, '\n')
 	_, _ = w.Write(body)
-	*bufp = body
-	connectionsBodyPool.Put(bufp)
 }
 
 func connectionRouter() http.Handler {
@@ -43,8 +39,11 @@ func connectionRouter() http.Handler {
 
 func getConnections(w http.ResponseWriter, r *http.Request) {
 	if !(r.Header.Get("Upgrade") == "websocket") {
-		snapshot := statistic.DefaultManager.Snapshot()
-		writeConnections(w, r, snapshot)
+		bufp := connectionsBodyPool.Get().(*[]byte)
+		body := statistic.DefaultManager.AppendJSON((*bufp)[:0])
+		writeConnections(w, r, body)
+		*bufp = body
+		connectionsBodyPool.Put(bufp)
 		return
 	}
 
@@ -70,12 +69,11 @@ func getConnections(w http.ResponseWriter, r *http.Request) {
 	// before the first document grows it.
 	scratch := make([]byte, 0, wsServerMaxFrameHeader+512)
 	sendSnapshot := func() error {
-		snapshot := statistic.DefaultManager.Snapshot()
 		// Reserve the worst-case frame header, append the document after it,
 		// then move the document over the unused header bytes once its length
 		// is known, so the whole frame leaves in one write without a second
 		// buffer.
-		scratch = snapshot.AppendJSON(scratch[:wsServerMaxFrameHeader])
+		scratch = statistic.DefaultManager.AppendJSON(scratch[:wsServerMaxFrameHeader])
 		n := len(scratch) - wsServerMaxFrameHeader
 		headerLen := wsEncodeFrameHeader(scratch[:wsServerMaxFrameHeader], wsOpText, n)
 		if headerLen < wsServerMaxFrameHeader {

@@ -247,7 +247,7 @@ func TestWriteConnectionsGoldenBody(t *testing.T) {
 	require.NoError(t, err)
 
 	recorder := &goldenResponseWriter{header: make(mhttp.Header)}
-	writeConnections(recorder, request, &statistic.Snapshot{DownloadTotal: 1, UploadTotal: 2, Memory: 3})
+	writeConnections(recorder, request, (&statistic.Snapshot{DownloadTotal: 1, UploadTotal: 2, Memory: 3}).AppendJSON(nil))
 	require.Equal(t, `{"downloadTotal":1,"uploadTotal":2,"connections":[],"memory":3}`+"\n", recorder.body.String())
 	require.Equal(t, "application/json", recorder.header.Get("Content-Type"))
 	require.Equal(t, 0, recorder.status)
@@ -260,7 +260,7 @@ func TestWriteConnectionsGoldenBody(t *testing.T) {
 		Memory:        6,
 		Connections:   []*statistic.TrackerInfo{nil},
 	}
-	writeConnections(recorder, request, bigger)
+	writeConnections(recorder, request, bigger.AppendJSON(nil))
 	require.Equal(t, string(bigger.AppendJSON(nil))+"\n", recorder.body.String())
 }
 

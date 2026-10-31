@@ -43,9 +43,8 @@ func (s *Snapshot) AppendJSON(dst []byte) []byte {
 }
 
 func (i *TrackerInfo) appendJSON(dst []byte) []byte {
-	dst = append(dst, `{"id":"`...)
-	dst = appendUUID(dst, i.UUID)
-	dst = append(dst, `","metadata":`...)
+	dst = i.appendIDJSON(dst)
+	dst = append(dst, `,"metadata":`...)
 	if i.Metadata == nil {
 		dst = append(dst, 'n', 'u', 'l', 'l')
 	} else {
@@ -66,6 +65,17 @@ func (i *TrackerInfo) appendJSON(dst []byte) []byte {
 	dst = append(dst, `,"rulePayload":`...)
 	dst = appendJSONString(dst, i.RulePayload)
 	return append(dst, '}')
+}
+
+func (i *TrackerInfo) appendIDJSON(dst []byte) []byte {
+	i.idJSONOnce.Do(func() {
+		buf := make([]byte, 0, 40)
+		buf = append(buf, `{"id":"`...)
+		buf = appendUUID(buf, i.UUID)
+		buf = append(buf, '"')
+		i.idJSON = buf
+	})
+	return append(dst, i.idJSON...)
 }
 
 func (i *TrackerInfo) appendStartJSON(dst []byte) []byte {

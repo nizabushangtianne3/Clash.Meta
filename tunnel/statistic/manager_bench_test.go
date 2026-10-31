@@ -175,7 +175,7 @@ func BenchmarkManagerSnapshotEncoded(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				scratch = manager.Snapshot().AppendJSON(scratch[:0])
+				scratch = manager.AppendJSON(scratch[:0])
 			}
 			b.StopTimer()
 			if len(scratch) == 0 {

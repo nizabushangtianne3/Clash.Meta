@@ -47,8 +47,10 @@ type TrackerInfo struct {
 	Rule          string       `json:"rule"`
 	RulePayload   string       `json:"rulePayload"`
 
-	// Start is fixed when the tracker is created, so repeated polls reuse its
-	// RFC3339Nano wire form.
+	// UUID and Start are fixed when the tracker is created, so repeated polls
+	// reuse their wire forms.
+	idJSON        []byte
+	idJSONOnce    sync.Once
 	startJSON     []byte
 	startJSONOnce sync.Once
 	metadataJSON  []byte

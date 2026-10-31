@@ -2,6 +2,7 @@ package statistic
 
 import (
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/metacubex/mihomo/common/atomic"
@@ -212,6 +213,31 @@ func (m *Manager) Snapshot() *Snapshot {
 		Connections:   connections,
 		Memory:        m.memory.Load(),
 	}
+}
+
+// AppendJSON encodes the current table without materialising a snapshot slice.
+func (m *Manager) AppendJSON(dst []byte) []byte {
+	dst = append(dst, `{"downloadTotal":`...)
+	dst = strconv.AppendInt(dst, m.totalDownload(), 10)
+	dst = append(dst, `,"uploadTotal":`...)
+	dst = strconv.AppendInt(dst, m.totalUpload(), 10)
+	dst = append(dst, `,"connections":[`...)
+	first := true
+	m.connections.RangeRelaxed(func(_ uuid.UUID, c Tracker) bool {
+		if !first {
+			dst = append(dst, ',')
+		}
+		first = false
+		if info := c.Info(); info != nil {
+			dst = info.appendJSON(dst)
+		} else {
+			dst = append(dst, 'n', 'u', 'l', 'l')
+		}
+		return true
+	})
+	dst = append(dst, `],"memory":`...)
+	dst = strconv.AppendUint(dst, m.memory.Load(), 10)
+	return append(dst, '}')
 }
 
 func (m *Manager) updateMemory() {
