@@ -99,7 +99,7 @@ func (t *DomainTrie[T]) NewDomainSet() *DomainSet {
 			// the internal key; a leading dot alone is only a label separator.
 			domain = complexWildcard + domain
 		}
-		keys = append(keys, utils.Reverse(domain))
+		keys = append(keys, reverseDomain(domain))
 		return true
 	})
 	return buildDomainSet(keys, nil)
