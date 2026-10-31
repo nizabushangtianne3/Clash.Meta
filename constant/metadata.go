@@ -227,10 +227,17 @@ func (m *Metadata) RemoteAddress() string {
 	}
 
 	host := m.String()
+	buf := make([]byte, 0, len(host)+6)
 	if strings.Contains(host, ":") {
-		return "[" + host + "]:" + strconv.FormatUint(uint64(m.DstPort), 10)
+		buf = append(buf, '[')
+		buf = append(buf, host...)
+		buf = append(buf, ']', ':')
+	} else {
+		buf = append(buf, host...)
+		buf = append(buf, ':')
 	}
-	return host + ":" + strconv.FormatUint(uint64(m.DstPort), 10)
+	buf = strconv.AppendUint(buf, uint64(m.DstPort), 10)
+	return string(buf)
 }
 
 func (m *Metadata) SourceAddress() string {
