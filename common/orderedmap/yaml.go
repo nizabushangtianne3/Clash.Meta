@@ -1,6 +1,7 @@
 package orderedmap
 
 import (
+	"bytes"
 	"fmt"
 
 	"go.yaml.in/yaml/v3"
@@ -17,30 +18,32 @@ func (om *OrderedMap[K, V]) MarshalYAML() (interface{}, error) {
 		return []byte("null"), nil
 	}
 
-	node := yaml.Node{
-		Kind: yaml.MappingNode,
-	}
-
+	items := make([]interface{}, 0, om.Len()*2)
 	for pair := om.Oldest(); pair != nil; pair = pair.Next() {
-		key, value := pair.Key, pair.Value
-
-		keyNode := &yaml.Node{}
-
-		// serialize key to yaml, then deserialize it back into the node
-		// this is a hack to get the correct tag for the key
-		if err := keyNode.Encode(key); err != nil {
-			return nil, err
-		}
-
-		valueNode := &yaml.Node{}
-		if err := valueNode.Encode(value); err != nil {
-			return nil, err
-		}
-
-		node.Content = append(node.Content, keyNode, valueNode)
+		items = append(items, pair.Key, pair.Value)
 	}
 
-	return &node, nil
+	var buffer bytes.Buffer
+	encoder := yaml.NewEncoder(&buffer)
+	if err := encoder.Encode(items); err != nil {
+		return nil, err
+	}
+	if err := encoder.Close(); err != nil {
+		return nil, err
+	}
+
+	var sequence yaml.Node
+	if err := yaml.Unmarshal(buffer.Bytes(), &sequence); err != nil {
+		return nil, err
+	}
+	if len(sequence.Content) != 1 || sequence.Content[0].Kind != yaml.SequenceNode {
+		return nil, fmt.Errorf("ordered map produced %v instead of a YAML sequence", sequence.Content[0].Kind)
+	}
+
+	return &yaml.Node{
+		Kind:    yaml.MappingNode,
+		Content: sequence.Content[0].Content,
+	}, nil
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
