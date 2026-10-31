@@ -68,7 +68,7 @@ func (h *Hysteria) ListenPacketContext(ctx context.Context, metadata *C.Metadata
 	if err != nil {
 		return nil, err
 	}
-	return NewPacketConn(&hyPacketConn{udpConn}, h), nil
+	return NewPacketConn(&hyPacketConn{UDPConn: udpConn}, h), nil
 }
 
 func (h *Hysteria) genHdc(ctx context.Context) hyUtils.PacketDialer {
@@ -274,6 +274,11 @@ func (h *Hysteria) Close() error {
 
 type hyPacketConn struct {
 	core.UDPConn
+
+	// A Hysteria UDP session receives from one endpoint, so keep the interface
+	// value alive across datagrams instead of boxing the common repeat address.
+	lastAddr     net.Addr
+	lastAddrPort netip.AddrPort
 }
 
 func (c *hyPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
@@ -282,7 +287,13 @@ func (c *hyPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 		return
 	}
 	n = copy(p, b)
-	addr = socksaddr
+
+	addrPort := socksaddr.AddrPort()
+	if c.lastAddr == nil || c.lastAddrPort != addrPort {
+		c.lastAddr = socksaddr
+		c.lastAddrPort = addrPort
+	}
+	addr = c.lastAddr
 	return
 }
 
