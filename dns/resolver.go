@@ -384,6 +384,10 @@ func (r *Resolver) ipExchange(ctx context.Context, m *D.Msg) (msg *D.Msg, err er
 }
 
 func (r *Resolver) lookupIP(ctx context.Context, host string, dnsType uint16) (ips []netip.Addr, err error) {
+	if !looksLikeIPLiteral(host) {
+		return r.lookupIPCached(ctx, host, dnsType)
+	}
+
 	ip, err := netip.ParseAddr(host)
 	if err == nil {
 		ip = ip.Unmap()
@@ -398,6 +402,24 @@ func (r *Resolver) lookupIP(ctx context.Context, host string, dnsType uint16) (i
 	}
 
 	return r.lookupIPCached(ctx, host, dnsType)
+}
+
+// looksLikeIPLiteral rejects obvious hostnames before netip.ParseAddr, whose
+// failed scan allocates on every cached DNS lookup. Any string that gets past
+// this cheap scan is still validated by ParseAddr.
+func looksLikeIPLiteral(host string) bool {
+	for i := 0; i < len(host); i++ {
+		c := host[i]
+		switch {
+		case c >= '0' && c <= '9', c == '.', c == ':',
+			c >= 'a' && c <= 'f', c >= 'A' && c <= 'F':
+		case c == '%':
+			return true // the remainder is an interface zone name
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func (r *Resolver) asyncExchange(ctx context.Context, client []dnsClient, msg *D.Msg) <-chan *result {

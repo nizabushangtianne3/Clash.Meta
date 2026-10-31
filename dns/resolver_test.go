@@ -58,6 +58,26 @@ func testResolver(main *fakeDNSClient) *Resolver {
 	}
 }
 
+func TestLooksLikeIPLiteral(t *testing.T) {
+	tests := []struct {
+		host string
+		want bool
+	}{
+		{host: "192.168.1.2", want: true},
+		{host: "2001:db8::1", want: true},
+		{host: "fe80::1%eth0", want: true},
+		{host: "cafe::1", want: true},
+		{host: "www.example.com", want: false},
+		{host: "benchmark.example.com", want: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.host, func(t *testing.T) {
+			require.Equal(t, test.want, looksLikeIPLiteral(test.host))
+		})
+	}
+}
+
 func TestExchangeContextFreshCacheHit(t *testing.T) {
 	client := &fakeDNSClient{response: testAResponseMsg()}
 	resolver := testResolver(client)
