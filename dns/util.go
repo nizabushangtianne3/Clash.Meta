@@ -56,25 +56,29 @@ func getMsgFromCache(c dnsCache, q D.Question) (*D.Msg, time.Time, bool) {
 	return msg, expireTime, hit
 }
 
-// copyCachedMsg avoids per-record allocations for the fixed A and AAAA payloads
-// that dominate cached DNS traffic. Question is immutable by dns.Msg contract.
+// copyCachedMsg batches the fixed A and AAAA payloads that dominate cached
+// DNS traffic. Question is immutable by dns.Msg contract.
 func copyCachedMsg(src *D.Msg) *D.Msg {
 	dst := &D.Msg{}
 	dst.MsgHdr = src.MsgHdr
 	dst.Compress = src.Compress
 	dst.Question = src.Question
 
-	rdataLen := 0
+	aCount, aaaaCount, rdataLen := 0, 0, 0
 	for _, rr := range src.Answer {
 		switch value := rr.(type) {
 		case *D.A:
+			aCount++
 			rdataLen += len(value.A)
 		case *D.AAAA:
+			aaaaCount++
 			rdataLen += len(value.AAAA)
 		}
 	}
 	rdata := make([]byte, rdataLen)
-	offset := 0
+	aValues := make([]D.A, aCount)
+	aaaaValues := make([]D.AAAA, aaaaCount)
+	aIndex, aaaaIndex, offset := 0, 0, 0
 
 	rrArr := make([]D.RR, len(src.Answer)+len(src.Ns)+len(src.Extra))
 	dst.Answer, rrArr = rrArr[:0:len(src.Answer)], rrArr[len(src.Answer):]
@@ -82,8 +86,28 @@ func copyCachedMsg(src *D.Msg) *D.Msg {
 	dst.Extra = rrArr[:0:len(src.Extra)]
 
 	for _, rr := range src.Answer {
-		copied, _ := copyAnswerPayload(rr, rdata, &offset)
-		dst.Answer = append(dst.Answer, copied)
+		switch value := rr.(type) {
+		case *D.A:
+			n := len(value.A)
+			copied := &aValues[aIndex]
+			aIndex++
+			*copied = *value
+			copy(rdata[offset:], value.A)
+			copied.A = rdata[offset : offset+n : offset+n]
+			offset += n
+			dst.Answer = append(dst.Answer, copied)
+		case *D.AAAA:
+			n := len(value.AAAA)
+			copied := &aaaaValues[aaaaIndex]
+			aaaaIndex++
+			*copied = *value
+			copy(rdata[offset:], value.AAAA)
+			copied.AAAA = rdata[offset : offset+n : offset+n]
+			offset += n
+			dst.Answer = append(dst.Answer, copied)
+		default:
+			dst.Answer = append(dst.Answer, D.Copy(rr))
+		}
 	}
 	for _, rr := range src.Ns {
 		dst.Ns = append(dst.Ns, D.Copy(rr))
@@ -93,29 +117,6 @@ func copyCachedMsg(src *D.Msg) *D.Msg {
 	}
 
 	return dst
-}
-
-func copyAnswerPayload(rr D.RR, slab []byte, offset *int) (D.RR, int) {
-	switch value := rr.(type) {
-	case *D.A:
-		copied := *value
-		n := len(value.A)
-		start := *offset
-		copy(slab[start:start+n], value.A)
-		copied.A = slab[start : start+n : start+n]
-		*offset = start + n
-		return &copied, n
-	case *D.AAAA:
-		copied := *value
-		n := len(value.AAAA)
-		start := *offset
-		copy(slab[start:start+n], value.AAAA)
-		copied.AAAA = slab[start : start+n : start+n]
-		*offset = start + n
-		return &copied, n
-	default:
-		return D.Copy(rr), 0
-	}
 }
 
 // putMsgToCache puts a dns message into the cache.
