@@ -92,6 +92,21 @@ func TestExchangeContextFreshCacheHit(t *testing.T) {
 	require.EqualValues(t, 0, client.queries.Load(), "a fresh cache hit must not query upstream")
 }
 
+func TestExchangeContextCacheHitCopiesAnswerPayload(t *testing.T) {
+	resolver := testResolver(&fakeDNSClient{response: testAResponseMsg()})
+	query := testQueryMsg()
+
+	putMsgToCache(resolver.cache, questionKey(query.Question[0]), testAResponseMsg())
+	first, err := resolver.ExchangeContext(context.Background(), query)
+	require.NoError(t, err)
+	first.Answer[0].(*D.A).A[0] = 127
+
+	second, err := resolver.ExchangeContext(context.Background(), query)
+	require.NoError(t, err)
+	require.Equal(t, byte(93), second.Answer[0].(*D.A).A[0],
+		"a caller mutation must not corrupt the cached answer")
+}
+
 func TestExchangeContextExpiredCacheHitRefreshes(t *testing.T) {
 	client := &fakeDNSClient{response: testAResponseMsg()}
 	resolver := testResolver(client)

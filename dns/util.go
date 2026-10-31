@@ -47,13 +47,75 @@ func updateTTL(records []D.RR, ttl uint32) {
 }
 
 // getMsgFromCache returns a cached dns message if it exists, otherwise returns nil.
-// the returned msg is a copy of the original msg, so it can be modified without affecting the original msg.
+// the returned records are copied; Question remains shared because dns.Msg treats it as immutable.
 func getMsgFromCache(c dnsCache, q D.Question) (*D.Msg, time.Time, bool) {
 	msg, expireTime, hit := c.GetWithExpire(questionKey(q))
 	if msg != nil {
-		msg = msg.Copy() // never modify the original msg
+		msg = copyCachedMsg(msg)
 	}
 	return msg, expireTime, hit
+}
+
+// copyCachedMsg avoids per-record allocations for the fixed A and AAAA payloads
+// that dominate cached DNS traffic. Question is immutable by dns.Msg contract.
+func copyCachedMsg(src *D.Msg) *D.Msg {
+	dst := &D.Msg{}
+	dst.MsgHdr = src.MsgHdr
+	dst.Compress = src.Compress
+	dst.Question = src.Question
+
+	rdataLen := 0
+	for _, rr := range src.Answer {
+		switch value := rr.(type) {
+		case *D.A:
+			rdataLen += len(value.A)
+		case *D.AAAA:
+			rdataLen += len(value.AAAA)
+		}
+	}
+	rdata := make([]byte, rdataLen)
+	offset := 0
+
+	rrArr := make([]D.RR, len(src.Answer)+len(src.Ns)+len(src.Extra))
+	dst.Answer, rrArr = rrArr[:0:len(src.Answer)], rrArr[len(src.Answer):]
+	dst.Ns, rrArr = rrArr[:0:len(src.Ns)], rrArr[len(src.Ns):]
+	dst.Extra = rrArr[:0:len(src.Extra)]
+
+	for _, rr := range src.Answer {
+		copied, _ := copyAnswerPayload(rr, rdata, &offset)
+		dst.Answer = append(dst.Answer, copied)
+	}
+	for _, rr := range src.Ns {
+		dst.Ns = append(dst.Ns, D.Copy(rr))
+	}
+	for _, rr := range src.Extra {
+		dst.Extra = append(dst.Extra, D.Copy(rr))
+	}
+
+	return dst
+}
+
+func copyAnswerPayload(rr D.RR, slab []byte, offset *int) (D.RR, int) {
+	switch value := rr.(type) {
+	case *D.A:
+		copied := *value
+		n := len(value.A)
+		start := *offset
+		copy(slab[start:start+n], value.A)
+		copied.A = slab[start : start+n : start+n]
+		*offset = start + n
+		return &copied, n
+	case *D.AAAA:
+		copied := *value
+		n := len(value.AAAA)
+		start := *offset
+		copy(slab[start:start+n], value.AAAA)
+		copied.AAAA = slab[start : start+n : start+n]
+		*offset = start + n
+		return &copied, n
+	default:
+		return D.Copy(rr), 0
+	}
 }
 
 // putMsgToCache puts a dns message into the cache.
