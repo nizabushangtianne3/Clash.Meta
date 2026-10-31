@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"unsafe"
 
 	"github.com/metacubex/mihomo/common/buf"
 )
@@ -19,7 +20,10 @@ const InitialPeekBufferSize = 512
 type BufferedConn struct {
 	r *bufio.Reader
 	net.Conn
-	peeked bool
+	bufReader            bufio.Reader
+	readerBuf            [InitialPeekBufferSize]byte
+	inlineReaderDisabled bool
+	peeked               bool
 }
 
 func NewBufferedConn(c net.Conn) *BufferedConn {
@@ -41,7 +45,12 @@ func WarpConnWithBioReader(c net.Conn, br *bufio.Reader) net.Conn {
 
 func (c *BufferedConn) reader() *bufio.Reader {
 	if c.r == nil {
-		c.r = bufio.NewReaderSize(c.Conn, InitialPeekBufferSize)
+		if c.inlineReaderDisabled {
+			c.r = bufio.NewReaderSize(c.Conn, InitialPeekBufferSize)
+		} else {
+			(*bufioReader)(unsafe.Pointer(&c.bufReader)).reset(c.Conn, c.readerBuf[:])
+			c.r = &c.bufReader
+		}
 	}
 	return c.r
 }
@@ -129,9 +138,16 @@ func (c *BufferedConn) ReadCached() *buf.Buffer { // call in sing/common/bufio.C
 		length := c.r.Buffered()
 		b, _ := c.r.Peek(length)
 		_, _ = c.r.Discard(length)
+		if c.r == &c.bufReader {
+			c.inlineReaderDisabled = true
+		}
+		c.r = nil
 		return buf.As(b)
 	}
-	c.r = nil // drop bufio.Reader to let gc can clean up its internal buf
+	if c.r == &c.bufReader {
+		c.inlineReaderDisabled = true
+	}
+	c.r = nil
 	return nil
 }
 

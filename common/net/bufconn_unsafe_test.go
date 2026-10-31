@@ -77,6 +77,20 @@ func TestBufferedConnGrow(t *testing.T) {
 	assert.Equal(t, initialSize, conn.Reader().Size())
 }
 
+func TestBufferedConnReadCachedStopsReusingInlineBuffer(t *testing.T) {
+	conn := NewBufferedConn(&testReaderConn{Reader: bytes.NewReader([]byte("cached"))})
+	_, err := conn.Peek(1)
+	require.NoError(t, err)
+
+	cached := conn.ReadCached()
+	require.Equal(t, []byte("cached"), cached.Bytes())
+	require.True(t, conn.inlineReaderDisabled)
+	require.Nil(t, conn.r)
+
+	require.NotNil(t, conn.reader())
+	require.NotSame(t, &conn.bufReader, conn.r)
+}
+
 func TestBufferedConnReadsWithoutBufferedReader(t *testing.T) {
 	conn := NewBufferedConn(&testReaderConn{Reader: bytes.NewReader([]byte("direct"))})
 	require.Nil(t, conn.r)

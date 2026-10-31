@@ -17,6 +17,9 @@ type bufioReader struct {
 	lastRuneSize int // size of last rune read for UnreadRune; -1 means invalid
 }
 
+func (b *bufioReader) reset(rd io.Reader, buf []byte) {
+	*b = bufioReader{buf: buf, rd: rd, lastByte: -1, lastRuneSize: -1}
+}
 func newReadBuffer(size int) []byte {
 	newSize := uint(1) << bits.Len(uint(size-1))
 	if newSize > ^uint(0)>>1 {
