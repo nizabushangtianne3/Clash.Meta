@@ -3,10 +3,13 @@ package route
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/metacubex/mihomo/adapter/outboundgroup"
+	"github.com/metacubex/mihomo/common/jsonutil"
 	"github.com/metacubex/mihomo/common/utils"
 	"github.com/metacubex/mihomo/component/profile/cachefile"
 	C "github.com/metacubex/mihomo/constant"
@@ -19,7 +22,66 @@ import (
 
 var (
 	SwitchProxiesCallback func(sGroup string, sProxy string)
+
+	responseBodyPool = sync.Pool{New: func() any { return new([]byte) }}
+	proxyNamesPool   = sync.Pool{New: func() any { return new([]string) }}
 )
+
+func writeJSONDocument(w http.ResponseWriter, r *http.Request, document []byte) {
+	w.Header().Set("Content-Type", "application/json")
+	if status, ok := r.Context().Value(render.StatusCtxKey).(int); ok {
+		w.WriteHeader(status)
+	}
+	_, _ = w.Write(append(document, '\n'))
+}
+
+func appendProxyDocument(dst []byte, proxies map[string]C.Proxy) []byte {
+	namesPtr := proxyNamesPool.Get().(*[]string)
+	names := (*namesPtr)[:0]
+	for name := range proxies {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	dst = append(dst, `{"proxies":{`...)
+	for index, name := range names {
+		if index != 0 {
+			dst = append(dst, ',')
+		}
+		dst = jsonutil.AppendString(dst, name)
+		dst = append(dst, ':')
+		dst = proxies[name].AppendJSON(dst)
+	}
+	dst = append(dst, '}', '}')
+
+	*namesPtr = names
+	proxyNamesPool.Put(namesPtr)
+	return dst
+}
+
+func appendGroupDocument(dst []byte, proxies map[string]C.Proxy) []byte {
+	namesPtr := proxyNamesPool.Get().(*[]string)
+	names := (*namesPtr)[:0]
+	for name, proxy := range proxies {
+		if _, ok := proxy.Adapter().(outboundgroup.ProxyGroup); ok {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+
+	dst = append(dst, `{"proxies":[`...)
+	for index, name := range names {
+		if index != 0 {
+			dst = append(dst, ',')
+		}
+		dst = proxies[name].AppendJSON(dst)
+	}
+	dst = append(dst, ']', '}')
+
+	*namesPtr = names
+	proxyNamesPool.Put(namesPtr)
+	return dst
+}
 
 func proxyRouter() http.Handler {
 	r := chi.NewRouter()
@@ -60,15 +122,20 @@ func findProxyByName(next http.Handler) http.Handler {
 }
 
 func getProxies(w http.ResponseWriter, r *http.Request) {
-	proxies := tunnel.Proxies()
-	render.JSON(w, r, render.M{
-		"proxies": proxies,
-	})
+	bodyPtr := responseBodyPool.Get().(*[]byte)
+	body := appendProxyDocument((*bodyPtr)[:0], tunnel.Proxies())
+	writeJSONDocument(w, r, body)
+	*bodyPtr = body
+	responseBodyPool.Put(bodyPtr)
 }
 
 func getProxy(w http.ResponseWriter, r *http.Request) {
 	proxy := r.Context().Value(CtxKeyProxy).(C.Proxy)
-	render.JSON(w, r, proxy)
+	bodyPtr := responseBodyPool.Get().(*[]byte)
+	body := proxy.AppendJSON((*bodyPtr)[:0])
+	writeJSONDocument(w, r, body)
+	*bodyPtr = body
+	responseBodyPool.Put(bodyPtr)
 }
 
 func updateProxy(w http.ResponseWriter, r *http.Request) {

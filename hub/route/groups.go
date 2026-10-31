@@ -29,25 +29,25 @@ func groupRouter() http.Handler {
 }
 
 func getGroups(w http.ResponseWriter, r *http.Request) {
-	var gs []C.Proxy
-	for _, p := range tunnel.Proxies() {
-		if _, ok := p.Adapter().(outboundgroup.ProxyGroup); ok {
-			gs = append(gs, p)
-		}
-	}
-	render.JSON(w, r, render.M{
-		"proxies": gs,
-	})
+	bodyPtr := responseBodyPool.Get().(*[]byte)
+	body := appendGroupDocument((*bodyPtr)[:0], tunnel.Proxies())
+	writeJSONDocument(w, r, body)
+	*bodyPtr = body
+	responseBodyPool.Put(bodyPtr)
 }
 
 func getGroup(w http.ResponseWriter, r *http.Request) {
 	proxy := r.Context().Value(CtxKeyProxy).(C.Proxy)
-	if _, ok := proxy.Adapter().(outboundgroup.ProxyGroup); ok {
-		render.JSON(w, r, proxy)
+	if _, ok := proxy.Adapter().(outboundgroup.ProxyGroup); !ok {
+		render.Status(r, http.StatusNotFound)
+		render.JSON(w, r, ErrNotFound)
 		return
 	}
-	render.Status(r, http.StatusNotFound)
-	render.JSON(w, r, ErrNotFound)
+	bodyPtr := responseBodyPool.Get().(*[]byte)
+	body := proxy.AppendJSON((*bodyPtr)[:0])
+	writeJSONDocument(w, r, body)
+	*bodyPtr = body
+	responseBodyPool.Put(bodyPtr)
 }
 
 func getGroupDelay(w http.ResponseWriter, r *http.Request) {
