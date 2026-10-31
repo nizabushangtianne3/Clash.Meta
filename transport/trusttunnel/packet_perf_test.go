@@ -90,6 +90,36 @@ func BenchmarkServerReadPacketFromClient(b *testing.B) {
 	}
 }
 
+func BenchmarkClientReadPacketFromServer(b *testing.B) {
+	var wire bytes.Buffer
+	server := &serverPacketConn{
+		packetConn: packetConn{
+			httpConn: httpConn{writer: &wire},
+		},
+	}
+	source := M.SocksaddrFrom(netip.MustParseAddr("198.51.100.7"), 5353)
+	require.NoError(b, server.writePacketToClient(buf.As(make([]byte, 1350)), source))
+	raw := wire.Bytes()
+
+	body := &packetReader{r: bytes.NewReader(raw)}
+	client := &clientPacketConn{
+		packetConn: packetConn{
+			httpConn: httpConn{body: body},
+		},
+	}
+	buffer := buf.NewSize(1350)
+	defer buffer.Release()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		body.r.Reset(raw)
+		buffer.Reset()
+		if _, err := client.readPacketFromServer(buffer); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func TestServerReadPacketFromClientAllocatesBufferAndHeader(t *testing.T) {
 	var wire bytes.Buffer
 	client := &clientPacketConn{

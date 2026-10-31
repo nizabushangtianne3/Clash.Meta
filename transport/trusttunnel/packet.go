@@ -48,6 +48,7 @@ var (
 
 type clientPacketConn struct {
 	packetConn
+	readHeader [4 + 16 + 2 + 16 + 2]byte
 }
 
 func (u *clientPacketConn) FrontHeadroom() int {
@@ -95,13 +96,12 @@ func (u *clientPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 }
 
 func (u *clientPacketConn) readPacketFromServer(buffer *buf.Buffer) (destination M.Socksaddr, err error) {
-	var header [4 + 16 + 2 + 16 + 2]byte
-	if _, err = io.ReadFull(u.body, header[:]); err != nil {
+	if _, err = io.ReadFull(u.body, u.readHeader[:]); err != nil {
 		return
 	}
-	length := binary.BigEndian.Uint32(header[:4])
-	destination.Addr = parse16BytesIP([16]byte(header[4:20]))
-	destination.Port = binary.BigEndian.Uint16(header[20:22])
+	length := binary.BigEndian.Uint32(u.readHeader[:4])
+	destination.Addr = parse16BytesIP([16]byte(u.readHeader[4:20]))
+	destination.Port = binary.BigEndian.Uint16(u.readHeader[20:22])
 	payloadLen := int(length) - (16 + 2 + 16 + 2)
 	if payloadLen < 0 {
 		return M.Socksaddr{}, E.New("invalid udp length: ", length)
