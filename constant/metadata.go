@@ -291,8 +291,35 @@ func (m *Metadata) appendSourceDetail(dst []byte) []byte {
 }
 
 func (m *Metadata) SourceDetail() string {
-	capacity := 64 + len(m.Process)
-	return string(m.appendSourceDetail(make([]byte, 0, capacity)))
+	if m.Type == INNER {
+		return MihomoName
+	}
+
+	var source [64]byte
+	sourceBytes := m.appendSourceAddress(source[:0])
+
+	var builder strings.Builder
+	builder.Grow(len(sourceBytes) + len(m.Process) + 24)
+	builder.Write(sourceBytes)
+	switch {
+	case m.Process != "" && m.Uid != 0:
+		builder.WriteByte('(')
+		builder.WriteString(m.Process)
+		builder.WriteString(", uid=")
+		var uid [20]byte
+		builder.Write(strconv.AppendUint(uid[:0], uint64(m.Uid), 10))
+		builder.WriteByte(')')
+	case m.Uid != 0:
+		builder.WriteString("(uid=")
+		var uid [20]byte
+		builder.Write(strconv.AppendUint(uid[:0], uint64(m.Uid), 10))
+		builder.WriteByte(')')
+	case m.Process != "":
+		builder.WriteByte('(')
+		builder.WriteString(m.Process)
+		builder.WriteByte(')')
+	}
+	return builder.String()
 }
 
 func (m *Metadata) SourceValid() bool {
