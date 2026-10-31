@@ -23,6 +23,7 @@ type DomainSet struct {
 	leaves, labelBitmap []uint64
 	labels              []byte
 	ranks, selects      []int32
+	starts              []int32
 }
 
 type qElt struct{ s, e int }
@@ -199,7 +200,7 @@ func (ss *DomainSet) Has(key string) bool {
 						// has no input left for child edges. Try any remaining saved wildcards.
 						continue
 					}
-					nextBmIdx := selectIthOne(ss.labelBitmap, ss.ranks, ss.selects, nextNodeId-1) + 1
+					nextBmIdx := int(ss.starts[nextNodeId-1])
 					for ; getBit(ss.labelBitmap, nextBmIdx) == 0; nextBmIdx++ {
 						if ss.labels[nextBmIdx-nextNodeId] == domainStepByte {
 							bmIdx = nextBmIdx
@@ -237,7 +238,7 @@ func (ss *DomainSet) Has(key string) bool {
 			bmIdx = selectIthOne(ss.labelBitmap, ss.ranks, ss.selects, nodeId)
 			goto RESTART
 		}
-		bmIdx = selectIthOne(ss.labelBitmap, ss.ranks, ss.selects, nodeId-1) + 1
+		bmIdx = int(ss.starts[nodeId-1])
 	}
 
 	return getBit(ss.leaves, nodeId) != 0
@@ -279,7 +280,7 @@ func (ss *DomainSet) keys(f func(key string, nodeId int) bool) {
 			nextLabel := ss.labels[bmIdx-nodeId]
 			currentKey = append(currentKey, nextLabel)
 			nextNodeId := bmIdx - nodeId + 1 // countZeros(ss.labelBitmap, ss.ranks, bmIdx+1)
-			nextBmIdx := selectIthOne(ss.labelBitmap, ss.ranks, ss.selects, nextNodeId-1) + 1
+			nextBmIdx := int(ss.starts[nextNodeId-1])
 			if !traverse(nextNodeId, nextBmIdx) {
 				return false
 			}
@@ -322,6 +323,14 @@ func getBit(bm []uint64, i int) uint64 {
 // init builds pre-calculated cache to speed up rank() and select()
 func (ss *DomainSet) init() {
 	ss.selects, ss.ranks = bitmap.IndexSelect32R64(ss.labelBitmap)
+	ss.starts = make([]int32, 0, len(ss.labels))
+	for wordIndex, word := range ss.labelBitmap {
+		for bitIndex := 0; bitIndex < 64; bitIndex++ {
+			if word&(1<<uint(bitIndex)) != 0 {
+				ss.starts = append(ss.starts, int32(wordIndex*64+bitIndex+1))
+			}
+		}
+	}
 }
 
 // countZeros counts the number of "0" in a bitmap before the i-th bit(excluding
