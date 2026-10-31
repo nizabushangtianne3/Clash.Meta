@@ -201,13 +201,13 @@ func (m *Manager) Memory() uint64 {
 	return m.memory.Load()
 }
 
-func (m *Manager) Snapshot() *Snapshot {
+func (m *Manager) Snapshot() Snapshot {
 	connections := make([]*TrackerInfo, 0, m.connections.Size())
 	m.connections.RangeRelaxed(func(_ uuid.UUID, c Tracker) bool {
 		connections = append(connections, c.Info())
 		return true
 	})
-	return &Snapshot{
+	return Snapshot{
 		UploadTotal:   m.totalUpload(),
 		DownloadTotal: m.totalDownload(),
 		Connections:   connections,
