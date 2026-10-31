@@ -2,12 +2,14 @@ package sudoku
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"net"
 	"net/netip"
 	"testing"
 	"time"
 
+	"github.com/metacubex/mihomo/common/net/packet"
 	"github.com/metacubex/mihomo/common/pool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -112,6 +114,93 @@ func BenchmarkUoTWriteBack(b *testing.B) {
 
 // BenchmarkUoTFrameRoundTrip measures one datagram's whole wire step: the
 // frame is encoded by the writer and read back by the session's reader.
+type uotFrameConn struct {
+	r *bytes.Reader
+}
+
+func (c *uotFrameConn) Read(p []byte) (int, error) { return c.r.Read(p) }
+func (c *uotFrameConn) Write(p []byte) (int, error) {
+	return 0, errors.New("write is unused")
+}
+func (c *uotFrameConn) Close() error                    { return nil }
+func (c *uotFrameConn) LocalAddr() net.Addr             { return nil }
+func (c *uotFrameConn) RemoteAddr() net.Addr            { return nil }
+func (c *uotFrameConn) SetDeadline(time.Time) error     { return nil }
+func (c *uotFrameConn) SetReadDeadline(time.Time) error { return nil }
+func (c *uotFrameConn) SetWriteDeadline(time.Time) error {
+	return nil
+}
+func (c *uotFrameConn) ReadFrom(p []byte) (int, net.Addr, error) {
+	n, addr, err := NewUoTPacketConn(c).ReadFrom(p)
+	return n, addr, err
+}
+func (c *uotFrameConn) WriteTo(p []byte, _ net.Addr) (int, error) {
+	return c.Write(p)
+}
+
+type uotReadConn struct {
+	r *bytes.Reader
+}
+
+func (c *uotReadConn) Read(p []byte) (int, error) { return c.r.Read(p) }
+func (*uotReadConn) Write(p []byte) (int, error) {
+	return 0, errors.New("write is unused")
+}
+func (*uotReadConn) Close() error                     { return nil }
+func (*uotReadConn) LocalAddr() net.Addr              { return nil }
+func (*uotReadConn) RemoteAddr() net.Addr             { return nil }
+func (*uotReadConn) SetDeadline(time.Time) error      { return nil }
+func (*uotReadConn) SetReadDeadline(time.Time) error  { return nil }
+func (*uotReadConn) SetWriteDeadline(time.Time) error { return nil }
+
+func TestUoTWaitReadFromSkipsDomainsAndUnmapsIPv4(t *testing.T) {
+	var frames bytes.Buffer
+	require.NoError(t, WriteDatagram(&frames, "example.com:53", []byte("domain")))
+	require.NoError(t, WriteDatagram(&frames, "[::ffff:1.2.3.4]:5353", []byte("okay")))
+
+	reader := bytes.NewReader(frames.Bytes())
+	pc := NewUoTPacketConn(&uotReadConn{r: reader})
+
+	data, addr, err := pc.WaitReadFrom()
+	require.NoError(t, err)
+	require.Equal(t, []byte("okay"), data)
+	require.Equal(t, "1.2.3.4:5353", addr.String())
+	require.True(t, addr.Addr().Is4())
+	pool.Put(data)
+
+	_, _, err = pc.WaitReadFrom()
+	require.ErrorIs(t, err, io.EOF)
+}
+
+func BenchmarkUoTWaitReadFrom(b *testing.B) {
+	const payloadByte = 0xaa
+	var frames bytes.Buffer
+	for i := 0; i < 128; i++ {
+		if err := WriteDatagram(&frames, "8.8.8.8:53", []byte{payloadByte, payloadByte, payloadByte, payloadByte}); err != nil {
+			b.Fatal(err)
+		}
+	}
+	raw := frames.Bytes()
+	reader := bytes.NewReader(raw)
+	wrapper := packet.NewEnhancePacketConn(NewUoTPacketConn(&uotFrameConn{r: reader}))
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		reader.Reset(raw)
+		for consumed := 0; consumed < 128; {
+			data, _, err := wrapper.WaitReadFrom()
+			if err != nil {
+				b.Fatal(err)
+			}
+			if len(data) != 4 || data[0] != payloadByte {
+				b.Fatalf("bad datagram: %d bytes", len(data))
+			}
+			pool.Put(data)
+			consumed++
+		}
+	}
+}
 func BenchmarkUoTFrameRoundTrip(b *testing.B) {
 	target := "1.2.3.4:53"
 	payload := []byte{1, 2, 3, 4, 5, 6, 7, 8}

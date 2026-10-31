@@ -108,6 +108,21 @@ func NewUoTPacketConn(conn net.Conn) *UoTPacketConn {
 	return &UoTPacketConn{conn: conn, reader: NewUoTReader(conn)}
 }
 
+// ReadDatagram returns pool memory; invalid destinations are dropped.
+func (c *UoTPacketConn) WaitReadFrom() (data []byte, addr netip.AddrPort, err error) {
+	for {
+		socksAddr, payload, readErr := c.reader.ReadDatagram()
+		if readErr != nil {
+			return nil, netip.AddrPort{}, readErr
+		}
+		addrPort := socksAddr.AddrPort()
+		if !addrPort.IsValid() {
+			_ = pool.Put(payload)
+			continue
+		}
+		return payload, netip.AddrPortFrom(addrPort.Addr().Unmap(), addrPort.Port()), nil
+	}
+}
 func (c *UoTPacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
 	for {
 		addr, payloadLen, err := c.reader.readHeader()
