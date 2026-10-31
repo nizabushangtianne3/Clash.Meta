@@ -4,8 +4,9 @@ package trie
 // Modify from https://github.com/openacid/succinct/blob/d4684c35d123f7528b14e03c24327231723db704/sskv.go
 
 import (
-	"sort"
+	"bytes"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"github.com/metacubex/mihomo/common/utils"
@@ -28,10 +29,18 @@ type DomainSet struct {
 
 type qElt struct{ s, e int }
 
+// domainSetSpan references a reversed key in the builder arena.
+var domainArenaPool sync.Pool
+
+type domainSetSpan struct {
+	start, end int
+}
+
 // DomainSetBuilder incrementally collects domain patterns for a DomainSet.
 // Its zero value is ready to use.
 type DomainSetBuilder struct {
-	keys []string
+	arena []byte
+	keys  []domainSetSpan
 }
 
 // Insert validates and adds a domain pattern to the builder. It accepts the
@@ -56,18 +65,19 @@ func (b *DomainSetBuilder) Insert(domain string) error {
 }
 
 func (b *DomainSetBuilder) insertReversed(domain string) {
-	b.keys = append(b.keys, reverseDomain(domain))
-}
-
-func reverseDomain(domain string) string {
-	var builder strings.Builder
-	builder.Grow(len(domain))
+	if b.arena == nil {
+		if value, ok := domainArenaPool.Get().(*[]byte); ok && value != nil {
+			b.arena = (*value)[:0]
+		}
+	}
+	b.arena = slices.Grow(b.arena, len(domain))
+	start := len(b.arena)
 	for end := len(domain); end > 0; {
 		runeValue, size := utf8.DecodeLastRuneInString(domain[:end])
-		builder.WriteRune(runeValue)
+		b.arena = utf8.AppendRune(b.arena, runeValue)
 		end -= size
 	}
-	return builder.String()
+	b.keys = append(b.keys, domainSetSpan{start: start, end: len(b.arena)})
 }
 
 // IsEmpty reports whether the builder contains any domain paths.
@@ -77,6 +87,8 @@ func (b *DomainSetBuilder) IsEmpty() bool {
 
 // Reset discards all domains accumulated by the builder.
 func (b *DomainSetBuilder) Reset() {
+	b.putArena(b.arena)
+	b.arena = nil
 	b.keys = b.keys[:0]
 }
 
@@ -86,36 +98,51 @@ func (b *DomainSetBuilder) Build() *DomainSet {
 	if b == nil {
 		return nil
 	}
-	keys := b.keys
+	keys, arena := b.keys, b.arena
 	b.keys = keys[:0]
-	return buildDomainSet(keys, nil)
+	b.arena = nil
+	set := buildDomainSet(keys, arena)
+	b.putArena(arena)
+	return set
+}
+
+func (b *DomainSetBuilder) putArena(arena []byte) {
+	if cap(arena) == 0 {
+		return
+	}
+	buffer := arena[:0]
+	domainArenaPool.Put(&buffer)
 }
 
 // NewDomainSet creates a new *DomainSet struct, from a DomainTrie.
 func (t *DomainTrie[T]) NewDomainSet() *DomainSet {
-	keys := make([]string, 0)
+	var builder DomainSetBuilder
 	t.Foreach(func(domain string, _ T) bool {
 		if domain[0] == domainStepByte {
 			// Suffix-only patterns need an explicit '+' wildcard marker in
 			// the internal key; a leading dot alone is only a label separator.
 			domain = complexWildcard + domain
 		}
-		keys = append(keys, reverseDomain(domain))
+		builder.insertReversed(domain)
 		return true
 	})
-	return buildDomainSet(keys, nil)
+	return builder.Build()
 }
 
-func buildDomainSet(keys []string, onTerminal func(string)) *DomainSet {
+func buildDomainSet(keys []domainSetSpan, arena []byte) *DomainSet {
 	if len(keys) == 0 {
 		return nil
 	}
 	// ensure that the same prefix is continuous
 	// and according to the ascending sequence of length
-	sort.Strings(keys)
+	slices.SortFunc(keys, func(a, b domainSetSpan) int {
+		return bytes.Compare(arena[a.start:a.end], arena[b.start:b.end])
+	})
 	// The construction loop below consumes only one terminal key per node, so a
 	// duplicate would be indexed past its end and panic.
-	keys = slices.Compact(keys)
+	keys = slices.CompactFunc(keys, func(a, b domainSetSpan) bool {
+		return bytes.Equal(arena[a.start:a.end], arena[b.start:b.end])
+	})
 
 	ss := &DomainSet{}
 	lIdx := 0
@@ -126,10 +153,7 @@ func buildDomainSet(keys []string, onTerminal func(string)) *DomainSet {
 	next := make([]qElt, 0, len(keys))
 	for col := 0; len(queue) > 0; col++ {
 		for _, elt := range queue {
-			if col == len(keys[elt.s]) {
-				if onTerminal != nil {
-					onTerminal(keys[elt.s])
-				}
+			if col == len(arena[keys[elt.s].start:keys[elt.s].end]) {
 				elt.s++
 				// a leaf node
 				setBit(&ss.leaves, nodeID, 1)
@@ -137,10 +161,10 @@ func buildDomainSet(keys []string, onTerminal func(string)) *DomainSet {
 
 			for j := elt.s; j < elt.e; {
 				frm := j
-				for ; j < elt.e && keys[j][col] == keys[frm][col]; j++ {
+				for ; j < elt.e && arena[keys[j].start+col] == arena[keys[frm].start+col]; j++ {
 				}
 				next = append(next, qElt{frm, j})
-				ss.labels = append(ss.labels, keys[frm][col])
+				ss.labels = append(ss.labels, arena[keys[frm].start+col])
 				setBit(&ss.labelBitmap, lIdx, 0)
 				lIdx++
 			}
