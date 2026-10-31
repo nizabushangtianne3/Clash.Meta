@@ -6,17 +6,19 @@ import (
 )
 
 type call[T any] struct {
-	wg  sync.WaitGroup
 	val T
 	err error
 }
 
 type Single[T any] struct {
-	mux       sync.Mutex
-	wait      time.Duration
-	call      *call[T]
-	result    Result[T]
-	hasResult bool
+	mux        sync.Mutex
+	wait       time.Duration
+	call       call[T]
+	callCond   sync.Cond
+	loading    bool
+	generation uint64
+	result     Result[T]
+	hasResult  bool
 }
 
 type Result[T any] struct {
@@ -34,27 +36,30 @@ func (s *Single[T]) Do(fn func() (T, error)) (v T, err error, shared bool) {
 	}
 	s.hasResult = false // The result has expired, clear it
 
-	if callM := s.call; callM != nil {
+	if s.loading {
+		generation := s.generation
+		s.callCond.Wait()
+		shared := generation == s.generation
+		value, callErr := s.call.val, s.call.err
 		s.mux.Unlock()
-		callM.wg.Wait()
-		return callM.val, callM.err, true
+		return value, callErr, shared
 	}
 
-	callM := &call[T]{}
-	callM.wg.Add(1)
-	s.call = callM
+	startGeneration := s.generation
+	s.loading = true
 	s.mux.Unlock()
-	callM.val, callM.err = fn()
-	callM.wg.Done()
+
+	s.call.val, s.call.err = fn()
 
 	s.mux.Lock()
-	if s.call == callM { // maybe reset when fn is running
-		s.call = nil
-		s.result = Result[T]{callM.val, callM.err, time.Now()}
+	if s.generation == startGeneration {
+		s.result = Result[T]{s.call.val, s.call.err, time.Now()}
 		s.hasResult = true
 	}
+	s.loading = false
+	s.callCond.Broadcast()
 	s.mux.Unlock()
-	return callM.val, callM.err, false
+	return s.call.val, s.call.err, false
 }
 
 // Cached reports a Do result that has not expired yet, so a caller can answer
@@ -70,11 +75,15 @@ func (s *Single[T]) Cached() (v T, err error, ok bool) {
 
 func (s *Single[T]) Reset() {
 	s.mux.Lock()
-	s.call = nil
+	s.generation++
+	s.loading = false
 	s.hasResult = false
+	s.callCond.Broadcast()
 	s.mux.Unlock()
 }
 
 func NewSingle[T any](wait time.Duration) *Single[T] {
-	return &Single[T]{wait: wait}
+	s := &Single[T]{wait: wait}
+	s.callCond.L = &s.mux
+	return s
 }
