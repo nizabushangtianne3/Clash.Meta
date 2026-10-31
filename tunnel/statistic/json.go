@@ -43,59 +43,51 @@ func (s *Snapshot) AppendJSON(dst []byte) []byte {
 }
 
 func (i *TrackerInfo) appendJSON(dst []byte) []byte {
-	dst = i.appendIDJSON(dst)
-	dst = append(dst, `,"metadata":`...)
-	if i.Metadata == nil {
-		dst = append(dst, 'n', 'u', 'l', 'l')
-	} else {
-		dst = i.appendMetadataJSON(dst)
-	}
+	dst = i.appendPrefixJSON(dst)
 	dst = append(dst, `,"upload":`...)
 	dst = strconv.AppendInt(dst, i.UploadTotal.Load(), 10)
 	dst = append(dst, `,"download":`...)
 	dst = strconv.AppendInt(dst, i.DownloadTotal.Load(), 10)
-	dst = append(dst, `,"start":`...)
-	dst = i.appendStartJSON(dst)
-	dst = append(dst, `,"chains":`...)
-	dst = appendJSONStringSlice(dst, i.Chain)
-	dst = append(dst, `,"providerChains":`...)
-	dst = appendJSONStringSlice(dst, i.ProviderChain)
-	dst = append(dst, `,"rule":`...)
-	dst = appendJSONString(dst, i.Rule)
-	dst = append(dst, `,"rulePayload":`...)
-	dst = appendJSONString(dst, i.RulePayload)
-	return append(dst, '}')
+	return i.appendSuffixJSON(dst)
 }
 
-func (i *TrackerInfo) appendIDJSON(dst []byte) []byte {
-	i.idJSONOnce.Do(func() {
-		buf := make([]byte, 0, 40)
+func (i *TrackerInfo) appendPrefixJSON(dst []byte) []byte {
+	i.prefixOnce.Do(func() {
+		buf := make([]byte, 0, 512)
 		buf = append(buf, `{"id":"`...)
 		buf = appendUUID(buf, i.UUID)
+		buf = append(buf, `","metadata":`...)
+		if i.Metadata == nil {
+			buf = append(buf, 'n', 'u', 'l', 'l')
+		} else {
+			buf = append(buf, '{')
+			buf = appendMetadataJSON(buf, i.Metadata)
+			buf = append(buf, '}')
+		}
+		i.prefixJSON = buf
+	})
+	return append(dst, i.prefixJSON...)
+}
+
+func (i *TrackerInfo) appendSuffixJSON(dst []byte) []byte {
+	i.suffixOnce.Do(func() {
+		buf := make([]byte, 0, 256)
+		buf = append(buf, `,"start":`...)
 		buf = append(buf, '"')
-		i.idJSON = buf
-	})
-	return append(dst, i.idJSON...)
-}
-
-func (i *TrackerInfo) appendStartJSON(dst []byte) []byte {
-	i.startJSONOnce.Do(func() {
-		i.startJSON = i.Start.AppendFormat(make([]byte, 0, len(time.RFC3339Nano)+18), time.RFC3339Nano)
-	})
-	dst = append(dst, '"')
-	dst = append(dst, i.startJSON...)
-	return append(dst, '"')
-}
-
-func (i *TrackerInfo) appendMetadataJSON(dst []byte) []byte {
-	i.metadataOnce.Do(func() {
-		buf := make([]byte, 0, 512)
-		buf = append(buf, '{')
-		buf = appendMetadataJSON(buf, i.Metadata)
+		buf = i.Start.AppendFormat(buf, time.RFC3339Nano)
+		buf = append(buf, '"')
+		buf = append(buf, `,"chains":`...)
+		buf = appendJSONStringSlice(buf, i.Chain)
+		buf = append(buf, `,"providerChains":`...)
+		buf = appendJSONStringSlice(buf, i.ProviderChain)
+		buf = append(buf, `,"rule":`...)
+		buf = appendJSONString(buf, i.Rule)
+		buf = append(buf, `,"rulePayload":`...)
+		buf = appendJSONString(buf, i.RulePayload)
 		buf = append(buf, '}')
-		i.metadataJSON = buf
+		i.suffixJSON = buf
 	})
-	return append(dst, i.metadataJSON...)
+	return append(dst, i.suffixJSON...)
 }
 
 func appendMetadataJSON(dst []byte, md *C.Metadata) []byte {

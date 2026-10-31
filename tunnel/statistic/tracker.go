@@ -47,14 +47,12 @@ type TrackerInfo struct {
 	Rule          string       `json:"rule"`
 	RulePayload   string       `json:"rulePayload"`
 
-	// UUID and Start are fixed when the tracker is created, so repeated polls
-	// reuse their wire forms.
-	idJSON        []byte
-	idJSONOnce    sync.Once
-	startJSON     []byte
-	startJSONOnce sync.Once
-	metadataJSON  []byte
-	metadataOnce  sync.Once
+	// The connection view's static prefix and suffix are fixed when the tracker
+	// is created; only traffic counters change between polls.
+	prefixJSON []byte
+	prefixOnce sync.Once
+	suffixJSON []byte
+	suffixOnce sync.Once
 }
 
 type tcpTracker struct {
@@ -149,8 +147,8 @@ func NewTCPTracker(conn C.Conn, manager *Manager, metadata *C.Metadata, rule C.R
 			UUID:          newTrackerID(),
 			Start:         time.Now(),
 			Metadata:      snapshot,
-			Chain:         conn.Chains(),
-			ProviderChain: conn.ProviderChains(),
+			Chain:         cloneChain(conn.Chains()),
+			ProviderChain: cloneChain(conn.ProviderChains()),
 			Rule:          "",
 			UploadTotal:   atomic.NewInt64(uploadTotal),
 			DownloadTotal: atomic.NewInt64(downloadTotal),
@@ -264,8 +262,8 @@ func NewUDPTracker(conn C.PacketConn, manager *Manager, metadata *C.Metadata, ru
 			UUID:          newTrackerID(),
 			Start:         time.Now(),
 			Metadata:      snapshot,
-			Chain:         conn.Chains(),
-			ProviderChain: conn.ProviderChains(),
+			Chain:         cloneChain(conn.Chains()),
+			ProviderChain: cloneChain(conn.ProviderChains()),
 			Rule:          "",
 			UploadTotal:   atomic.NewInt64(uploadTotal),
 			DownloadTotal: atomic.NewInt64(downloadTotal),
@@ -290,4 +288,11 @@ func NewUDPTracker(conn C.PacketConn, manager *Manager, metadata *C.Metadata, ru
 
 	manager.Join(ut)
 	return ut
+}
+
+func cloneChain(chain C.Chain) C.Chain {
+	if chain == nil {
+		return nil
+	}
+	return append(make(C.Chain, 0, len(chain)), chain...)
 }
