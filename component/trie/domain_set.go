@@ -36,25 +36,37 @@ type DomainSetBuilder struct {
 // Insert validates and adds a domain pattern to the builder. It accepts the
 // same domain syntax as [DomainTrie.Insert].
 func (b *DomainSetBuilder) Insert(domain string) error {
-	parts, err := ValidAndSplitDomain(domain)
+	normalized, err := normalizeDomain(domain)
 	if err != nil {
 		return err
 	}
 
-	if parts[0] == complexWildcard {
-		b.insert(parts[1:])
-		b.insert(parts)
-	} else {
-		b.insert(parts)
+	switch {
+	case strings.HasPrefix(normalized, complexWildcard+domainStep):
+		base := normalized[len(complexWildcard)+1:]
+		b.insertReversed(base)
+		b.insertReversed(normalized)
+	case strings.HasPrefix(normalized, domainStep):
+		b.insertReversed(complexWildcard + normalized)
+	default:
+		b.insertReversed(normalized)
 	}
 	return nil
 }
 
-func (b *DomainSetBuilder) insert(parts []string) {
-	if parts[0] == dotWildcard {
-		parts[0] = complexWildcard
+func (b *DomainSetBuilder) insertReversed(domain string) {
+	b.keys = append(b.keys, reverseDomain(domain))
+}
+
+func reverseDomain(domain string) string {
+	var builder strings.Builder
+	builder.Grow(len(domain))
+	for end := len(domain); end > 0; {
+		runeValue, size := utf8.DecodeLastRuneInString(domain[:end])
+		builder.WriteRune(runeValue)
+		end -= size
 	}
-	b.keys = append(b.keys, utils.Reverse(joinDomain(parts)))
+	return builder.String()
 }
 
 // IsEmpty reports whether the builder contains any domain paths.
