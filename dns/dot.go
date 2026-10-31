@@ -2,7 +2,6 @@ package dns
 
 import (
 	"context"
-	"fmt"
 	"github.com/metacubex/mihomo/component/resolver"
 	"net"
 	"runtime"
@@ -21,6 +20,7 @@ const maxOldDotConns = 8
 
 type dnsOverTLS struct {
 	port           string
+	address        string
 	host           string
 	dialer         *dnsDialer
 	skipCertVerify bool
@@ -35,7 +35,7 @@ var _ dnsClient = (*dnsOverTLS)(nil)
 
 // Address implements dnsClient
 func (t *dnsOverTLS) Address() string {
-	return fmt.Sprintf("tls://%s", net.JoinHostPort(t.host, t.port))
+	return t.address
 }
 
 func (t *dnsOverTLS) ExchangeContext(ctx context.Context, m *D.Msg) (*D.Msg, error) {
@@ -165,9 +165,10 @@ func (t *dnsOverTLS) Close() error {
 func newDoTClient(addr string, resolver resolver.Resolver, params map[string]string, proxyAdapter C.ProxyAdapter, proxyName string) *dnsOverTLS {
 	host, port, _ := net.SplitHostPort(addr)
 	c := &dnsOverTLS{
-		port:   port,
-		host:   host,
-		dialer: newDNSDialer(resolver, proxyAdapter, proxyName),
+		port:    port,
+		address: "tls://" + net.JoinHostPort(host, port),
+		host:    host,
+		dialer:  newDNSDialer(resolver, proxyAdapter, proxyName),
 	}
 	c.connections.SetBaseCap(maxOldDotConns)
 	if params["skip-cert-verify"] == "true" {

@@ -203,3 +203,14 @@ func BenchmarkDNSClientAddress(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkDNSOverTLSAddress(b *testing.B) {
+	client := newDoTClient("203.0.113.7:853", nil, nil, nil, "")
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if client.Address() == "" {
+			b.Fatal("empty address")
+		}
+	}
+}
