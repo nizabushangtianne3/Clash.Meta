@@ -240,29 +240,59 @@ func (m *Metadata) RemoteAddress() string {
 	return string(buf)
 }
 
+func (m *Metadata) appendSourceAddress(dst []byte) []byte {
+	if !m.SrcIP.IsValid() {
+		dst = append(dst, "invalid IP"...)
+	} else {
+		if m.SrcIP.Is6() {
+			dst = append(dst, '[')
+		}
+		dst, _ = m.SrcIP.AppendText(dst)
+		if m.SrcIP.Is6() {
+			dst = append(dst, ']')
+		}
+	}
+	dst = append(dst, ':')
+	return strconv.AppendUint(dst, uint64(m.SrcPort), 10)
+}
+
 func (m *Metadata) SourceAddress() string {
-	return net.JoinHostPort(m.SrcIP.String(), strconv.FormatUint(uint64(m.SrcPort), 10))
+	return string(m.appendSourceAddress(make([]byte, 0, 64)))
 }
 
 func (m *Metadata) SourceAddrPort() netip.AddrPort {
 	return netip.AddrPortFrom(m.SrcIP.Unmap(), m.SrcPort)
 }
 
-func (m *Metadata) SourceDetail() string {
+func (m *Metadata) appendSourceDetail(dst []byte) []byte {
 	if m.Type == INNER {
-		return MihomoName
+		return append(dst, MihomoName...)
 	}
 
+	dst = m.appendSourceAddress(dst)
 	switch {
 	case m.Process != "" && m.Uid != 0:
-		return fmt.Sprintf("%s(%s, uid=%d)", m.SourceAddress(), m.Process, m.Uid)
+		dst = append(dst, '(')
+		dst = append(dst, m.Process...)
+		dst = append(dst, ',', ' ', 'u', 'i', 'd', '=')
+		dst = strconv.AppendUint(dst, uint64(m.Uid), 10)
+		return append(dst, ')')
 	case m.Uid != 0:
-		return fmt.Sprintf("%s(uid=%d)", m.SourceAddress(), m.Uid)
+		dst = append(dst, '(', 'u', 'i', 'd', '=')
+		dst = strconv.AppendUint(dst, uint64(m.Uid), 10)
+		return append(dst, ')')
 	case m.Process != "":
-		return fmt.Sprintf("%s(%s)", m.SourceAddress(), m.Process)
+		dst = append(dst, '(')
+		dst = append(dst, m.Process...)
+		return append(dst, ')')
 	default:
-		return m.SourceAddress()
+		return dst
 	}
+}
+
+func (m *Metadata) SourceDetail() string {
+	capacity := 64 + len(m.Process)
+	return string(m.appendSourceDetail(make([]byte, 0, capacity)))
 }
 
 func (m *Metadata) SourceValid() bool {
