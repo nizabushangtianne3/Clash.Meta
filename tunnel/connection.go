@@ -17,8 +17,7 @@ import (
 )
 
 type packetSender struct {
-	ctx    context.Context
-	cancel context.CancelFunc
+	done   chan struct{}
 	ch     chan C.PacketAdapter
 	closed atomic.Bool
 	active atomic.Int64
@@ -68,9 +67,9 @@ func packetOriginKey(metadata *C.Metadata) packetOrigin {
 // newPacketSender return a chan based C.PacketSender
 // It ensures that packets can be sent sequentially and without blocking
 func newPacketSender() C.PacketSender {
-	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
 	ch := make(chan C.PacketAdapter, senderCapacity)
-	return &packetSender{ctx: ctx, cancel: cancel, ch: ch}
+	return &packetSender{done: done, ch: ch}
 }
 
 func (s *packetSender) AddMapping(originMetadata *C.Metadata, metadata *C.Metadata) {
@@ -186,7 +185,7 @@ func (s *packetSender) processPacket(pc C.PacketConn, packet C.PacketAdapter) {
 		if metadata.Host != "" {
 			// TODO: ResolveUDP may take a long time to block the Process loop
 			//       but we want keep sequence sending so can't open a new goroutine
-			if err := pc.ResolveUDP(s.ctx, metadata); err != nil {
+			if err := pc.ResolveUDP(s, metadata); err != nil {
 				log.Warnln("[UDP] Resolve Ip error: %s", err)
 				return
 			}
@@ -226,7 +225,7 @@ func (s *packetSender) destinationFor(target netip.Addr, port uint16) *net.UDPAd
 func (s *packetSender) Process(pc C.PacketConn, proxy C.WriteBackProxy) {
 	for {
 		select {
-		case <-s.ctx.Done():
+		case <-s.done:
 			return // sender closed
 		case packet := <-s.ch:
 			if proxy != nil {
@@ -280,8 +279,27 @@ func (s *packetSender) Close() {
 	for s.active.Load() != 0 {
 		runtime.Gosched()
 	}
-	s.cancel()
+	close(s.done)
 	s.dropAll()
+}
+
+func (s *packetSender) Deadline() (time.Time, bool) {
+	return time.Time{}, false
+}
+
+func (s *packetSender) Done() <-chan struct{} {
+	return s.done
+}
+
+func (s *packetSender) Err() error {
+	if s.closed.Load() {
+		return context.Canceled
+	}
+	return nil
+}
+
+func (s *packetSender) Value(any) any {
+	return nil
 }
 
 func (s *packetSender) DoSniff(metadata *C.Metadata) error { return nil }
