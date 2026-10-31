@@ -145,6 +145,18 @@ func withMapping(mapping *lru.LruCache[netip.Addr, string]) middleware {
 	}
 }
 
+// fakeIPAnswer keeps the record and the one-element interface slice in a
+// single allocation. The returned DNS message owns the combined object.
+type fakeIPAnswerA struct {
+	record D.A
+	answer [1]D.RR
+}
+
+type fakeIPAnswerAAAA struct {
+	record D.AAAA
+	answer [1]D.RR
+}
+
 func withFakeIP(skipper *fakeip.Skipper, fakePool *fakeip.Pool, fakePool6 *fakeip.Pool, fakeIPTTL int) middleware {
 	return func(next handler) handler {
 		return func(ctx *icontext.DNSContext, r *D.Msg) (*D.Msg, error) {
@@ -155,7 +167,11 @@ func withFakeIP(skipper *fakeip.Skipper, fakePool *fakeip.Pool, fakePool6 *fakei
 				return next(ctx, r)
 			}
 
-			var rr D.RR
+			var (
+				combinedA    *fakeIPAnswerA
+				combinedAAAA *fakeIPAnswerAAAA
+				rr           D.RR
+			)
 			switch q.Qtype {
 			case D.TypeA:
 				if fakePool == nil {
@@ -163,18 +179,22 @@ func withFakeIP(skipper *fakeip.Skipper, fakePool *fakeip.Pool, fakePool6 *fakei
 				}
 				ip := fakePool.Lookup(host)
 				a4 := ip.As4()
-				answer := &D.A{Hdr: D.RR_Header{Name: q.Name, Rrtype: D.TypeA, Class: D.ClassINET, Ttl: dnsDefaultTTL}}
-				copy(answer.A[:], a4[:])
-				rr = answer
+				combinedA = &fakeIPAnswerA{}
+				combinedA.record.Hdr = D.RR_Header{Name: q.Name, Rrtype: D.TypeA, Class: D.ClassINET, Ttl: dnsDefaultTTL}
+				copy(combinedA.record.A[:], a4[:])
+				combinedA.answer[0] = &combinedA.record
+				rr = combinedA.answer[0]
 			case D.TypeAAAA:
 				if fakePool6 == nil {
 					return handleMsgWithEmptyAnswer(r), nil
 				}
 				ip := fakePool6.Lookup(host)
 				a16 := ip.As16()
-				answer := &D.AAAA{Hdr: D.RR_Header{Name: q.Name, Rrtype: D.TypeAAAA, Class: D.ClassINET, Ttl: dnsDefaultTTL}}
-				copy(answer.AAAA[:], a16[:])
-				rr = answer
+				combinedAAAA = &fakeIPAnswerAAAA{}
+				combinedAAAA.record.Hdr = D.RR_Header{Name: q.Name, Rrtype: D.TypeAAAA, Class: D.ClassINET, Ttl: dnsDefaultTTL}
+				copy(combinedAAAA.record.AAAA[:], a16[:])
+				combinedAAAA.answer[0] = &combinedAAAA.record
+				rr = combinedAAAA.answer[0]
 			case D.TypeSVCB, D.TypeHTTPS:
 				return handleMsgWithEmptyAnswer(r), nil
 			default:
@@ -185,8 +205,14 @@ func withFakeIP(skipper *fakeip.Skipper, fakePool *fakeip.Pool, fakePool6 *fakei
 			// header, question and EDNS0 record instead of cloning them.
 			r.Response = true
 			r.Rcode = D.RcodeSuccess
-			r.Answer = []D.RR{rr}
-
+			switch {
+			case combinedA != nil:
+				r.Answer = combinedA.answer[:]
+			case combinedAAAA != nil:
+				r.Answer = combinedAAAA.answer[:]
+			default:
+				r.Answer = []D.RR{rr}
+			}
 			setMsgTTL(r, uint32(fakeIPTTL))
 			r.Authoritative = true
 			r.RecursionAvailable = true
