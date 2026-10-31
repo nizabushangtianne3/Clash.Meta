@@ -203,3 +203,20 @@ func TestFeedSingleFragmentBypassesDeFragger(t *testing.T) {
 	require.Equal(t, []byte("payload"), assembled.DATA)
 	require.Empty(t, d.bags)
 }
+
+func TestFeedRemovesCompletedBag(t *testing.T) {
+	var d deFragger
+	for i := 0; i < 4; i++ {
+		data := pool.Get(2)
+		packet := fragmentPacket(uint8(i), 4, 2, data[:2])
+		packet.PKT_ID = 9
+		assembled, ok := d.Feed(&packet)
+		if i != 3 {
+			require.False(t, ok)
+			continue
+		}
+		require.True(t, ok)
+		pool.Put(assembled.DATA)
+	}
+	require.Empty(t, d.bags)
+}

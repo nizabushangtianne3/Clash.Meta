@@ -63,3 +63,32 @@ func BenchmarkFeedSingleFragment(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkFeedUniqueFragmentedMessages(b *testing.B) {
+	const fragments = 4
+	const fragmentSize = 512
+	payload := make([]byte, fragmentSize)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var d deFragger
+		messageID := uint16(i)
+		for fragmentID := 0; fragmentID < fragments; fragmentID++ {
+			data := pool.Get(fragmentSize)
+			copy(data, payload)
+			packet := fragmentPacket(uint8(fragmentID), fragments, fragmentSize, data)
+			packet.PKT_ID = messageID
+			assembled, ok := d.Feed(&packet)
+			if fragmentID != fragments-1 {
+				if ok {
+					b.Fatal("partial message completed")
+				}
+				continue
+			}
+			if !ok {
+				b.Fatal("final fragment did not complete")
+			}
+			pool.Put(assembled.DATA)
+		}
+	}
+}

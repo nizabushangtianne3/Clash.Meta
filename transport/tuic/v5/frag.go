@@ -156,8 +156,24 @@ func (d *deFragger) Feed(m *Packet) (Packet, bool) {
 
 	bag := d.bagFor(m)
 	bag.mutex.Lock()
-	defer bag.mutex.Unlock()
-	return d.feedLocked(m, bag)
+	packet, ok := d.feedLocked(m, bag)
+	bag.mutex.Unlock()
+	if ok {
+		d.removeCompleted(m.PKT_ID, bag)
+	}
+	return packet, ok
+}
+
+func (d *deFragger) removeCompleted(id uint16, completed *packetBag) {
+	d.mutex.Lock()
+	if d.bags[id] == completed {
+		delete(d.bags, id)
+	}
+	d.mutex.Unlock()
+
+	completed.mutex.Lock()
+	completed.reset()
+	completed.mutex.Unlock()
 }
 
 func (d *deFragger) feedLocked(m *Packet, bag *packetBag) (packet Packet, ok bool) {
