@@ -9,6 +9,7 @@ import (
 
 	"github.com/metacubex/mihomo/adapter/inbound"
 	N "github.com/metacubex/mihomo/common/net"
+	"github.com/metacubex/mihomo/common/pool"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/transport/socks5"
 
@@ -232,6 +233,7 @@ func (p *serverUDPPacket) WriteBack(b []byte, addr netip.AddrPort) (int, error) 
 }
 
 func (p *serverUDPPacket) Drop() {
+	_ = pool.Put(p.data)
 	p.data = nil
 }
 

@@ -72,13 +72,16 @@ func (a *association) deliver(packet receivedPacket) {
 	case a.input <- packet:
 	case <-a.closed:
 	default:
+		_ = pool.Put(packet.data)
 	}
 }
 
 func (a *association) ReadFrom(p []byte) (int, net.Addr, error) {
 	select {
 	case packet := <-a.input:
-		return copy(p, packet.data), packet.addr, nil
+		n := copy(p, packet.data)
+		_ = pool.Put(packet.data)
+		return n, packet.addr, nil
 	case <-a.closed:
 		return 0, nil, net.ErrClosed
 	case <-a.readDeadline.Wait():
@@ -86,14 +89,15 @@ func (a *association) ReadFrom(p []byte) (int, net.Addr, error) {
 	}
 }
 
-func (a *association) WaitReadFrom() ([]byte, func(), net.Addr, error) {
+func (a *association) WaitReadFrom() (data []byte, addr netip.AddrPort, err error) {
 	select {
 	case packet := <-a.input:
-		return packet.data, nil, packet.addr, nil
+		addr, _ := AddrPortFromNetAddr(packet.addr)
+		return packet.data, addr, nil
 	case <-a.closed:
-		return nil, nil, nil, net.ErrClosed
+		return nil, netip.AddrPort{}, net.ErrClosed
 	case <-a.readDeadline.Wait():
-		return nil, nil, nil, os.ErrDeadlineExceeded
+		return nil, netip.AddrPort{}, os.ErrDeadlineExceeded
 	}
 }
 
@@ -174,6 +178,15 @@ func (a *association) WriteToAddrPort(p []byte, addr netip.AddrPort) (n int, err
 func (a *association) Close() error {
 	a.closeOnce.Do(func() {
 		close(a.closed)
+	drain:
+		for {
+			select {
+			case packet := <-a.input:
+				_ = pool.Put(packet.data)
+			default:
+				break drain
+			}
+		}
 		a.closeErr = a.close()
 	})
 	return a.closeErr

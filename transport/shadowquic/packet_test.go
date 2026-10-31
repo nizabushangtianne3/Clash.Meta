@@ -5,6 +5,7 @@ import (
 	"net/netip"
 	"testing"
 
+	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/transport/socks5"
 	"github.com/stretchr/testify/require"
 )
@@ -20,8 +21,31 @@ func TestAddrPortFromNetAddrAllocatesNothing(t *testing.T) {
 	require.Zero(t, allocations)
 }
 
+type badNetAddr struct{}
+
+func (badNetAddr) Network() string { return "bad" }
+func (badNetAddr) String() string  { return "not-an-address" }
+func TestAssociationWaitReadFromReturnsPooledPacket(t *testing.T) {
+	ap := netip.MustParseAddrPort("203.0.113.7:443")
+	a := &association{input: make(chan receivedPacket, 1)}
+	payload := pool.Get(1200)
+	copy(payload, []byte("packet"))
+	payload = payload[:6]
+	a.input <- receivedPacket{
+		data:      payload,
+		addr:      socksNetAddr{addr: socks5.AddrFromStdAddrPort(ap)},
+		socksAddr: socks5.AddrFromStdAddrPort(ap),
+	}
+
+	data, addr, err := a.WaitReadFrom()
+	require.NoError(t, err)
+	require.Equal(t, []byte("packet"), data)
+	require.Equal(t, ap, addr)
+	pool.Put(data)
+}
+
 func TestAddrPortFromNetAddrRejectsANonAddress(t *testing.T) {
-	_, err := AddrPortFromNetAddr(socksNetAddr{addr: socks5.Addr{0x03, 0x03, 'a', 'b', 'c', 0, 53}})
+	_, err := AddrPortFromNetAddr(badNetAddr{})
 	require.ErrorIs(t, err, errInvalidAddress)
 }
 

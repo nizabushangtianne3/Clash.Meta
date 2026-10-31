@@ -61,6 +61,8 @@ func AddrPortFromNetAddr(addr net.Addr) (netip.AddrPort, error) {
 		return addr.AddrPort(), nil
 	case *net.TCPAddr:
 		return addr.AddrPort(), nil
+	case interface{ AddrPort() netip.AddrPort }:
+		return addr.AddrPort(), nil
 	}
 	addrPort, err := netip.ParseAddrPort(addr.String())
 	if err != nil {
@@ -183,4 +185,8 @@ func (a socksNetAddr) Network() string {
 
 func (a socksNetAddr) String() string {
 	return a.addr.String()
+}
+
+func (a socksNetAddr) AddrPort() netip.AddrPort {
+	return a.addr.AddrPort()
 }

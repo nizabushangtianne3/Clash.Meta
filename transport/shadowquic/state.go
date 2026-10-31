@@ -6,6 +6,7 @@ import (
 	"net"
 	"sync"
 
+	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/transport/socks5"
 
 	"github.com/metacubex/jls-quic-go"
@@ -88,10 +89,12 @@ func (s *connState) handleDatagrams() {
 			s.cancel()
 			return
 		}
-		id, payload, err := DecodeDatagram(message)
+		id, packet, err := DecodeDatagram(message)
 		if err != nil {
 			continue
 		}
+		payload := pool.Get(len(packet))
+		copy(payload, packet)
 		s.feedDatagram(id, payload)
 	}
 }
@@ -124,8 +127,9 @@ func (s *connState) handleUniStream(stream *quic.ReceiveStream) {
 		if err != nil {
 			return
 		}
-		payload := make([]byte, int(length))
+		payload := pool.Get(int(length))
 		if _, err = io.ReadFull(stream, payload); err != nil {
+			_ = pool.Put(payload)
 			return
 		}
 		target.assoc.deliver(receivedPacket{
@@ -154,9 +158,9 @@ func (s *connState) feedDatagram(id uint16, payload []byte) {
 		s.recv[id] = slot
 	}
 	if len(slot.pending) < maxPendingPacketsPerID {
-		packet := make([]byte, len(payload))
-		copy(packet, payload)
-		slot.pending = append(slot.pending, packet)
+		slot.pending = append(slot.pending, payload)
+	} else {
+		_ = pool.Put(payload)
 	}
 	s.mu.Unlock()
 }
@@ -218,6 +222,9 @@ func (s *connState) removeRecvIDsFor(assoc *association) {
 
 	for id, slot := range s.recv {
 		if slot != nil && slot.target != nil && slot.target.assoc == assoc {
+			for _, packet := range slot.pending {
+				_ = pool.Put(packet)
+			}
 			delete(s.recv, id)
 		}
 	}
