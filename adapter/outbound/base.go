@@ -18,8 +18,6 @@ import (
 	"github.com/metacubex/mihomo/component/resolver"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/log"
-
-	"github.com/gofrs/uuid/v5"
 )
 
 type ProxyAdapter interface {
@@ -42,7 +40,7 @@ type Base struct {
 	prefer      C.DNSPrefer
 	dialOptions []dialer.Option
 	dialer      C.Dialer
-	id          uuid.UUID
+	id          string
 }
 
 type BaseOption struct {
@@ -73,7 +71,7 @@ func NewBase(opt BaseOption) *Base {
 		rmark:       opt.RoutingMark,
 		prefer:      opt.Prefer,
 		dialOptions: buildDialOptions(opt),
-		id:          utils.NewUUIDV4(),
+		id:          utils.NewUUIDV4().String(),
 	}
 }
 
@@ -116,7 +114,7 @@ func (b *Base) Name() string {
 
 // Id implements C.ProxyAdapter
 func (b *Base) Id() string {
-	return b.id.String()
+	return b.id
 }
 
 // Type implements C.ProxyAdapter
