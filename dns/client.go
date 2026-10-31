@@ -2,7 +2,6 @@ package dns
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"strings"
 	"sync"
@@ -21,6 +20,7 @@ type client struct {
 	dialer  *dnsDialer
 	network string
 	addr    string
+	address string
 	dClient D.Client
 
 	idleMu sync.Mutex
@@ -35,7 +35,7 @@ const maxIdleDNSConns = 4
 
 // Address implements dnsClient
 func (c *client) Address() string {
-	return fmt.Sprintf("%s://%s", c.network, c.addr)
+	return c.address
 }
 
 func (c *client) ExchangeContext(ctx context.Context, m *D.Msg) (*D.Msg, error) {
@@ -150,6 +150,7 @@ func newClient(addr string, resolver resolver.Resolver, netType string, params m
 		dialer:  newDNSDialer(resolver, proxyAdapter, proxyName),
 		network: network,
 		addr:    net.JoinHostPort(host, port),
+		address: network + "://" + net.JoinHostPort(host, port),
 		dClient: D.Client{UDPSize: 4096, Timeout: 5 * time.Second},
 	}
 }

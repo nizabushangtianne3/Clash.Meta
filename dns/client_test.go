@@ -133,14 +133,7 @@ func startTruncatedDNSServers(tb testing.TB) string {
 }
 
 func newLocalUDPClient(port string) *client {
-	return &client{
-		host:    "127.0.0.1",
-		port:    port,
-		dialer:  newDNSDialer(nil, nil, ""),
-		network: "udp",
-		addr:    net.JoinHostPort("127.0.0.1", port),
-		dClient: D.Client{UDPSize: 4096, Timeout: 5 * time.Second},
-	}
+	return newClient(net.JoinHostPort("127.0.0.1", port), nil, "udp", nil, nil, "")
 }
 
 func newClientTestQuery() *D.Msg {
@@ -196,6 +189,17 @@ func BenchmarkClientExchangeUDP(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		if _, err := dnsClient.ExchangeContext(ctx, query); err != nil {
 			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkDNSClientAddress(b *testing.B) {
+	client := newLocalUDPClient("53")
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if client.Address() == "" {
+			b.Fatal("empty address")
 		}
 	}
 }
