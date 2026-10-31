@@ -116,8 +116,10 @@ func (s *packetSender) AddMapping(originMetadata *C.Metadata, metadata *C.Metada
 }
 
 func (s *packetSender) promoteSingleMapping() {
-	s.originToTarget = make(map[packetOrigin]netip.Addr)
-	s.targetToOrigin = make(map[netip.Addr]netip.Addr)
+	// Most flows stay small, but size for the same burst the packet channel was
+	// sized for so a multi-destination flow does not repeatedly rehash maps.
+	s.originToTarget = make(map[packetOrigin]netip.Addr, senderCapacity)
+	s.targetToOrigin = make(map[netip.Addr]netip.Addr, senderCapacity)
 	s.originToTarget[s.originCacheKey] = s.singleTarget
 	s.targetToOrigin[s.singleTarget] = s.singleOrigin
 }
