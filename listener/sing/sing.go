@@ -153,7 +153,8 @@ func (h *ListenerHandler) NewPacketConnection(ctx context.Context, conn network.
 	}
 
 	defer func() { _ = conn.Close() }()
-	state := newSingPacketState(bufio.NewNetPacketWriter(conn))
+	packetState := newSingPacketState(conn)
+	state := &packetState
 	defer state.close()
 	rwOptions := network.ReadWaitOptions{}
 	readWaiter, isReadWaiter := bufio.CreatePacketReadWaiter(conn)
@@ -216,7 +217,7 @@ func (h *ListenerHandler) NewPacket(ctx context.Context, key netip.AddrPort, buf
 		source: metadata.Source.AddrPort(),
 		buff:   buffer,
 	}
-	cPacket.ownState.writer = bufio.NewNetPacketWriter(init(nil))
+	cPacket.ownState = newSingPacketState(init(nil))
 	if conn, ok := common.Cast[localAddr](cPacket.ownState.writer); ok { // tun does not have real inAddr
 		cPacket.lAddr = conn.LocalAddr()
 	}
@@ -259,14 +260,23 @@ func ShouldIgnorePacketError(err error) bool {
 }
 
 type packetWriterState struct {
-	writer    network.NetPacketWriter
-	mutex     sync.Mutex
-	writeAddr net.UDPAddr
-	writeIP   [net.IPv6len]byte
+	writer        network.PacketWriter
+	frontHeadroom int
+	rearHeadroom  int
+	mutex         sync.Mutex
+	writeAddr     net.UDPAddr
+	writeIP       [net.IPv6len]byte
 }
 
-func newSingPacketState(writer network.NetPacketWriter) *packetWriterState {
-	return &packetWriterState{writer: writer}
+func newSingPacketState(writer network.PacketWriter) packetWriterState {
+	if netWriter, ok := writer.(network.NetPacketWriter); ok {
+		return packetWriterState{writer: netWriter}
+	}
+	return packetWriterState{
+		writer:        writer,
+		frontHeadroom: network.CalculateFrontHeadroom(writer),
+		rearHeadroom:  network.CalculateRearHeadroom(writer),
+	}
 }
 
 func (s *packetWriterState) close() {
@@ -296,8 +306,19 @@ func (s *packetWriterState) writeBack(b []byte, addr netip.AddrPort) (n int, err
 	s.writeAddr.Port = int(addr.Port())
 	s.writeAddr.Zone = ipAddr.Zone()
 
-	// sing's writer speaks net.Addr, so the address crosses that one boundary.
-	return s.writer.WriteTo(b, &s.writeAddr)
+	if netWriter, ok := s.writer.(network.NetPacketWriter); ok {
+		return netWriter.WriteTo(b, &s.writeAddr)
+	}
+
+	if s.frontHeadroom == 0 && s.rearHeadroom == 0 {
+		err = s.writer.WritePacket(buf.As(b), M.SocksaddrFromNet(&s.writeAddr))
+		return len(b), err
+	}
+	buffer := buf.NewSize(len(b) + s.frontHeadroom + s.rearHeadroom)
+	buffer.Resize(s.frontHeadroom, 0)
+	common.Must1(buffer.Write(b))
+	err = s.writer.WritePacket(buffer, M.SocksaddrFromNet(&s.writeAddr))
+	return len(b), err
 }
 
 // The wrapper is allocated per datagram on purpose: a flow keeps the packet it
