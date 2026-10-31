@@ -162,6 +162,7 @@ func (tt *tcpTracker) Upstream() any {
 }
 
 func NewTCPTracker(conn C.Conn, manager *Manager, metadata *C.Metadata, rule C.Rule, uploadTotal int64, downloadTotal int64, pushToManager bool) *tcpTracker {
+	chains, providerChains := cloneChains(conn.Chains(), conn.ProviderChains())
 	tt := &tcpTracker{
 		Conn:    conn,
 		manager: manager,
@@ -169,15 +170,15 @@ func NewTCPTracker(conn C.Conn, manager *Manager, metadata *C.Metadata, rule C.R
 		TrackerInfo: TrackerInfo{
 			UUID:          newTrackerID(),
 			Start:         time.Now(),
-			Chain:         cloneChain(conn.Chains()),
-			ProviderChain: cloneChain(conn.ProviderChains()),
+			Chain:         chains,
+			ProviderChain: providerChains,
 			Rule:          "",
-			UploadTotal:   atomic.NewInt64(uploadTotal),
-			DownloadTotal: atomic.NewInt64(downloadTotal),
 		},
 		pushToManager: pushToManager,
 		direct:        IsDirect(conn.Chains().Last()),
 	}
+	tt.TrackerInfo.UploadTotal.Store(uploadTotal)
+	tt.TrackerInfo.DownloadTotal.Store(downloadTotal)
 	tt.metadata = *metadata
 	tt.Metadata = &tt.metadata
 	tt.metadata.RemoteDst = conn.RemoteDestination()
@@ -265,6 +266,7 @@ func (ut *udpTracker) Upstream() any {
 }
 
 func NewUDPTracker(conn C.PacketConn, manager *Manager, metadata *C.Metadata, rule C.Rule, uploadTotal int64, downloadTotal int64, pushToManager bool) *udpTracker {
+	chains, providerChains := cloneChains(conn.Chains(), conn.ProviderChains())
 	ut := &udpTracker{
 		PacketConn: conn,
 		manager:    manager,
@@ -272,15 +274,15 @@ func NewUDPTracker(conn C.PacketConn, manager *Manager, metadata *C.Metadata, ru
 		TrackerInfo: TrackerInfo{
 			UUID:          newTrackerID(),
 			Start:         time.Now(),
-			Chain:         cloneChain(conn.Chains()),
-			ProviderChain: cloneChain(conn.ProviderChains()),
+			Chain:         chains,
+			ProviderChain: providerChains,
 			Rule:          "",
-			UploadTotal:   atomic.NewInt64(uploadTotal),
-			DownloadTotal: atomic.NewInt64(downloadTotal),
 		},
 		pushToManager: pushToManager,
 		direct:        IsDirect(conn.Chains().Last()),
 	}
+	ut.TrackerInfo.UploadTotal.Store(uploadTotal)
+	ut.TrackerInfo.DownloadTotal.Store(downloadTotal)
 	ut.metadata = *metadata
 	ut.Metadata = &ut.metadata
 	ut.metadata.RemoteDst = conn.RemoteDestination()
@@ -303,9 +305,15 @@ func NewUDPTracker(conn C.PacketConn, manager *Manager, metadata *C.Metadata, ru
 	return ut
 }
 
-func cloneChain(chain C.Chain) C.Chain {
-	if chain == nil {
-		return nil
+func cloneChains(chain, providerChain C.Chain) (C.Chain, C.Chain) {
+	total := len(chain) + len(providerChain)
+	if total == 0 {
+		return nil, nil
 	}
-	return append(make(C.Chain, 0, len(chain)), chain...)
+
+	combined := make(C.Chain, 0, total)
+	combined = append(combined, chain...)
+	combined = append(combined, providerChain...)
+
+	return combined[:len(chain):len(chain)], combined[len(chain):total:total]
 }
