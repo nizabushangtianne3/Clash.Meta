@@ -212,9 +212,12 @@ type localAddr interface {
 }
 
 func (h *ListenerHandler) NewPacket(ctx context.Context, key netip.AddrPort, buffer *buf.Buffer, metadata M.Metadata, init func(natConn network.PacketConn) network.PacketWriter) {
-	state := newSingPacketState(bufio.NewNetPacketWriter(init(nil)))
-	cPacket := newSingPacket(state, metadata.Source.AddrPort(), nil, buffer)
-	if conn, ok := common.Cast[localAddr](state.writer); ok { // tun does not have real inAddr
+	cPacket := &packet{
+		source: metadata.Source.AddrPort(),
+		buff:   buffer,
+	}
+	cPacket.ownState.writer = bufio.NewNetPacketWriter(init(nil))
+	if conn, ok := common.Cast[localAddr](cPacket.ownState.writer); ok { // tun does not have real inAddr
 		cPacket.lAddr = conn.LocalAddr()
 	}
 	h.handlePacket(ctx, cPacket, metadata.Source, metadata.Destination)
@@ -225,16 +228,16 @@ func (h *ListenerHandler) handlePacket(ctx context.Context, cPacket *packet, sou
 }
 
 func (h *ListenerHandler) buildPacketMetadata(ctx context.Context, cPacket *packet, source M.Socksaddr, destination M.Socksaddr) *C.Metadata {
-	cMetadata := &C.Metadata{
+	cPacket.metadata = C.Metadata{
 		NetWork: C.UDP,
 		Type:    h.Type,
 	}
-	_ = inbound.SetDstSocksaddr(cMetadata, destination)
-	inbound.SetSrcSocksaddr(cMetadata, source)
-	inbound.SetInAddr(cMetadata, cPacket.InAddr())
-	inbound.ApplyAdditions(cMetadata, h.Additions...)
-	inbound.ApplyAdditions(cMetadata, getAdditions(ctx)...)
-	return cMetadata
+	_ = inbound.SetDstSocksaddr(&cPacket.metadata, destination)
+	inbound.SetSrcSocksaddr(&cPacket.metadata, source)
+	inbound.SetInAddr(&cPacket.metadata, cPacket.InAddr())
+	inbound.ApplyAdditions(&cPacket.metadata, h.Additions...)
+	inbound.ApplyAdditions(&cPacket.metadata, getAdditions(ctx)...)
+	return &cPacket.metadata
 }
 
 func (h *ListenerHandler) NewError(ctx context.Context, err error) {
@@ -303,10 +306,10 @@ func (s *packetWriterState) writeBack(b []byte, addr netip.AddrPort) (n int, err
 // datagram claim it and move those replies onto another client's socket.
 func newSingPacket(state *packetWriterState, source netip.AddrPort, lAddr net.Addr, buff *buf.Buffer) *packet {
 	return &packet{
-		state:  state,
-		source: source,
-		lAddr:  lAddr,
-		buff:   buff,
+		sharedState: state,
+		source:      source,
+		lAddr:       lAddr,
+		buff:        buff,
 	}
 }
 
@@ -334,10 +337,12 @@ func newSingBuffer(rwOptions network.ReadWaitOptions) *buf.Buffer {
 }
 
 type packet struct {
-	state  *packetWriterState
-	source netip.AddrPort
-	lAddr  net.Addr
-	buff   *buf.Buffer
+	sharedState *packetWriterState
+	ownState    packetWriterState
+	metadata    C.Metadata
+	source      netip.AddrPort
+	lAddr       net.Addr
+	buff        *buf.Buffer
 }
 
 func (c *packet) Data() []byte {
@@ -351,7 +356,10 @@ func (c *packet) FlowKey() netip.AddrPort {
 
 // WriteBack wirtes UDP packet with source(ip, port) = `addr`
 func (c *packet) WriteBack(b []byte, addr netip.AddrPort) (n int, err error) {
-	return c.state.writeBack(b, addr)
+	if c.sharedState == nil {
+		return c.ownState.writeBack(b, addr)
+	}
+	return c.sharedState.writeBack(b, addr)
 }
 
 // LocalAddr returns the source IP/Port of UDP Packet
