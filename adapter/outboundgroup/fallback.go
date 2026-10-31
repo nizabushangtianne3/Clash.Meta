@@ -21,8 +21,8 @@ type FallbackOption struct{}
 type fallbackSelection struct {
 	proxy          C.Proxy
 	hasAlternative bool
-	at             time.Time
 	versions       []uint32
+	expires        int64
 }
 
 // A resolved pick is reused briefly like URLTest fast node, so a large
@@ -183,13 +183,19 @@ func (f *Fallback) Unwrap(metadata *C.Metadata, touch bool) C.Proxy {
 	return f.findAliveProxy(touch)
 }
 
+var fallbackStarted = time.Now()
+
+func fallbackMonotonic() int64 {
+	return int64(time.Since(fallbackStarted))
+}
+
 func (f *Fallback) clearSelection() {
 	f.selection.Store(nil)
 }
 
 func (f *Fallback) cachedSelection() (fallbackSelection, bool) {
 	selection := f.selection.Load()
-	if selection == nil || time.Since(selection.at) >= fallbackSelectionTTL {
+	if selection == nil || fallbackMonotonic() >= selection.expires {
 		return fallbackSelection{}, false
 	}
 	if !f.providerVersionsEqual(selection.versions) {
@@ -206,7 +212,7 @@ func (f *Fallback) storeSelection(
 	f.selection.Store(&fallbackSelection{
 		proxy:          proxy,
 		hasAlternative: hasAlternative,
-		at:             time.Now(),
+		expires:        fallbackMonotonic() + int64(fallbackSelectionTTL),
 		versions:       versions,
 	})
 }
