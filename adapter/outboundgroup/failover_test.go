@@ -57,6 +57,8 @@ func (p *swapProvider) Version() uint32 {
 func (p *swapProvider) RegisterHealthCheckTask(string, utils.IntRanges[uint16], string, uint) {
 }
 
+func (p *swapProvider) AppendJSON(dst []byte) []byte { return dst }
+
 func (p *swapProvider) swap(proxies []C.Proxy) {
 	p.mu.Lock()
 	defer p.mu.Unlock()

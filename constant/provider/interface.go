@@ -84,6 +84,7 @@ type ProxyProvider interface {
 	Version() uint32
 	RegisterHealthCheckTask(url string, expectedStatus utils.IntRanges[uint16], filter string, interval uint)
 	HealthCheckURL() string
+	AppendJSON(dst []byte) []byte
 }
 
 // RuleProvider interface
@@ -93,6 +94,7 @@ type RuleProvider interface {
 	Count() int
 	Match(metadata *constant.Metadata, helper constant.RuleMatchHelper) bool
 	Strategy() any
+	AppendJSON(dst []byte) []byte
 }
 
 // Rule Behavior

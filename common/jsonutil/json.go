@@ -1,6 +1,7 @@
 package jsonutil
 
 import (
+	"time"
 	"unicode/utf8"
 )
 
@@ -65,4 +66,11 @@ func AppendBool(dst []byte, value bool) []byte {
 		return append(dst, "true"...)
 	}
 	return append(dst, "false"...)
+}
+
+// AppendTime writes value in encoding/json's RFC3339Nano form.
+func AppendTime(dst []byte, value time.Time) []byte {
+	dst = append(dst, '"')
+	dst = value.AppendFormat(dst, time.RFC3339Nano)
+	return append(dst, '"')
 }

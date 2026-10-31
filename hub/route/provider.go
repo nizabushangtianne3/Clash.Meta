@@ -2,7 +2,9 @@ package route
 
 import (
 	"context"
+	"sort"
 
+	"github.com/metacubex/mihomo/common/jsonutil"
 	C "github.com/metacubex/mihomo/constant"
 	P "github.com/metacubex/mihomo/constant/provider"
 	"github.com/metacubex/mihomo/tunnel"
@@ -37,16 +39,45 @@ func proxyProviderProxyRouter() http.Handler {
 	return r
 }
 
+func appendProxyProvidersDocument(dst []byte, providers map[string]P.ProxyProvider) []byte {
+	namesPtr := proxyNamesPool.Get().(*[]string)
+	names := (*namesPtr)[:0]
+	for name := range providers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	dst = append(dst, `{"providers":{`...)
+	for index, name := range names {
+		if index != 0 {
+			dst = append(dst, ',')
+		}
+		dst = jsonutil.AppendString(dst, name)
+		dst = append(dst, ':')
+		dst = providers[name].AppendJSON(dst)
+	}
+	dst = append(dst, '}', '}')
+
+	*namesPtr = names
+	proxyNamesPool.Put(namesPtr)
+	return dst
+}
+
 func getProviders(w http.ResponseWriter, r *http.Request) {
-	providers := tunnel.Providers()
-	render.JSON(w, r, render.M{
-		"providers": providers,
-	})
+	bodyPtr := responseBodyPool.Get().(*[]byte)
+	body := appendProxyProvidersDocument((*bodyPtr)[:0], tunnel.Providers())
+	writeJSONDocument(w, r, body)
+	*bodyPtr = body
+	responseBodyPool.Put(bodyPtr)
 }
 
 func getProvider(w http.ResponseWriter, r *http.Request) {
 	provider := r.Context().Value(CtxKeyProvider).(P.ProxyProvider)
-	render.JSON(w, r, provider)
+	bodyPtr := responseBodyPool.Get().(*[]byte)
+	body := provider.AppendJSON((*bodyPtr)[:0])
+	writeJSONDocument(w, r, body)
+	*bodyPtr = body
+	responseBodyPool.Put(bodyPtr)
 }
 
 func updateProvider(w http.ResponseWriter, r *http.Request) {
@@ -120,11 +151,36 @@ func ruleProviderRouter() http.Handler {
 	return r
 }
 
+func appendRuleProvidersDocument(dst []byte, providers map[string]P.RuleProvider) []byte {
+	namesPtr := proxyNamesPool.Get().(*[]string)
+	names := (*namesPtr)[:0]
+	for name := range providers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	dst = append(dst, `{"providers":{`...)
+	for index, name := range names {
+		if index != 0 {
+			dst = append(dst, ',')
+		}
+		dst = jsonutil.AppendString(dst, name)
+		dst = append(dst, ':')
+		dst = providers[name].AppendJSON(dst)
+	}
+	dst = append(dst, '}', '}')
+
+	*namesPtr = names
+	proxyNamesPool.Put(namesPtr)
+	return dst
+}
+
 func getRuleProviders(w http.ResponseWriter, r *http.Request) {
-	ruleProviders := tunnel.RuleProviders()
-	render.JSON(w, r, render.M{
-		"providers": ruleProviders,
-	})
+	bodyPtr := responseBodyPool.Get().(*[]byte)
+	body := appendRuleProvidersDocument((*bodyPtr)[:0], tunnel.RuleProviders())
+	writeJSONDocument(w, r, body)
+	*bodyPtr = body
+	responseBodyPool.Put(bodyPtr)
 }
 
 func updateRuleProvider(w http.ResponseWriter, r *http.Request) {

@@ -2,7 +2,6 @@ package route
 
 import (
 	"strconv"
-	"time"
 
 	"github.com/metacubex/mihomo/common/jsonutil"
 	"github.com/metacubex/mihomo/constant"
@@ -45,11 +44,11 @@ func appendRulesDocument(dst []byte, rawRules []constant.Rule) []byte {
 			dst = append(dst, `,"hitCount":`...)
 			dst = strconv.AppendUint(dst, ruleWrapper.HitCount(), 10)
 			dst = append(dst, `,"hitAt":`...)
-			dst = appendTimeJSON(dst, ruleWrapper.HitAt())
+			dst = jsonutil.AppendTime(dst, ruleWrapper.HitAt())
 			dst = append(dst, `,"missCount":`...)
 			dst = strconv.AppendUint(dst, ruleWrapper.MissCount(), 10)
 			dst = append(dst, `,"missAt":`...)
-			dst = appendTimeJSON(dst, ruleWrapper.MissAt())
+			dst = jsonutil.AppendTime(dst, ruleWrapper.MissAt())
 			dst = append(dst, '}')
 			rule = ruleWrapper.Unwrap()
 		}
@@ -61,12 +60,6 @@ func appendRulesDocument(dst []byte, rawRules []constant.Rule) []byte {
 		dst = append(dst, '}')
 	}
 	return append(dst, ']', '}')
-}
-
-func appendTimeJSON(dst []byte, value time.Time) []byte {
-	dst = append(dst, '"')
-	dst = value.AppendFormat(dst, time.RFC3339Nano)
-	return append(dst, '"')
 }
 
 func getRules(w http.ResponseWriter, r *http.Request) {

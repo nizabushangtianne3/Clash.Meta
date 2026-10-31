@@ -2,13 +2,14 @@ package provider
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"io"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/metacubex/mihomo/common/jsonutil"
 	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/common/yaml"
 	"github.com/metacubex/mihomo/component/resource"
@@ -30,17 +31,6 @@ type RulePayload struct {
 	*/
 	Payload []string `yaml:"payload"`
 	Rules   []string `yaml:"rules"`
-}
-
-type providerForApi struct {
-	Behavior    string    `json:"behavior"`
-	Format      string    `json:"format"`
-	Name        string    `json:"name"`
-	RuleCount   int       `json:"ruleCount"`
-	Type        string    `json:"type"`
-	VehicleType string    `json:"vehicleType"`
-	UpdatedAt   time.Time `json:"updatedAt"`
-	Payload     []string  `json:"payload,omitempty"`
 }
 
 type ruleStrategy interface {
@@ -104,17 +94,15 @@ func (rp *ruleSetProvider) Update() error {
 	return err
 }
 
+func (rp *ruleSetProvider) AppendJSON(dst []byte) []byte {
+	return appendRuleProviderJSON(
+		dst, rp.behavior.String(), rp.format.String(), rp.Fetcher.Name(),
+		rp.strategy.Count(), rp.Type().String(), rp.UpdatedAt(), rp.VehicleType().String(), nil,
+	)
+}
+
 func (rp *ruleSetProvider) MarshalJSON() ([]byte, error) {
-	return json.Marshal(
-		providerForApi{
-			Behavior:    rp.behavior.String(),
-			Format:      rp.format.String(),
-			Name:        rp.Fetcher.Name(),
-			RuleCount:   rp.strategy.Count(),
-			Type:        rp.Type().String(),
-			UpdatedAt:   rp.UpdatedAt(),
-			VehicleType: rp.VehicleType().String(),
-		})
+	return rp.AppendJSON(nil), nil
 }
 
 func (rp *RuleSetProvider) Close() error {
@@ -306,17 +294,55 @@ func (i *inlineProvider) VehicleType() P.VehicleType {
 	return P.Inline
 }
 
+func (i *inlineProvider) AppendJSON(dst []byte) []byte {
+	return appendRuleProviderJSON(
+		dst, i.behavior.String(), "", i.name,
+		i.strategy.Count(), i.Type().String(), i.updateAt, i.VehicleType().String(), i.payload,
+	)
+}
+
 func (i *inlineProvider) MarshalJSON() ([]byte, error) {
-	return json.Marshal(
-		providerForApi{
-			Behavior:    i.behavior.String(),
-			Name:        i.Name(),
-			RuleCount:   i.strategy.Count(),
-			Type:        i.Type().String(),
-			VehicleType: i.VehicleType().String(),
-			UpdatedAt:   i.updateAt,
-			Payload:     i.payload,
-		})
+	return i.AppendJSON(nil), nil
+}
+
+func appendRuleProviderJSON(
+	dst []byte,
+	behavior string,
+	format string,
+	name string,
+	ruleCount int,
+	providerType string,
+	updatedAt time.Time,
+	vehicleType string,
+	payload []string,
+) []byte {
+	dst = append(dst, `{"behavior":`...)
+	dst = jsonutil.AppendString(dst, behavior)
+	if format != "" {
+		dst = append(dst, `,"format":`...)
+		dst = jsonutil.AppendString(dst, format)
+	}
+	dst = append(dst, `,"name":`...)
+	dst = jsonutil.AppendString(dst, name)
+	dst = append(dst, `,"ruleCount":`...)
+	dst = strconv.AppendInt(dst, int64(ruleCount), 10)
+	dst = append(dst, `,"type":`...)
+	dst = jsonutil.AppendString(dst, providerType)
+	dst = append(dst, `,"updatedAt":`...)
+	dst = jsonutil.AppendTime(dst, updatedAt)
+	dst = append(dst, `,"vehicleType":`...)
+	dst = jsonutil.AppendString(dst, vehicleType)
+	if payload != nil {
+		dst = append(dst, `,"payload":[`...)
+		for index, value := range payload {
+			if index != 0 {
+				dst = append(dst, ',')
+			}
+			dst = jsonutil.AppendString(dst, value)
+		}
+		dst = append(dst, ']')
+	}
+	return append(dst, '}')
 }
 
 func NewInlineProvider(name string, behavior P.RuleBehavior, payload []string, parse common.ParseRuleFunc) P.RuleProvider {

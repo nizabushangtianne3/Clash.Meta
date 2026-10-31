@@ -1,10 +1,10 @@
 package provider
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -12,6 +12,7 @@ import (
 
 	"github.com/metacubex/mihomo/adapter"
 	"github.com/metacubex/mihomo/common/convert"
+	"github.com/metacubex/mihomo/common/jsonutil"
 	"github.com/metacubex/mihomo/common/utils"
 	"github.com/metacubex/mihomo/common/yaml"
 	"github.com/metacubex/mihomo/component/age"
@@ -31,17 +32,6 @@ const (
 
 type ProxySchema struct {
 	Proxies []map[string]any `yaml:"proxies"`
-}
-
-type providerForApi struct {
-	Name             string            `json:"name"`
-	Type             string            `json:"type"`
-	VehicleType      string            `json:"vehicleType"`
-	Proxies          []C.Proxy         `json:"proxies"`
-	TestUrl          string            `json:"testUrl"`
-	ExpectedStatus   string            `json:"expectedStatus"`
-	UpdatedAt        time.Time         `json:"updatedAt,omitempty"`
-	SubscriptionInfo *SubscriptionInfo `json:"subscriptionInfo,omitempty"`
 }
 
 type baseProvider struct {
@@ -126,17 +116,16 @@ type proxySetProvider struct {
 	subscriptionInfo atomic.Pointer[SubscriptionInfo]
 }
 
+func (pp *proxySetProvider) AppendJSON(dst []byte) []byte {
+	return appendProviderJSON(
+		dst, pp.Name(), pp.Type().String(), pp.VehicleType().String(), pp.Proxies(),
+		pp.healthCheck.url, pp.healthCheck.expectedStatus.String(), pp.UpdatedAt(),
+		pp.subscriptionInfo.Load(),
+	)
+}
+
 func (pp *proxySetProvider) MarshalJSON() ([]byte, error) {
-	return json.Marshal(providerForApi{
-		Name:             pp.Name(),
-		Type:             pp.Type().String(),
-		VehicleType:      pp.VehicleType().String(),
-		Proxies:          pp.Proxies(),
-		TestUrl:          pp.healthCheck.url,
-		ExpectedStatus:   pp.healthCheck.expectedStatus.String(),
-		UpdatedAt:        pp.UpdatedAt(),
-		SubscriptionInfo: pp.subscriptionInfo.Load(),
-	})
+	return pp.AppendJSON(nil), nil
 }
 
 func (pp *proxySetProvider) Name() string {
@@ -235,16 +224,16 @@ type inlineProvider struct {
 	updateAt time.Time
 }
 
+func (ip *inlineProvider) AppendJSON(dst []byte) []byte {
+	return appendProviderJSON(
+		dst, ip.Name(), ip.Type().String(), ip.VehicleType().String(), ip.Proxies(),
+		ip.healthCheck.url, ip.healthCheck.expectedStatus.String(), ip.updateAt,
+		nil,
+	)
+}
+
 func (ip *inlineProvider) MarshalJSON() ([]byte, error) {
-	return json.Marshal(providerForApi{
-		Name:           ip.Name(),
-		Type:           ip.Type().String(),
-		VehicleType:    ip.VehicleType().String(),
-		Proxies:        ip.Proxies(),
-		TestUrl:        ip.healthCheck.url,
-		ExpectedStatus: ip.healthCheck.expectedStatus.String(),
-		UpdatedAt:      ip.updateAt,
-	})
+	return ip.AppendJSON(nil), nil
 }
 
 func (ip *inlineProvider) VehicleType() P.VehicleType {
@@ -297,15 +286,63 @@ type compatibleProvider struct {
 	baseProvider
 }
 
+func (cp *compatibleProvider) AppendJSON(dst []byte) []byte {
+	return appendProviderJSON(
+		dst, cp.Name(), cp.Type().String(), cp.VehicleType().String(), cp.Proxies(),
+		cp.healthCheck.url, cp.healthCheck.expectedStatus.String(), time.Time{},
+		nil,
+	)
+}
+
 func (cp *compatibleProvider) MarshalJSON() ([]byte, error) {
-	return json.Marshal(providerForApi{
-		Name:           cp.Name(),
-		Type:           cp.Type().String(),
-		VehicleType:    cp.VehicleType().String(),
-		Proxies:        cp.Proxies(),
-		TestUrl:        cp.healthCheck.url,
-		ExpectedStatus: cp.healthCheck.expectedStatus.String(),
-	})
+	return cp.AppendJSON(nil), nil
+}
+
+func appendProviderJSON(
+	dst []byte,
+	name string,
+	providerType string,
+	vehicleType string,
+	proxies []C.Proxy,
+	testURL string,
+	expectedStatus string,
+	updatedAt time.Time,
+	subscriptionInfo *SubscriptionInfo,
+) []byte {
+	dst = append(dst, `{"name":`...)
+	dst = jsonutil.AppendString(dst, name)
+	dst = append(dst, `,"type":`...)
+	dst = jsonutil.AppendString(dst, providerType)
+	dst = append(dst, `,"vehicleType":`...)
+	dst = jsonutil.AppendString(dst, vehicleType)
+	dst = append(dst, `,"proxies":[`...)
+	for index, proxy := range proxies {
+		if index != 0 {
+			dst = append(dst, ',')
+		}
+		dst = proxy.AppendJSON(dst)
+	}
+	dst = append(dst, ']')
+	dst = append(dst, `,"testUrl":`...)
+	dst = jsonutil.AppendString(dst, testURL)
+	dst = append(dst, `,"expectedStatus":`...)
+	dst = jsonutil.AppendString(dst, expectedStatus)
+	if !updatedAt.IsZero() {
+		dst = append(dst, `,"updatedAt":`...)
+		dst = jsonutil.AppendTime(dst, updatedAt)
+	}
+	if subscriptionInfo != nil {
+		dst = append(dst, `,"subscriptionInfo":{"Upload":`...)
+		dst = strconv.AppendInt(dst, subscriptionInfo.Upload, 10)
+		dst = append(dst, `,"Download":`...)
+		dst = strconv.AppendInt(dst, subscriptionInfo.Download, 10)
+		dst = append(dst, `,"Total":`...)
+		dst = strconv.AppendInt(dst, subscriptionInfo.Total, 10)
+		dst = append(dst, `,"Expire":`...)
+		dst = strconv.AppendInt(dst, subscriptionInfo.Expire, 10)
+		dst = append(dst, '}')
+	}
+	return append(dst, '}')
 }
 
 func (cp *compatibleProvider) Update() error {

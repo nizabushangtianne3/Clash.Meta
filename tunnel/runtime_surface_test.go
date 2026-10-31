@@ -39,6 +39,8 @@ func (s *surfaceProvider) HealthCheckURL() string     { return "" }
 func (s *surfaceProvider) RegisterHealthCheckTask(string, utils.IntRanges[uint16], string, uint) {
 }
 
+func (s *surfaceProvider) AppendJSON(dst []byte) []byte { return dst }
+
 type surfaceRuleProvider struct{}
 
 func (surfaceRuleProvider) Name() string               { return "rule-provider-a" }
@@ -51,7 +53,8 @@ func (surfaceRuleProvider) Count() int                 { return 1 }
 func (surfaceRuleProvider) Match(*C.Metadata, C.RuleMatchHelper) bool {
 	return false
 }
-func (surfaceRuleProvider) Strategy() any { return nil }
+func (surfaceRuleProvider) Strategy() any                { return nil }
+func (surfaceRuleProvider) AppendJSON(dst []byte) []byte { return dst }
 func TestTunnelModeTextRoundTrip(test *testing.T) {
 	tests := []struct {
 		mode    TunnelMode
