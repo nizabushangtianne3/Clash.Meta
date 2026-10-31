@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 
 	"github.com/metacubex/mihomo/common/pool"
 	C "github.com/metacubex/mihomo/constant"
@@ -15,12 +16,20 @@ type SelectorOption struct {
 	DefaultSelected string `group:"default-selected,omitempty"`
 }
 
+type selectorSelection struct {
+	proxy    C.Proxy
+	versions []uint32
+	version  uint64
+}
+
 type Selector struct {
 	*GroupBase
-	disableUDP bool
-	selectedMu sync.RWMutex
-	selected   string
-	testUrl    string
+	disableUDP      bool
+	selectedMu      sync.RWMutex
+	selected        string
+	selectedVersion atomic.Uint64
+	selection       atomic.Pointer[selectorSelection]
+	testUrl         string
 }
 
 // DialContext implements C.ProxyAdapter
@@ -81,12 +90,18 @@ func (s *Selector) Now() string {
 	return s.selectedProxy(false).Name()
 }
 
+func (s *Selector) setSelected(name string) {
+	s.selectedMu.Lock()
+	s.selected = name
+	s.selectedVersion.Add(1)
+	s.selectedMu.Unlock()
+	s.selection.Store(nil)
+}
+
 func (s *Selector) Set(name string) error {
 	for _, proxy := range s.GetProxies(false) {
 		if proxy.Name() == name {
-			s.selectedMu.Lock()
-			s.selected = name
-			s.selectedMu.Unlock()
+			s.setSelected(name)
 			return nil
 		}
 	}
@@ -95,9 +110,7 @@ func (s *Selector) Set(name string) error {
 }
 
 func (s *Selector) ForceSet(name string) {
-	s.selectedMu.Lock()
-	s.selected = name
-	s.selectedMu.Unlock()
+	s.setSelected(name)
 }
 
 // Unwrap implements C.ProxyAdapter
@@ -111,27 +124,29 @@ func (s *Selector) selectedProxy(touch bool) C.Proxy {
 		touch = false
 	}
 
-	s.selectedMu.RLock()
-	selected := s.selected
-	s.selectedMu.RUnlock()
-
-	if selected != "" {
-		if cache := s.providerCache.Load(); cache != nil && s.providerVersionsEqual(cache.versions) {
-			if cache.byName == nil {
-				return s.selectedFromProxies(cache.proxies, selected)
-			}
-			if proxy, ok := cache.byName[selected]; ok {
-				return proxy
-			}
-			if len(cache.proxies) != 0 {
-				return cache.proxies[0]
-			}
-			return s.EmptyFallback()
-		}
+	if choice := s.selection.Load(); choice != nil &&
+		s.selectedVersion.Load() == choice.version && s.providerVersionsEqual(choice.versions) {
+		return choice.proxy
 	}
 
+	s.selectedMu.RLock()
+	selected, version := s.selected, s.selectedVersion.Load()
+	s.selectedMu.RUnlock()
+
 	proxies := s.GetProxies(touch)
-	return s.selectedFromProxies(proxies, selected)
+	cache := s.providerCache.Load()
+	versions := s.providerVersionsNow()
+	if cache != nil && s.providerVersionsEqual(cache.versions) {
+		proxies = cache.proxies
+		versions = cache.versions
+	}
+	proxy := s.selectedFromProxies(proxies, selected)
+	s.selection.Store(&selectorSelection{
+		proxy:    proxy,
+		versions: versions,
+		version:  version,
+	})
+	return proxy
 }
 
 func (s *Selector) selectedFromProxies(proxies []C.Proxy, selected string) C.Proxy {
