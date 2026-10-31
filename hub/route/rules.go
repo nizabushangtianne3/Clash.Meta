@@ -1,8 +1,10 @@
 package route
 
 import (
+	"strconv"
 	"time"
 
+	"github.com/metacubex/mihomo/common/jsonutil"
 	"github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/tunnel"
 
@@ -20,56 +22,59 @@ func ruleRouter() http.Handler {
 	return r
 }
 
-type Rule struct {
-	Index   int    `json:"index"`
-	Type    string `json:"type"`
-	Payload string `json:"payload"`
-	Proxy   string `json:"proxy"`
-	Size    int    `json:"size"`
+func appendRulesDocument(dst []byte, rawRules []constant.Rule) []byte {
+	dst = append(dst, `{"rules":[`...)
+	for index, wrappedRule := range rawRules {
+		if index != 0 {
+			dst = append(dst, ',')
+		}
+		rule := wrappedRule
+		dst = append(dst, `{"index":`...)
+		dst = strconv.AppendInt(dst, int64(index), 10)
+		dst = append(dst, `,"type":`...)
+		dst = jsonutil.AppendString(dst, rule.RuleType().String())
+		dst = append(dst, `,"payload":`...)
+		dst = jsonutil.AppendString(dst, rule.Payload())
+		dst = append(dst, `,"proxy":`...)
+		dst = jsonutil.AppendString(dst, rule.Adapter())
+		dst = append(dst, `,"size":-1`...)
 
-	// Extra contains information from RuleWrapper
-	Extra *RuleExtra `json:"extra,omitempty"`
+		if ruleWrapper, ok := rule.(constant.RuleWrapper); ok {
+			dst = append(dst, `,"extra":{"disabled":`...)
+			dst = jsonutil.AppendBool(dst, ruleWrapper.IsDisabled())
+			dst = append(dst, `,"hitCount":`...)
+			dst = strconv.AppendUint(dst, ruleWrapper.HitCount(), 10)
+			dst = append(dst, `,"hitAt":`...)
+			dst = appendTimeJSON(dst, ruleWrapper.HitAt())
+			dst = append(dst, `,"missCount":`...)
+			dst = strconv.AppendUint(dst, ruleWrapper.MissCount(), 10)
+			dst = append(dst, `,"missAt":`...)
+			dst = appendTimeJSON(dst, ruleWrapper.MissAt())
+			dst = append(dst, '}')
+			rule = ruleWrapper.Unwrap()
+		}
+
+		if rule.RuleType() == constant.GEOIP || rule.RuleType() == constant.GEOSITE {
+			dst = append(dst, `,"size":`...)
+			dst = strconv.AppendInt(dst, int64(rule.(constant.RuleGroup).GetRecodeSize()), 10)
+		}
+		dst = append(dst, '}')
+	}
+	return append(dst, ']', '}')
 }
 
-type RuleExtra struct {
-	Disabled  bool      `json:"disabled"`
-	HitCount  uint64    `json:"hitCount"`
-	HitAt     time.Time `json:"hitAt"`
-	MissCount uint64    `json:"missCount"`
-	MissAt    time.Time `json:"missAt"`
+func appendTimeJSON(dst []byte, value time.Time) []byte {
+	dst = append(dst, '"')
+	dst = value.AppendFormat(dst, time.RFC3339Nano)
+	return append(dst, '"')
 }
 
 func getRules(w http.ResponseWriter, r *http.Request) {
-	rawRules := tunnel.Rules()
-	rules := make([]Rule, 0, len(rawRules))
-	for index, rule := range rawRules {
-		r := Rule{
-			Index:   index,
-			Type:    rule.RuleType().String(),
-			Payload: rule.Payload(),
-			Proxy:   rule.Adapter(),
-			Size:    -1,
-		}
-		if ruleWrapper, ok := rule.(constant.RuleWrapper); ok {
-			r.Extra = &RuleExtra{
-				Disabled:  ruleWrapper.IsDisabled(),
-				HitCount:  ruleWrapper.HitCount(),
-				HitAt:     ruleWrapper.HitAt(),
-				MissCount: ruleWrapper.MissCount(),
-				MissAt:    ruleWrapper.MissAt(),
-			}
-			rule = ruleWrapper.Unwrap() // unwrap RuleWrapper
-		}
-		if rule.RuleType() == constant.GEOIP || rule.RuleType() == constant.GEOSITE {
-			r.Size = rule.(constant.RuleGroup).GetRecodeSize()
-		}
-		rules = append(rules, r)
-
-	}
-
-	render.JSON(w, r, render.M{
-		"rules": rules,
-	})
+	bodyPtr := responseBodyPool.Get().(*[]byte)
+	body := appendRulesDocument((*bodyPtr)[:0], tunnel.Rules())
+	writeJSONDocument(w, r, body)
+	*bodyPtr = body
+	responseBodyPool.Put(bodyPtr)
 }
 
 // disableRules disable or enable rules by their indexes.
