@@ -21,7 +21,7 @@ type store interface {
 	PutByHost(host string, ip netip.Addr)
 	GetByIP(ip netip.Addr) (string, bool)
 	PutByIP(ip netip.Addr, host string)
-	DelByIP(ip netip.Addr)
+	ReplaceByIP(ip netip.Addr, host string)
 	Exist(ip netip.Addr) bool
 	CloneTo(store)
 	FlushFakeIP() error
@@ -110,11 +110,7 @@ func (p *Pool) get(host string) netip.Addr {
 		p.offset = p.first
 	}
 
-	if p.cycle || p.store.Exist(p.offset) {
-		p.store.DelByIP(p.offset)
-	}
-
-	p.store.PutByIP(p.offset, host)
+	p.store.ReplaceByIP(p.offset, host)
 	return p.offset
 }
 

@@ -83,28 +83,39 @@ func (c *FakeIpStore) PutByIP(ip netip.Addr, host string) {
 	}
 }
 
-func (c *FakeIpStore) DelByIP(ip netip.Addr) {
+func (c *FakeIpStore) ReplaceByIP(ip netip.Addr, host string) {
 	if c.DB == nil {
 		return
 	}
 
 	addr := ip.AsSlice()
+	hostKey := []byte(host)
 	err := c.DB.Batch(func(t *bbolt.Tx) error {
 		bucket, err := t.CreateBucketIfNotExists(c.bucketName)
 		if err != nil {
 			return err
 		}
-		host := bucket.Get(addr)
-		err = bucket.Delete(addr)
-		if len(host) > 0 {
-			if err = bucket.Delete(host); err != nil {
+
+		if oldHost := bucket.Get(addr); len(oldHost) > 0 {
+			if err := bucket.Delete(oldHost); err != nil {
 				return err
 			}
 		}
-		return err
+		if oldIPValue := bucket.Get(hostKey); len(oldIPValue) > 0 {
+			oldIP, valid := netip.AddrFromSlice(oldIPValue)
+			if valid && ip != oldIP {
+				if err := bucket.Delete(oldIPValue); err != nil {
+					return err
+				}
+			}
+		}
+		if err := bucket.Put(hostKey, addr); err != nil {
+			return err
+		}
+		return bucket.Put(addr, hostKey)
 	})
 	if err != nil {
-		log.Warnln("[CacheFile] write cache to %s failed: %s", c.DB.Path(), err.Error())
+		log.Warnln("[CacheFile] replace fake-ip failed: %s", err.Error())
 	}
 }
 

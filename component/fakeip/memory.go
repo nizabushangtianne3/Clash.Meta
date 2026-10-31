@@ -113,14 +113,11 @@ func (m *memoryStore) PutByIP(ip netip.Addr, host string) {
 	m.put(host, ip)
 }
 
-// DelByIP implements store.DelByIP
-func (m *memoryStore) DelByIP(ip netip.Addr) {
+// ReplaceByIP implements store.ReplaceByIP
+func (m *memoryStore) ReplaceByIP(ip netip.Addr, host string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
-	if entry := m.ips[ip]; entry != nil {
-		m.remove(entry)
-	}
+	m.put(host, ip)
 }
 
 // Exist implements store.Exist

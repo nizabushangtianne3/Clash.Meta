@@ -30,9 +30,9 @@ func (c *cachefileStore) PutByIP(ip netip.Addr, host string) {
 	c.cache.PutByIP(ip, host)
 }
 
-// DelByIP implements store.DelByIP
-func (c *cachefileStore) DelByIP(ip netip.Addr) {
-	c.cache.DelByIP(ip)
+// ReplaceByIP implements store.ReplaceByIP
+func (c *cachefileStore) ReplaceByIP(ip netip.Addr, host string) {
+	c.cache.ReplaceByIP(ip, host)
 }
 
 // Exist implements store.Exist
