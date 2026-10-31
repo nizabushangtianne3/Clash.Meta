@@ -170,6 +170,15 @@ func (u *URLTest) shouldReplaceFastNode(fast C.Proxy, fastNotExist bool) bool {
 	)
 }
 
+func hasOtherAliveProxy(proxies []C.Proxy, selected C.Proxy, testURL string) bool {
+	for _, proxy := range proxies {
+		if proxy != selected && proxy.AliveForTestUrl(testURL) {
+			return true
+		}
+	}
+	return false
+}
+
 func (u *URLTest) fast(touch bool) C.Proxy {
 	u.dropCacheForProviderSwap()
 	if cached, _, ok := u.fastSingle.Cached(); ok {
@@ -191,7 +200,10 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 		var selectedProxy C.Proxy
 		if selectedName != "" {
 			if proxy, ok := u.indexedProxyByName(selectedName); ok && proxy.AliveForTestUrl(u.testUrl) {
-				selectedProxy = proxy
+				u.fastHasAlternative.Store(hasOtherAliveProxy(proxies, proxy, u.testUrl))
+				u.rotateProbe.Store(false)
+				u.fastNode = proxy
+				return proxy, nil
 			}
 		}
 		var fast C.Proxy
