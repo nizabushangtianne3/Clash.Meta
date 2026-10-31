@@ -282,7 +282,7 @@ func (c *hyPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 		return
 	}
 	n = copy(p, b)
-	addr = socksaddr.UDPAddr()
+	addr = socksaddr
 	return
 }
 

@@ -41,7 +41,7 @@ func TestHyPacketConnReturnsStructuredAddresses(t *testing.T) {
 		n, addr, err := conn.ReadFrom(buf)
 		require.NoError(t, err)
 		require.Equal(t, "ping", string(buf[:n]))
-		require.Equal(t, addrPort, addr.(*net.UDPAddr).AddrPort())
+		require.Equal(t, addrPort, addr.(M.Socksaddr).AddrPort())
 
 		data, got, err := conn.WaitReadFrom()
 		require.NoError(t, err)
