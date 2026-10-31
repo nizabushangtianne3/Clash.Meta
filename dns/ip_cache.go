@@ -20,6 +20,9 @@ import (
 type cachedIPs struct {
 	ips []netip.Addr
 	msg *D.Msg
+	// pairMsg is set only on an ipCachePairQtype entry and holds the second
+	// family's message so both families can still be traced on a pair hit.
+	pairMsg *D.Msg
 }
 
 func ipCacheEntryKey(host string, qtype uint16) ipCacheKey {
@@ -47,6 +50,13 @@ func (r *Resolver) lookupIPFromCachePair(ctx context.Context, host string) ([]ne
 	}
 
 	now := time.Now()
+	if pair, expireTime, hit := r.ipCache.GetWithExpire(ipCacheEntryKey(host, ipCachePairQtype)); hit &&
+		pair.msg != nil && pair.pairMsg != nil && now.Before(expireTime) {
+		r.traceCacheHit(ctx, pair.msg.Question[0], pair.msg)
+		r.traceCacheHit(ctx, pair.pairMsg.Question[0], pair.pairMsg)
+		return pair.ips, true
+	}
+
 	ipv4, ipv4Expire, ipv4Hit := r.ipCache.GetWithExpire(ipCacheEntryKey(host, D.TypeA))
 	if !ipv4Hit || ipv4.msg == nil || !now.Before(ipv4Expire) {
 		return nil, false
@@ -79,10 +89,46 @@ func (r *Resolver) cacheLookupIP(host string, qtype uint16, msg *D.Msg, ips []ne
 	if ttl == 0 {
 		return
 	}
+	expire := time.Now().Add(time.Duration(ttl) * time.Second)
+	entry := cachedIPs{ips: slices.Clone(ips), msg: msg}
+	r.ipCache.SetWithExpire(ipCacheEntryKey(host, qtype), entry, expire)
+	r.cacheIPPair(host, qtype, entry, expire)
+}
+
+// cacheIPPair stores the combined A+AAAA answer once both families are cached.
+// Its expiry is the earlier family expiry, so the pair can never outlive either
+// answer. The cached slices are owned by the cache and treated as read-only.
+func (r *Resolver) cacheIPPair(host string, qtype uint16, entry cachedIPs, expire time.Time) {
+	otherType := uint16(D.TypeA)
+	if qtype == D.TypeA {
+		otherType = D.TypeAAAA
+	}
+	other, otherExpire, hit := r.ipCache.GetWithExpire(ipCacheEntryKey(host, otherType))
+	if !hit || other.msg == nil || !time.Now().Before(otherExpire) {
+		return
+	}
+
+	var ipv4, ipv6 cachedIPs
+	if qtype == D.TypeA {
+		ipv4, ipv6 = entry, other
+	} else {
+		ipv4, ipv6 = other, entry
+	}
+	if len(ipv4.ips) == 0 {
+		return
+	}
+	combined := make([]netip.Addr, 0, len(ipv4.ips)+len(ipv6.ips))
+	combined = append(combined, ipv4.ips...)
+	combined = append(combined, ipv6.ips...)
+
+	pairExpire := expire
+	if otherExpire.Before(pairExpire) {
+		pairExpire = otherExpire
+	}
 	r.ipCache.SetWithExpire(
-		ipCacheEntryKey(host, qtype),
-		cachedIPs{ips: slices.Clone(ips), msg: msg},
-		time.Now().Add(time.Duration(ttl)*time.Second),
+		ipCacheEntryKey(host, ipCachePairQtype),
+		cachedIPs{ips: combined, msg: ipv4.msg, pairMsg: ipv6.msg},
+		pairExpire,
 	)
 }
 

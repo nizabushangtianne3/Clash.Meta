@@ -51,6 +51,10 @@ type ipCacheKey struct {
 	qtype uint16
 }
 
+// qtype zero is never used by a DNS question and identifies the combined
+// A+AAAA answer for a host.
+const ipCachePairQtype = 0
+
 func questionKey(q D.Question) dnsCacheKey {
 	return dnsCacheKey{name: q.Name, qtype: q.Qtype, qclass: q.Qclass}
 }
