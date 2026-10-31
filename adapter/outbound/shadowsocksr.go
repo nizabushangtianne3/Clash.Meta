@@ -186,14 +186,25 @@ type ssrPacketConn struct {
 	rAddr net.Addr
 }
 
-func (spc *ssrPacketConn) WriteTo(b []byte, addr net.Addr) (n int, err error) {
-	packet, err := socks5.EncodeUDPPacket(socks5.ParseAddrToSocksAddr(addr), b)
-	if err != nil {
-		return
+func (spc *ssrPacketConn) WriteTo(b []byte, addr net.Addr) (int, error) {
+	addrPort := N.AddrPortFromNetAddr(addr)
+	if !addrPort.IsValid() {
+		return 0, errors.New("invalid packet address")
 	}
-	packet = packet[3:]
-	_, err = spc.EnhancePacketConn.WriteTo(packet, spc.rAddr)
+
+	headLen := 4 + net.IPv6len + 2
+	if addrPort.Addr().Is4() {
+		headLen = 4 + net.IPv4len + 2
+	}
+
+	buf := pool.Get(headLen + len(b))
+	defer pool.Put(buf)
+
+	packet, err := socks5.EncodeUDPPacketInto(buf, addrPort, b)
 	if err != nil {
+		return 0, err
+	}
+	if _, err := spc.EnhancePacketConn.WriteTo(packet[3:], spc.rAddr); err != nil {
 		return 0, err
 	}
 	return len(b), nil
