@@ -2,7 +2,6 @@ package outbound
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net"
 	"runtime"
@@ -11,6 +10,7 @@ import (
 	"sync/atomic"
 	"syscall"
 
+	"github.com/metacubex/mihomo/common/jsonutil"
 	N "github.com/metacubex/mihomo/common/net"
 	"github.com/metacubex/mihomo/common/utils"
 	"github.com/metacubex/mihomo/component/dialer"
@@ -160,12 +160,20 @@ func (b *Base) IsL3Protocol(metadata *C.Metadata) bool {
 	return false
 }
 
+// AppendJSON implements C.ProxyAdapter
+func (b *Base) AppendJSON(dst []byte) []byte {
+	dst = append(dst, `{"type":`...)
+	dst = jsonutil.AppendString(dst, b.Type().String())
+	dst = append(dst, `,"id":`...)
+	dst = jsonutil.AppendString(dst, b.Id())
+	dst = append(dst, `,"name":`...)
+	dst = jsonutil.AppendString(dst, b.Name())
+	return append(dst, '}')
+}
+
 // MarshalJSON implements C.ProxyAdapter
 func (b *Base) MarshalJSON() ([]byte, error) {
-	return json.Marshal(map[string]string{
-		"type": b.Type().String(),
-		"id":   b.Id(),
-	})
+	return b.AppendJSON(nil), nil
 }
 
 // Addr implements C.ProxyAdapter

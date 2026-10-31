@@ -1,7 +1,6 @@
 package outboundgroup
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"sync"
@@ -10,7 +9,6 @@ import (
 
 	"github.com/metacubex/mihomo/common/callback"
 	N "github.com/metacubex/mihomo/common/net"
-	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/common/utils"
 	C "github.com/metacubex/mihomo/constant"
 	P "github.com/metacubex/mihomo/constant/provider"
@@ -158,24 +156,26 @@ func (f *Fallback) IsL3Protocol(metadata *C.Metadata) bool {
 	return proxy.IsL3Protocol(metadata)
 }
 
+// AppendJSON implements C.ProxyAdapter
+func (f *Fallback) AppendJSON(dst []byte) []byte {
+	dst = append(dst, `{"type":"Fallback","name":`...)
+	dst = writeJSONString(dst, f.Name())
+	dst = append(dst, `,"now":`...)
+	dst = writeJSONString(dst, f.Now())
+	dst = append(dst, `,"all":`...)
+	dst = writeGroupNames(dst, f.GetProxies(false))
+	dst = writeStringField(dst, "testUrl", f.testUrl)
+	dst = writeStringField(dst, "expectedStatus", f.expectedStatus)
+	dst = writeStringField(dst, "fixed", f.selectedName())
+	dst = writeBoolField(dst, "hidden", f.Hidden())
+	dst = writeStringField(dst, "icon", f.Icon())
+	dst = writeStringField(dst, "emptyFallback", f.EmptyFallback().Name())
+	return append(dst, '}')
+}
+
 // MarshalJSON implements C.ProxyAdapter
 func (f *Fallback) MarshalJSON() ([]byte, error) {
-	buf := pool.GetBuffer()
-	defer pool.PutBuffer(buf)
-	buf.WriteString(`{"type":"Fallback","name":`)
-	writeJSONString(buf, f.Name())
-	buf.WriteString(`,"now":`)
-	writeJSONString(buf, f.Now())
-	buf.WriteString(`,"all":`)
-	writeGroupNames(buf, f.GetProxies(false))
-	writeStringField(buf, "testUrl", f.testUrl)
-	writeStringField(buf, "expectedStatus", f.expectedStatus)
-	writeStringField(buf, "fixed", f.selectedName())
-	writeBoolField(buf, "hidden", f.Hidden())
-	writeStringField(buf, "icon", f.Icon())
-	writeStringField(buf, "emptyFallback", f.EmptyFallback().Name())
-	buf.WriteByte('}')
-	return bytes.Clone(buf.Bytes()), nil
+	return f.AppendJSON(nil), nil
 }
 
 // Unwrap implements C.ProxyAdapter

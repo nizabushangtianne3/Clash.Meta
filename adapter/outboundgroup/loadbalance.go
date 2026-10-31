@@ -1,7 +1,6 @@
 package outboundgroup
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -13,7 +12,6 @@ import (
 	"github.com/metacubex/mihomo/common/callback"
 	"github.com/metacubex/mihomo/common/lru"
 	N "github.com/metacubex/mihomo/common/net"
-	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/common/utils"
 	C "github.com/metacubex/mihomo/constant"
 	P "github.com/metacubex/mihomo/constant/provider"
@@ -364,21 +362,23 @@ func (lb *LoadBalance) Unwrap(metadata *C.Metadata, touch bool) C.Proxy {
 	return proxy
 }
 
+// AppendJSON implements C.ProxyAdapter
+func (lb *LoadBalance) AppendJSON(dst []byte) []byte {
+	dst = append(dst, `{"type":"LoadBalance","name":`...)
+	dst = writeJSONString(dst, lb.Name())
+	dst = append(dst, `,"all":`...)
+	dst = writeGroupNames(dst, lb.GetProxies(false))
+	dst = writeStringField(dst, "testUrl", lb.testUrl)
+	dst = writeStringField(dst, "expectedStatus", lb.expectedStatus)
+	dst = writeBoolField(dst, "hidden", lb.Hidden())
+	dst = writeStringField(dst, "icon", lb.Icon())
+	dst = writeStringField(dst, "emptyFallback", lb.EmptyFallback().Name())
+	return append(dst, '}')
+}
+
 // MarshalJSON implements C.ProxyAdapter
 func (lb *LoadBalance) MarshalJSON() ([]byte, error) {
-	buf := pool.GetBuffer()
-	defer pool.PutBuffer(buf)
-	buf.WriteString(`{"type":"LoadBalance","name":`)
-	writeJSONString(buf, lb.Name())
-	buf.WriteString(`,"all":`)
-	writeGroupNames(buf, lb.GetProxies(false))
-	writeStringField(buf, "testUrl", lb.testUrl)
-	writeStringField(buf, "expectedStatus", lb.expectedStatus)
-	writeBoolField(buf, "hidden", lb.Hidden())
-	writeStringField(buf, "icon", lb.Icon())
-	writeStringField(buf, "emptyFallback", lb.EmptyFallback().Name())
-	buf.WriteByte('}')
-	return bytes.Clone(buf.Bytes()), nil
+	return lb.AppendJSON(nil), nil
 }
 
 func (lb *LoadBalance) Providers() []P.ProxyProvider {

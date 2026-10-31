@@ -1,7 +1,6 @@
 package outboundgroup
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"sync"
@@ -10,7 +9,6 @@ import (
 
 	"github.com/metacubex/mihomo/common/callback"
 	N "github.com/metacubex/mihomo/common/net"
-	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/common/singledo"
 	"github.com/metacubex/mihomo/common/utils"
 	C "github.com/metacubex/mihomo/constant"
@@ -306,24 +304,26 @@ func (u *URLTest) IsL3Protocol(metadata *C.Metadata) bool {
 	return u.fast(false).IsL3Protocol(metadata)
 }
 
+// AppendJSON implements C.ProxyAdapter
+func (u *URLTest) AppendJSON(dst []byte) []byte {
+	dst = append(dst, `{"type":"URLTest","name":`...)
+	dst = writeJSONString(dst, u.Name())
+	dst = append(dst, `,"now":`...)
+	dst = writeJSONString(dst, u.Now())
+	dst = append(dst, `,"all":`...)
+	dst = writeGroupNames(dst, u.GetProxies(false))
+	dst = writeStringField(dst, "testUrl", u.testUrl)
+	dst = writeStringField(dst, "expectedStatus", u.expectedStatus)
+	dst = writeStringField(dst, "fixed", u.selectedName())
+	dst = writeBoolField(dst, "hidden", u.Hidden())
+	dst = writeStringField(dst, "icon", u.Icon())
+	dst = writeStringField(dst, "emptyFallback", u.EmptyFallback().Name())
+	return append(dst, '}')
+}
+
 // MarshalJSON implements C.ProxyAdapter
 func (u *URLTest) MarshalJSON() ([]byte, error) {
-	buf := pool.GetBuffer()
-	defer pool.PutBuffer(buf)
-	buf.WriteString(`{"type":"URLTest","name":`)
-	writeJSONString(buf, u.Name())
-	buf.WriteString(`,"now":`)
-	writeJSONString(buf, u.Now())
-	buf.WriteString(`,"all":`)
-	writeGroupNames(buf, u.GetProxies(false))
-	writeStringField(buf, "testUrl", u.testUrl)
-	writeStringField(buf, "expectedStatus", u.expectedStatus)
-	writeStringField(buf, "fixed", u.selectedName())
-	writeBoolField(buf, "hidden", u.Hidden())
-	writeStringField(buf, "icon", u.Icon())
-	writeStringField(buf, "emptyFallback", u.EmptyFallback().Name())
-	buf.WriteByte('}')
-	return bytes.Clone(buf.Bytes()), nil
+	return u.AppendJSON(nil), nil
 }
 
 func (u *URLTest) Providers() []P.ProxyProvider {

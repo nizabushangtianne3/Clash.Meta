@@ -70,6 +70,23 @@ func TestProxyURLTestKeepsEachUrlApart(t *testing.T) {
 
 	states := proxy.ExtraDelayHistories()
 	assert.Len(t, states, 2)
+
+	data, err := proxy.MarshalJSON()
+	require.NoError(t, err)
+	var view struct {
+		Extra map[string]struct {
+			Alive   bool `json:"alive"`
+			History []struct {
+				Delay uint16 `json:"delay"`
+			} `json:"history"`
+		} `json:"extra"`
+	}
+	require.NoError(t, json.Unmarshal(data, &view))
+	require.Len(t, view.Extra, 2)
+	require.True(t, view.Extra[first.URL].Alive)
+	require.True(t, view.Extra[second.URL].Alive)
+	require.Len(t, view.Extra[first.URL].History, 1)
+	require.Len(t, view.Extra[second.URL].History, 1)
 }
 
 func TestProxyURLTestRejectsUnexpectedStatus(t *testing.T) {
@@ -127,6 +144,17 @@ func TestProxyMarshalJSONCarriesDelayState(t *testing.T) {
 	assert.Contains(t, mapping, "extra")
 }
 
+func BenchmarkProxyMarshalJSON(b *testing.B) {
+	proxy := testProxy()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := proxy.MarshalJSON(); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
 func BenchmarkProxyURLTestHTTP(b *testing.B) {
 	server := testStatusServer(b, stdhttp.StatusNoContent)
 	proxy := testProxy()

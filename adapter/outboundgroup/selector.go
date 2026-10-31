@@ -1,13 +1,11 @@
 package outboundgroup
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"sync"
 	"sync/atomic"
 
-	"github.com/metacubex/mihomo/common/pool"
 	C "github.com/metacubex/mihomo/constant"
 	P "github.com/metacubex/mihomo/constant/provider"
 )
@@ -64,26 +62,28 @@ func (s *Selector) IsL3Protocol(metadata *C.Metadata) bool {
 	return s.selectedProxy(false).IsL3Protocol(metadata)
 }
 
+// AppendJSON implements C.ProxyAdapter
+func (s *Selector) AppendJSON(dst []byte) []byte {
+	dst = append(dst, `{"type":"Selector","name":`...)
+	dst = writeJSONString(dst, s.Name())
+	dst = append(dst, `,"now":`...)
+	dst = writeJSONString(dst, s.Now())
+	dst = append(dst, `,"all":`...)
+	dst = writeGroupNames(dst, s.GetProxies(false))
+	if s.testUrl == C.DefaultTestURL {
+		dst = append(dst, `,"testUrl":""`...)
+	} else {
+		dst = writeStringField(dst, "testUrl", s.testUrl)
+	}
+	dst = writeBoolField(dst, "hidden", s.Hidden())
+	dst = writeStringField(dst, "icon", s.Icon())
+	dst = writeStringField(dst, "emptyFallback", s.EmptyFallback().Name())
+	return append(dst, '}')
+}
+
 // MarshalJSON implements C.ProxyAdapter
 func (s *Selector) MarshalJSON() ([]byte, error) {
-	buf := pool.GetBuffer()
-	defer pool.PutBuffer(buf)
-	buf.WriteString(`{"type":"Selector","name":`)
-	writeJSONString(buf, s.Name())
-	buf.WriteString(`,"now":`)
-	writeJSONString(buf, s.Now())
-	buf.WriteString(`,"all":`)
-	writeGroupNames(buf, s.GetProxies(false))
-	if s.testUrl == C.DefaultTestURL {
-		buf.WriteString(`,"testUrl":""`)
-	} else {
-		writeStringField(buf, "testUrl", s.testUrl)
-	}
-	writeBoolField(buf, "hidden", s.Hidden())
-	writeStringField(buf, "icon", s.Icon())
-	writeStringField(buf, "emptyFallback", s.EmptyFallback().Name())
-	buf.WriteByte('}')
-	return bytes.Clone(buf.Bytes()), nil
+	return s.AppendJSON(nil), nil
 }
 
 func (s *Selector) Now() string {

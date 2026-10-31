@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestQueuePut tests the Put method of Queue
@@ -105,6 +106,20 @@ func TestQueueLen(t *testing.T) {
 	// Remove an item and check length
 	q.Pop()
 	assert.Equal(t, int64(1), q.Len(), "Queue length should be 1 after popping one item")
+}
+
+func TestQueueRangeVisitsItemsWithoutCopying(t *testing.T) {
+	q := NewWithCapacity[int](3)
+	q.Put(1, 2, 3)
+	q.Put(4)
+	_ = q.Pop()
+
+	var items []int
+	q.Range(func(item int) bool {
+		items = append(items, item)
+		return len(items) < 2
+	})
+	require.Equal(t, []int{2, 3}, items)
 }
 
 func TestQueueRingKeepsOrderAcrossTheArrayBoundary(t *testing.T) {

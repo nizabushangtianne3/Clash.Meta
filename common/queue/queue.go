@@ -66,6 +66,18 @@ func (q *Queue[T]) Copy() (items []T) {
 	return items
 }
 
+// Range visits queue items from oldest to newest without copying them.
+func (q *Queue[T]) Range(f func(item T) bool) {
+	q.lock.RLock()
+	for index := range q.count {
+		if !f(q.entries[(q.head+index)%cap(q.entries)]) {
+			q.lock.RUnlock()
+			return
+		}
+	}
+	q.lock.RUnlock()
+}
+
 // Len returns the number of items in this queue.
 func (q *Queue[T]) Len() int64 {
 	q.lock.RLock()

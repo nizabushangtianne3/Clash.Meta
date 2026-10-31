@@ -3,14 +3,16 @@ package adapter
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net"
 	"net/url"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/metacubex/mihomo/common/atomic"
+	"github.com/metacubex/mihomo/common/jsonutil"
 	"github.com/metacubex/mihomo/common/queue"
 	"github.com/metacubex/mihomo/common/utils"
 	"github.com/metacubex/mihomo/common/xsync"
@@ -138,33 +140,103 @@ func (p *Proxy) LastDelayForTestUrl(url string) (delay uint16) {
 	return history.Delay
 }
 
+// AppendJSON implements C.ProxyAdapter
+func (p *Proxy) AppendJSON(dst []byte) []byte {
+	dst = p.ProxyAdapter.AppendJSON(dst)
+	dst = dst[:len(dst)-1]
+
+	dst = append(dst, `,"alive":`...)
+	dst = jsonutil.AppendBool(dst, p.alive.Load())
+	dst = append(dst, `,"udp":`...)
+	dst = jsonutil.AppendBool(dst, p.SupportUDP())
+	dst = append(dst, `,"uot":`...)
+	dst = jsonutil.AppendBool(dst, p.SupportUOT())
+
+	dst = append(dst, `,"history":[`...)
+	first := true
+	p.history.Range(func(item C.DelayHistory) bool {
+		if !first {
+			dst = append(dst, ',')
+		}
+		first = false
+		dst = append(dst, `{"time":`...)
+		dst = append(dst, '"')
+		dst = item.Time.AppendFormat(dst, time.RFC3339Nano)
+		dst = append(dst, '"')
+		dst = append(dst, `,"delay":`...)
+		dst = strconv.AppendUint(dst, uint64(item.Delay), 10)
+		dst = append(dst, '}')
+		return true
+	})
+	dst = append(dst, ']')
+
+	dst = append(dst, `,"extra":{`...)
+	urls := make([]string, 0)
+	p.extra.RangeRelaxed(func(url string, _ *internalProxyState) bool {
+		urls = append(urls, url)
+		return true
+	})
+	sort.Strings(urls)
+	for index, url := range urls {
+		if index != 0 {
+			dst = append(dst, ',')
+		}
+		dst = jsonutil.AppendString(dst, url)
+		dst = append(dst, ':')
+		alive := false
+		var history *queue.Queue[C.DelayHistory]
+		if state, ok := p.extra.Load(url); ok {
+			alive = state.alive.Load()
+			history = state.history
+		}
+		dst = append(dst, `{"alive":`...)
+		dst = jsonutil.AppendBool(dst, alive)
+		dst = append(dst, `,"history":[`...)
+		if history != nil {
+			firstHistory := true
+			history.Range(func(item C.DelayHistory) bool {
+				if !firstHistory {
+					dst = append(dst, ',')
+				}
+				firstHistory = false
+				dst = append(dst, `{"time":`...)
+				dst = append(dst, '"')
+				dst = item.Time.AppendFormat(dst, time.RFC3339Nano)
+				dst = append(dst, '"')
+				dst = append(dst, `,"delay":`...)
+				dst = strconv.AppendUint(dst, uint64(item.Delay), 10)
+				dst = append(dst, '}')
+				return true
+			})
+		}
+		dst = append(dst, ']')
+		dst = append(dst, '}')
+	}
+	dst = append(dst, '}')
+
+	info := p.ProxyInfo()
+	dst = append(dst, `,"xudp":`...)
+	dst = jsonutil.AppendBool(dst, info.XUDP)
+	dst = append(dst, `,"tfo":`...)
+	dst = jsonutil.AppendBool(dst, info.TFO)
+	dst = append(dst, `,"mptcp":`...)
+	dst = jsonutil.AppendBool(dst, info.MPTCP)
+	dst = append(dst, `,"smux":`...)
+	dst = jsonutil.AppendBool(dst, info.SMUX)
+	dst = append(dst, `,"interface":`...)
+	dst = jsonutil.AppendString(dst, info.Interface)
+	dst = append(dst, `,"routing-mark":`...)
+	dst = strconv.AppendInt(dst, int64(info.RoutingMark), 10)
+	dst = append(dst, `,"provider-name":`...)
+	dst = jsonutil.AppendString(dst, info.ProviderName)
+	dst = append(dst, `,"dialer-proxy":`...)
+	dst = jsonutil.AppendString(dst, info.DialerProxy)
+	return append(dst, '}')
+}
+
 // MarshalJSON implements C.ProxyAdapter
 func (p *Proxy) MarshalJSON() ([]byte, error) {
-	inner, err := p.ProxyAdapter.MarshalJSON()
-	if err != nil {
-		return inner, err
-	}
-
-	mapping := map[string]any{}
-	_ = json.Unmarshal(inner, &mapping)
-	mapping["history"] = p.DelayHistory()
-	mapping["extra"] = p.ExtraDelayHistories()
-	mapping["alive"] = p.alive.Load()
-	mapping["name"] = p.Name()
-	mapping["udp"] = p.SupportUDP()
-	mapping["uot"] = p.SupportUOT()
-
-	proxyInfo := p.ProxyInfo()
-	mapping["xudp"] = proxyInfo.XUDP
-	mapping["tfo"] = proxyInfo.TFO
-	mapping["mptcp"] = proxyInfo.MPTCP
-	mapping["smux"] = proxyInfo.SMUX
-	mapping["interface"] = proxyInfo.Interface
-	mapping["routing-mark"] = proxyInfo.RoutingMark
-	mapping["provider-name"] = proxyInfo.ProviderName
-	mapping["dialer-proxy"] = proxyInfo.DialerProxy
-
-	return json.Marshal(mapping)
+	return p.AppendJSON(nil), nil
 }
 
 type urlTestExchange struct {

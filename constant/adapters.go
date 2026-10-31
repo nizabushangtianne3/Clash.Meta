@@ -133,6 +133,7 @@ type ProxyAdapter interface {
 	// ProxyInfo contains some extra information maybe useful for MarshalJSON
 	ProxyInfo() ProxyInfo
 	MarshalJSON() ([]byte, error)
+	AppendJSON(dst []byte) []byte
 
 	// DialContext return a C.Conn with protocol which
 	// contains multiplexing-related reuse logic (if any)
