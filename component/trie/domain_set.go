@@ -235,7 +235,7 @@ func (ss *DomainSet) Has(key string) bool {
 				// With no saved wildcard branches left, the key cannot match.
 				return false
 			}
-			bmIdx = selectIthOne(ss.labelBitmap, ss.ranks, ss.selects, nodeId)
+			bmIdx = int(ss.starts[nodeId]) - 1
 			goto RESTART
 		}
 		bmIdx = int(ss.starts[nodeId-1])
