@@ -115,6 +115,9 @@ func (p *Pool) get(host string) netip.Addr {
 }
 
 func (p *Pool) FlushFakeIP() error {
+	p.mux.Lock()
+	defer p.mux.Unlock()
+
 	err := p.store.FlushFakeIP()
 	if err == nil {
 		p.cycle = false
@@ -124,6 +127,9 @@ func (p *Pool) FlushFakeIP() error {
 }
 
 func (p *Pool) StoreState() {
+	p.mux.Lock()
+	defer p.mux.Unlock()
+
 	if s, ok := p.store.(*cachefileStore); ok {
 		s.PutByHost(offsetKey, p.offset)
 		if p.cycle {

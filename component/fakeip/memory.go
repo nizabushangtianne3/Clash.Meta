@@ -2,7 +2,6 @@ package fakeip
 
 import (
 	"net/netip"
-	"sync"
 )
 
 type fakeipEntry struct {
@@ -56,7 +55,6 @@ func (l *fakeipLRU) init() {
 }
 
 type memoryStore struct {
-	mu    sync.Mutex
 	hosts map[string]*fakeipEntry
 	ips   map[netip.Addr]*fakeipEntry
 	lru   fakeipLRU
@@ -116,9 +114,6 @@ func (m *memoryStore) put(host string, ip netip.Addr) {
 
 // GetByHost implements store.GetByHost
 func (m *memoryStore) GetByHost(host string) (netip.Addr, bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	entry := m.hosts[host]
 	if entry == nil {
 		return netip.Addr{}, false
@@ -129,16 +124,11 @@ func (m *memoryStore) GetByHost(host string) (netip.Addr, bool) {
 
 // PutByHost implements store.PutByHost
 func (m *memoryStore) PutByHost(host string, ip netip.Addr) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.put(host, ip)
 }
 
 // GetByIP implements store.GetByIP
 func (m *memoryStore) GetByIP(ip netip.Addr) (string, bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	entry := m.ips[ip]
 	if entry == nil {
 		return "", false
@@ -149,22 +139,16 @@ func (m *memoryStore) GetByIP(ip netip.Addr) (string, bool) {
 
 // PutByIP implements store.PutByIP
 func (m *memoryStore) PutByIP(ip netip.Addr, host string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.put(host, ip)
 }
 
 // ReplaceByIP implements store.ReplaceByIP
 func (m *memoryStore) ReplaceByIP(ip netip.Addr, host string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.put(host, ip)
 }
 
 // Exist implements store.Exist
 func (m *memoryStore) Exist(ip netip.Addr) bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	return m.ips[ip] != nil
 }
 
@@ -175,11 +159,6 @@ func (m *memoryStore) CloneTo(store store) {
 	if !ok {
 		return
 	}
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	target.mu.Lock()
-	defer target.mu.Unlock()
 
 	target.hosts = make(map[string]*fakeipEntry)
 	target.ips = make(map[netip.Addr]*fakeipEntry)
@@ -194,10 +173,8 @@ func (m *memoryStore) CloneTo(store store) {
 
 // FlushFakeIP implements store.FlushFakeIP
 func (m *memoryStore) FlushFakeIP() error {
-	m.mu.Lock()
 	m.hosts = make(map[string]*fakeipEntry)
 	m.ips = make(map[netip.Addr]*fakeipEntry)
 	m.lru.init()
-	m.mu.Unlock()
 	return nil
 }
