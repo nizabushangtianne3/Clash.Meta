@@ -30,7 +30,7 @@ func (c *fakeConn) Write(b []byte) (int, error) {
 func TestPacketConnWriteToFraming(t *testing.T) {
 	var out bytes.Buffer
 	conn := &fakeConn{w: &out}
-	pc := &PacketConn{Conn: conn, rAddr: netip.MustParseAddrPort("203.0.113.7:443")}
+	pc := newPacketConn(conn, netip.MustParseAddrPort("203.0.113.7:443"))
 
 	n, err := pc.WriteTo([]byte("hello"), nil)
 	require.NoError(t, err)
@@ -41,7 +41,7 @@ func TestPacketConnWriteToFraming(t *testing.T) {
 
 func TestPacketConnReadFromFramedPayload(t *testing.T) {
 	conn := &fakeConn{r: bytes.NewReader([]byte{0x00, 0x05, 'h', 'e', 'l', 'l', 'o'})}
-	pc := &PacketConn{Conn: conn, rAddr: netip.MustParseAddrPort("203.0.113.7:443")}
+	pc := newPacketConn(conn, netip.MustParseAddrPort("203.0.113.7:443"))
 
 	buf := make([]byte, 64)
 	n, addr, err := pc.ReadFrom(buf)

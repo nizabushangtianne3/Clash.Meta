@@ -12,7 +12,12 @@ import (
 type PacketConn struct {
 	net.Conn
 	rAddr      netip.AddrPort
+	udpAddr    *net.UDPAddr
 	readHeader [2]byte
+}
+
+func newPacketConn(conn net.Conn, rAddr netip.AddrPort) *PacketConn {
+	return &PacketConn{Conn: conn, rAddr: rAddr, udpAddr: net.UDPAddrFromAddrPort(rAddr)}
 }
 
 // WriteTo sends the length and the payload as one frame: writing the two-byte
@@ -38,7 +43,7 @@ func (c *PacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
 		return 0, nil, io.ErrShortBuffer
 	}
 	n, err := io.ReadFull(c.Conn, b[:length])
-	return n, net.UDPAddrFromAddrPort(c.rAddr), err
+	return n, c.udpAddr, err
 }
 
 func (c *PacketConn) WaitReadFrom() (data []byte, addr netip.AddrPort, err error) {
