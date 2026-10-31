@@ -135,10 +135,12 @@ func (s *Selector) selectedProxy(touch bool) C.Proxy {
 
 	proxies := s.GetProxies(touch)
 	cache := s.providerCache.Load()
-	versions := s.providerVersionsNow()
+	versions, fresh := s.providerVersionsFromCache()
+	if !fresh {
+		versions = s.providerVersionsNow()
+	}
 	if cache != nil && s.providerVersionsEqual(cache.versions) {
 		proxies = cache.proxies
-		versions = cache.versions
 	}
 	proxy := s.selectedFromProxies(proxies, selected)
 	s.selection.Store(&selectorSelection{

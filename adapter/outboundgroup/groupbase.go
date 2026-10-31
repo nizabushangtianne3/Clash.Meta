@@ -295,6 +295,16 @@ func (gb *GroupBase) providerVersionsNow() []uint32 {
 	return versions
 }
 
+// providerVersionsFromCache returns the immutable version snapshot backing the
+// current proxy cache, avoiding a duplicate allocation on cache rebuild paths.
+func (gb *GroupBase) providerVersionsFromCache() ([]uint32, bool) {
+	cache := gb.providerCache.Load()
+	if cache == nil || !gb.providerVersionsEqual(cache.versions) {
+		return nil, false
+	}
+	return cache.versions, true
+}
+
 // providerVersionsEqual reports whether the providers still carry [versions].
 // A provider that swapped its list bumps its version, which is how a cached
 // answer learns that the proxy it names may no longer be a member.

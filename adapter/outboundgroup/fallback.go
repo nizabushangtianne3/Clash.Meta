@@ -223,9 +223,10 @@ func (f *Fallback) findAliveProxyState(touch bool) (C.Proxy, bool) {
 		}
 		return selection.proxy, selection.hasAlternative
 	}
-	// Read the versions before resolving: a swap that lands mid-resolve leaves
-	// versions a later check will not match, which only drops the cache again.
-	versions := f.providerVersionsNow()
+	versions, fresh := f.providerVersionsFromCache()
+	if !fresh {
+		versions = f.providerVersionsNow()
+	}
 	proxy, hasAlternative := f.resolveAliveProxyState(touch)
 	if proxy != f.EmptyFallback() && proxy.AliveForTestUrl(f.testUrl) {
 		f.storeSelection(proxy, hasAlternative, versions)
