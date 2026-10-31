@@ -1,6 +1,8 @@
 package trusttunnel
 
 import (
+	"encoding/binary"
+	"io"
 	"math"
 	"net"
 
@@ -26,30 +28,6 @@ func writeUint32(buffer *buf.Buffer, v uint32) error {
 		}
 	}
 	return nil
-}
-
-func readUint16(buffer *buf.Buffer) (uint16, error) {
-	hi, err := buffer.ReadByte()
-	if err != nil {
-		return 0, err
-	}
-	lo, err := buffer.ReadByte()
-	if err != nil {
-		return 0, err
-	}
-	return uint16(hi)<<8 | uint16(lo), nil
-}
-
-func readUint32(buffer *buf.Buffer) (uint32, error) {
-	var v uint32
-	for range 4 {
-		b, err := buffer.ReadByte()
-		if err != nil {
-			return 0, err
-		}
-		v = v<<8 | uint32(b)
-	}
-	return v, nil
 }
 
 type packetConn struct {
@@ -117,18 +95,13 @@ func (u *clientPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 }
 
 func (u *clientPacketConn) readPacketFromServer(buffer *buf.Buffer) (destination M.Socksaddr, err error) {
-	header := buf.NewSize(4 + 16 + 2 + 16 + 2)
-	defer header.Release()
-	_, err = header.ReadFullFrom(u.body, header.Cap())
-	if err != nil {
+	var header [4 + 16 + 2 + 16 + 2]byte
+	if _, err = io.ReadFull(u.body, header[:]); err != nil {
 		return
 	}
-	length := common.Must1(readUint32(header))
-	var sourceAddressBuffer [16]byte
-	common.Must1(header.Read(sourceAddressBuffer[:]))
-	destination.Addr = parse16BytesIP(sourceAddressBuffer)
-	destination.Port = common.Must1(readUint16(header))
-	common.Must(rw.SkipN(header, 16+2)) // To local address:port
+	length := binary.BigEndian.Uint32(header[:4])
+	destination.Addr = parse16BytesIP([16]byte(header[4:20]))
+	destination.Port = binary.BigEndian.Uint16(header[20:22])
 	payloadLen := int(length) - (16 + 2 + 16 + 2)
 	if payloadLen < 0 {
 		return M.Socksaddr{}, E.New("invalid udp length: ", length)
@@ -193,6 +166,7 @@ var (
 
 type serverPacketConn struct {
 	packetConn
+	readHeader [4 + 16 + 2 + 16 + 2 + 1]byte
 }
 
 func (u *serverPacketConn) FrontHeadroom() int {
@@ -240,21 +214,13 @@ func (u *serverPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 }
 
 func (u *serverPacketConn) readPacketFromClient(buffer *buf.Buffer) (destination M.Socksaddr, err error) {
-	header := buf.NewSize(4 + 16 + 2 + 16 + 2 + 1)
-	defer header.Release()
-	_, err = header.ReadFullFrom(u.body, header.Cap())
-	if err != nil {
+	if _, err = io.ReadFull(u.body, u.readHeader[:]); err != nil {
 		return
 	}
-	length := common.Must1(readUint32(header))
-	var sourceAddressBuffer [16]byte
-	common.Must1(header.Read(sourceAddressBuffer[:]))
-	_ = common.Must1(readUint16(header))
-	var destinationAddressBuffer [16]byte
-	common.Must1(header.Read(destinationAddressBuffer[:]))
-	destination.Addr = parse16BytesIP(destinationAddressBuffer)
-	destination.Port = common.Must1(readUint16(header))
-	appNameLen := common.Must1(header.ReadByte())
+	length := binary.BigEndian.Uint32(u.readHeader[:4])
+	destination.Addr = parse16BytesIP([16]byte(u.readHeader[22:38]))
+	destination.Port = binary.BigEndian.Uint16(u.readHeader[38:40])
+	appNameLen := u.readHeader[40]
 	if appNameLen > 0 {
 		err = rw.SkipN(u.body, int(appNameLen))
 		if err != nil {
