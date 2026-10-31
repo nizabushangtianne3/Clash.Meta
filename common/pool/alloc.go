@@ -10,6 +10,8 @@ import (
 
 var DefaultAllocator = NewAllocator()
 
+var errInvalidBufferSize = errors.New("allocator Put() incorrect buffer size")
+
 type Allocator interface {
 	Get(size int) []byte
 	Put(buf []byte) error
@@ -99,7 +101,7 @@ func (alloc *defaultAllocator) Put(buf []byte) error {
 
 	bits := msb(cap(buf))
 	if cap(buf) != 1<<bits {
-		return errors.New("allocator Put() incorrect buffer size")
+		return errInvalidBufferSize
 	}
 	if cap(buf) < 1<<6 {
 		return nil
