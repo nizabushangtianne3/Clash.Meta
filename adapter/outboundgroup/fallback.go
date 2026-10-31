@@ -240,12 +240,13 @@ func (f *Fallback) resolveAliveProxyState(touch bool) (C.Proxy, bool) {
 	}
 
 	selectedName := f.selectedName()
-	var selectedProxy C.Proxy
 	if selectedName != "" {
 		if proxy, ok := f.indexedProxyByName(selectedName); ok && proxy.AliveForTestUrl(f.testUrl) {
-			selectedProxy = proxy
+			f.rotateProbe.Store(false)
+			return proxy, hasOtherAliveProxy(proxies, proxy, f.testUrl)
 		}
 	}
+	var selectedProxy C.Proxy
 	var firstAlive C.Proxy
 	aliveCount := int32(0)
 	for _, proxy := range proxies {
