@@ -3,21 +3,63 @@ package fakeip
 import (
 	"net/netip"
 	"sync"
-
-	list "github.com/bahlo/generic-list-go"
 )
 
 type fakeipEntry struct {
-	element *list.Element[*fakeipEntry]
-	host    string
-	ip      netip.Addr
+	prev, next *fakeipEntry
+	host       string
+	ip         netip.Addr
+}
+
+type fakeipLRU struct {
+	front, back *fakeipEntry
+	len         int
+}
+
+func (l *fakeipLRU) pushBack(entry *fakeipEntry) {
+	entry.prev = l.back
+	entry.next = nil
+	if l.back != nil {
+		l.back.next = entry
+	} else {
+		l.front = entry
+	}
+	l.back = entry
+	l.len++
+}
+
+func (l *fakeipLRU) remove(entry *fakeipEntry) {
+	if entry.prev != nil {
+		entry.prev.next = entry.next
+	} else {
+		l.front = entry.next
+	}
+	if entry.next != nil {
+		entry.next.prev = entry.prev
+	} else {
+		l.back = entry.prev
+	}
+	entry.prev, entry.next = nil, nil
+	l.len--
+}
+
+func (l *fakeipLRU) moveToBack(entry *fakeipEntry) {
+	if l.back == entry {
+		return
+	}
+	l.remove(entry)
+	l.pushBack(entry)
+}
+
+func (l *fakeipLRU) init() {
+	l.front, l.back, l.len = nil, nil, 0
 }
 
 type memoryStore struct {
 	mu    sync.Mutex
 	hosts map[string]*fakeipEntry
 	ips   map[netip.Addr]*fakeipEntry
-	lru   *list.List[*fakeipEntry]
+	lru   fakeipLRU
 	size  int
 }
 
@@ -25,19 +67,18 @@ func newMemoryStore(size int) *memoryStore {
 	return &memoryStore{
 		hosts: make(map[string]*fakeipEntry),
 		ips:   make(map[netip.Addr]*fakeipEntry),
-		lru:   list.New[*fakeipEntry](),
 		size:  size,
 	}
 }
 
 func (m *memoryStore) touch(entry *fakeipEntry) {
-	m.lru.MoveToBack(entry.element)
+	m.lru.moveToBack(entry)
 }
 
 func (m *memoryStore) remove(entry *fakeipEntry) {
 	delete(m.hosts, entry.host)
 	delete(m.ips, entry.ip)
-	m.lru.Remove(entry.element)
+	m.lru.remove(entry)
 }
 
 func (m *memoryStore) put(host string, ip netip.Addr) {
@@ -64,11 +105,11 @@ func (m *memoryStore) put(host string, ip netip.Addr) {
 	entry := &fakeipEntry{host: host, ip: ip}
 	m.hosts[host] = entry
 	m.ips[ip] = entry
-	entry.element = m.lru.PushBack(entry)
+	m.lru.pushBack(entry)
 
-	if m.size > 0 && m.lru.Len() > m.size {
-		if oldest := m.lru.Front(); oldest != nil {
-			m.remove(oldest.Value)
+	if m.size > 0 && m.lru.len > m.size {
+		if oldest := m.lru.front; oldest != nil {
+			m.remove(oldest)
 		}
 	}
 }
@@ -142,12 +183,12 @@ func (m *memoryStore) CloneTo(store store) {
 
 	target.hosts = make(map[string]*fakeipEntry)
 	target.ips = make(map[netip.Addr]*fakeipEntry)
-	target.lru.Init()
-	for element := m.lru.Front(); element != nil; element = element.Next() {
-		entry := *element.Value
+	target.lru.init()
+	for source := m.lru.front; source != nil; source = source.next {
+		entry := *source
 		target.hosts[entry.host] = &entry
 		target.ips[entry.ip] = &entry
-		target.lru.PushBack(&entry)
+		target.lru.pushBack(&entry)
 	}
 }
 
@@ -156,7 +197,7 @@ func (m *memoryStore) FlushFakeIP() error {
 	m.mu.Lock()
 	m.hosts = make(map[string]*fakeipEntry)
 	m.ips = make(map[netip.Addr]*fakeipEntry)
-	m.lru.Init()
+	m.lru.init()
 	m.mu.Unlock()
 	return nil
 }
