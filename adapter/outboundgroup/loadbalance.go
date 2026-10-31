@@ -23,8 +23,20 @@ import (
 
 const loadBalanceHashPrime = 1099511628211
 
-var etldHashCache = lru.New[string, uint64](
-	lru.WithSize[string, uint64](1024))
+const (
+	etldHashCacheShards = 8
+	etldHashCacheSize   = 128
+)
+
+var etldHashCaches = func() [etldHashCacheShards]*lru.LruCache[string, uint64] {
+	var caches [etldHashCacheShards]*lru.LruCache[string, uint64]
+	for i := range caches {
+		caches[i] = lru.New(
+			lru.WithSize[string, uint64](etldHashCacheSize),
+		)
+	}
+	return caches
+}()
 
 type LoadBalanceOption struct {
 	Strategy string `group:"strategy,omitempty"`
@@ -84,13 +96,14 @@ func getKey(metadata *C.Metadata) uint64 {
 			return hashAddr(ip.Unmap())
 		}
 
-		if hash, cached := etldHashCache.Get(metadata.Host); cached {
+		hashCache := etldHashCaches[utils.MapHash(metadata.Host)%etldHashCacheShards]
+		if hash, cached := hashCache.Get(metadata.Host); cached {
 			return hash
 		}
 
 		if etld, err := publicsuffix.EffectiveTLDPlusOne(metadata.Host); err == nil {
 			hash := utils.MapHash(etld)
-			etldHashCache.Set(metadata.Host, hash)
+			hashCache.Set(metadata.Host, hash)
 			return hash
 		}
 	}
