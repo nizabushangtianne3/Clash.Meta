@@ -56,6 +56,17 @@ func (p *Proxy) AliveForTestUrl(url string) bool {
 	return p.alive.Load()
 }
 
+func (p *Proxy) testState(url string, alive bool) *internalProxyState {
+	if state, ok := p.extra.Load(url); ok {
+		return state
+	}
+	state, _ := p.extra.LoadOrStore(url, &internalProxyState{
+		history: queue.NewWithCapacity[C.DelayHistory](defaultHistoriesNum),
+		alive:   atomic.NewBool(alive),
+	})
+	return state
+}
+
 // SetAliveForTestUrl records a locally observed dial result for the test URL.
 // A URL-specific result must not overwrite the global fallback state used by
 // groups that have not initialized their own URL-specific state yet.
@@ -65,10 +76,7 @@ func (p *Proxy) SetAliveForTestUrl(url string, alive bool) {
 		return
 	}
 
-	state, _ := p.extra.LoadOrStore(url, &internalProxyState{
-		history: queue.New[C.DelayHistory](defaultHistoriesNum),
-		alive:   atomic.NewBool(alive),
-	})
+	state := p.testState(url, alive)
 	state.alive.Store(alive)
 }
 
@@ -302,19 +310,16 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 		if alive {
 			record.Delay = t
 		}
-
 		if url == "" {
 			p.alive.Store(alive)
 		}
+
 		p.history.Put(record)
 		if p.history.Len() > defaultHistoriesNum {
 			p.history.Pop()
 		}
 
-		state, _ := p.extra.LoadOrStore(url, &internalProxyState{
-			history: queue.New[C.DelayHistory](defaultHistoriesNum),
-			alive:   atomic.NewBool(true),
-		})
+		state := p.testState(url, true)
 
 		if !satisfied {
 			record.Delay = 0

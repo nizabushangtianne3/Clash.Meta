@@ -193,3 +193,15 @@ func TestProxyURLTestUsesTLSAndSendsTheUnifiedDelaySecondRequest(t *testing.T) {
 	assert.True(t, proxy.AliveForTestUrl(server.URL))
 	assert.Len(t, requests, 2)
 }
+
+func BenchmarkSetAliveExistingURL(b *testing.B) {
+	proxy := testProxy()
+	const url = "http://bench.example/"
+	proxy.SetAliveForTestUrl(url, true)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		proxy.SetAliveForTestUrl(url, true)
+	}
+}
