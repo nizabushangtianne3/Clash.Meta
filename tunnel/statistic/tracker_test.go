@@ -113,7 +113,7 @@ func TestTCPTrackerSnapshotLifecycle(t *testing.T) {
 	assert.Empty(t, manager.Snapshot().Connections)
 }
 
-func TestTCPTrackerUnwrapReturnsPrebuiltCounts(t *testing.T) {
+func TestTCPTrackerUnwrapReturnsPrebuiltCounter(t *testing.T) {
 	tracker, _ := newTestTCPTracker(t, newStripedManager(), true)
 
 	firstReader, readerCounts := tracker.UnwrapReader()
@@ -122,8 +122,12 @@ func TestTCPTrackerUnwrapReturnsPrebuiltCounts(t *testing.T) {
 	secondWriter, writerCountsAgain := tracker.UnwrapWriter()
 	assert.Same(t, firstReader, secondReader)
 	assert.Same(t, firstWriter, secondWriter)
-	assert.Same(t, &readerCounts[0], &readerCountsAgain[0])
-	assert.Same(t, &writerCounts[0], &writerCountsAgain[0])
+	assert.Same(t, firstReader, &tracker.counter)
+	assert.Same(t, firstWriter, &tracker.counter)
+	assert.Empty(t, readerCounts)
+	assert.Empty(t, readerCountsAgain)
+	assert.Empty(t, writerCounts)
+	assert.Empty(t, writerCountsAgain)
 }
 
 func TestTrackerClonesMetadataIntoCreationSnapshot(t *testing.T) {

@@ -56,12 +56,37 @@ type TrackerInfo struct {
 	suffixOnce sync.Once
 }
 
+type tcpCounterConn struct {
+	C.Conn
+	tracker *tcpTracker
+}
+
+func (c *tcpCounterConn) Read(p []byte) (int, error) {
+	return c.tracker.Read(p)
+}
+
+func (c *tcpCounterConn) Write(p []byte) (int, error) {
+	return c.tracker.Write(p)
+}
+
+func (c *tcpCounterConn) ReadBuffer(buffer *buf.Buffer) error {
+	return c.tracker.ReadBuffer(buffer)
+}
+
+func (c *tcpCounterConn) WriteBuffer(buffer *buf.Buffer) error {
+	return c.tracker.WriteBuffer(buffer)
+}
+
+func (c *tcpCounterConn) ReaderReplaceable() bool { return false }
+
+func (c *tcpCounterConn) WriterReplaceable() bool { return false }
+
 type tcpTracker struct {
 	C.Conn `json:"-"`
 	TrackerInfo
 	manager *Manager
 	stripe  *counterStripe
-	counts  [2]N.CountFunc
+	counter tcpCounterConn
 
 	pushToManager bool `json:"-"`
 	direct        bool `json:"-"`
@@ -104,7 +129,7 @@ func (tt *tcpTracker) ReadBuffer(buffer *buf.Buffer) (err error) {
 }
 
 func (tt *tcpTracker) UnwrapReader() (io.Reader, []N.CountFunc) {
-	return tt.Conn, tt.counts[:1:1]
+	return &tt.counter, nil
 }
 
 func (tt *tcpTracker) Write(b []byte) (int, error) {
@@ -124,7 +149,7 @@ func (tt *tcpTracker) WriteBuffer(buffer *buf.Buffer) (err error) {
 }
 
 func (tt *tcpTracker) UnwrapWriter() (io.Writer, []N.CountFunc) {
-	return tt.Conn, tt.counts[1:2:2]
+	return &tt.counter, nil
 }
 
 func (tt *tcpTracker) Close() error {
@@ -156,8 +181,7 @@ func NewTCPTracker(conn C.Conn, manager *Manager, metadata *C.Metadata, rule C.R
 	tt.metadata = *metadata
 	tt.Metadata = &tt.metadata
 	tt.metadata.RemoteDst = conn.RemoteDestination()
-	tt.counts[0] = tt.accountDownload
-	tt.counts[1] = tt.accountUpload
+	tt.counter = tcpCounterConn{Conn: conn, tracker: tt}
 
 	if pushToManager {
 		if uploadTotal > 0 {
@@ -175,16 +199,6 @@ func NewTCPTracker(conn C.Conn, manager *Manager, metadata *C.Metadata, rule C.R
 
 	manager.Join(tt)
 	return tt
-}
-
-func (tt *tcpTracker) accountDownload(download int64) {
-	tt.pushDownloaded(download)
-	tt.DownloadTotal.Add(download)
-}
-
-func (tt *tcpTracker) accountUpload(upload int64) {
-	tt.pushUploaded(upload)
-	tt.UploadTotal.Add(upload)
 }
 
 type udpTracker struct {
