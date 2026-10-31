@@ -55,7 +55,7 @@ type LoadBalance struct {
 	hasAlternative atomic.Bool
 }
 
-type strategyFn = func(proxies []C.Proxy, metadata *C.Metadata, touch bool) C.Proxy
+type strategyFn = func(proxies []C.Proxy, metadata *C.Metadata, touch bool) (C.Proxy, bool)
 
 var errStrategy = errors.New("unsupported strategy")
 var errHashKey = errors.New("unsupported hash-key")
@@ -249,7 +249,7 @@ func (lb *LoadBalance) IsL3Protocol(metadata *C.Metadata) bool {
 func strategyRoundRobin(url string) strategyFn {
 	idx := 0
 	idxMutex := sync.Mutex{}
-	return func(proxies []C.Proxy, metadata *C.Metadata, touch bool) C.Proxy {
+	return func(proxies []C.Proxy, metadata *C.Metadata, touch bool) (C.Proxy, bool) {
 		idxMutex.Lock()
 		defer idxMutex.Unlock()
 
@@ -267,35 +267,35 @@ func strategyRoundRobin(url string) strategyFn {
 			proxy := proxies[id]
 			if proxy.AliveForTestUrl(url) {
 				i++
-				return proxy
+				return proxy, true
 			}
 		}
 
-		return proxies[0]
+		return proxies[0], false
 	}
 }
 
 func strategyConsistentHashing(url string, keyOf keyFn) strategyFn {
 	maxRetry := 5
-	return func(proxies []C.Proxy, metadata *C.Metadata, touch bool) C.Proxy {
+	return func(proxies []C.Proxy, metadata *C.Metadata, touch bool) (C.Proxy, bool) {
 		key := keyOf(metadata)
 		buckets := int32(len(proxies))
 		for i := 0; i < maxRetry; i, key = i+1, key+1 {
 			idx := jumpHash(key, buckets)
 			proxy := proxies[idx]
 			if proxy.AliveForTestUrl(url) {
-				return proxy
+				return proxy, true
 			}
 		}
 
 		// when availability is poor, traverse the entire list to get the available nodes
 		for _, proxy := range proxies {
 			if proxy.AliveForTestUrl(url) {
-				return proxy
+				return proxy, true
 			}
 		}
 
-		return proxies[0]
+		return proxies[0], false
 	}
 }
 
@@ -309,7 +309,7 @@ func strategyStickySessions(url string, keyOf keyFn) strategyFn {
 			lru.WithSize[uint64, int](stickySessionCacheSize),
 		)
 	}
-	return func(proxies []C.Proxy, metadata *C.Metadata, touch bool) C.Proxy {
+	return func(proxies []C.Proxy, metadata *C.Metadata, touch bool) (C.Proxy, bool) {
 		key := keyOf(metadata)
 		length := len(proxies)
 		sessionCache := sessionCaches[key%stickySessionCacheShards]
@@ -326,7 +326,7 @@ func strategyStickySessions(url string, keyOf keyFn) strategyFn {
 					sessionCache.Set(key, nowIdx)
 				}
 
-				return proxy
+				return proxy, true
 			} else {
 				nowIdx = int(jumpHash(key+uint64(time.Now().UnixNano()), int32(length)))
 			}
@@ -335,36 +335,33 @@ func strategyStickySessions(url string, keyOf keyFn) strategyFn {
 		for index, proxy := range proxies {
 			if proxy.AliveForTestUrl(url) {
 				sessionCache.Set(key, index)
-				return proxy
+				return proxy, true
 			}
 		}
 
 		sessionCache.Set(key, 0)
-		return proxies[0]
+		return proxies[0], false
 	}
 }
 
 // Unwrap implements C.ProxyAdapter
 func (lb *LoadBalance) Unwrap(metadata *C.Metadata, touch bool) C.Proxy {
 	proxies := lb.GetProxies(touch)
-	aliveCount := 0
-	for _, proxy := range proxies {
-		if proxy.AliveForTestUrl(lb.testUrl) {
-			aliveCount++
-			if aliveCount > 1 {
-				break
-			}
-		}
-	}
-	lb.hasAlternative.Store(aliveCount > 1)
-	proxy := lb.strategyFn(proxies, metadata, touch)
-	if proxy == nil || proxy.AliveForTestUrl(lb.testUrl) || len(proxies) == 0 {
-		return proxy
+	if len(proxies) == 0 {
+		lb.hasAlternative.Store(false)
+		return nil
 	}
 
-	index := int(lb.probeCursor.Load()) % len(proxies)
-	lb.probeCursor.Store(uint32((index + 1) % len(proxies)))
-	return proxies[index]
+	proxy, alive := lb.strategyFn(proxies, metadata, touch)
+	if !alive || proxy == nil {
+		lb.hasAlternative.Store(false)
+		index := int(lb.probeCursor.Load()) % len(proxies)
+		lb.probeCursor.Store(uint32((index + 1) % len(proxies)))
+		return proxies[index]
+	}
+
+	lb.hasAlternative.Store(hasOtherAliveProxy(proxies, proxy, lb.testUrl))
+	return proxy
 }
 
 // MarshalJSON implements C.ProxyAdapter

@@ -8,6 +8,7 @@ import (
 	"github.com/metacubex/mihomo/adapter/outbound"
 	"github.com/metacubex/mihomo/common/utils"
 	C "github.com/metacubex/mihomo/constant"
+	P "github.com/metacubex/mihomo/constant/provider"
 
 	"github.com/stretchr/testify/require"
 )
@@ -52,9 +53,10 @@ func TestLoadBalanceHashKeyInUserSurvivesADestinationChange(t *testing.T) {
 	hosts := []string{"a.example.com", "b.example.org", "c.example.net", "d.example.io"}
 
 	byUser := strategyConsistentHashing(testUrl, getKeyWithInUser(getKey))
-	pinned := indexOf(t, proxies, byUser(proxies, request("job-1", hosts[0]), false))
+	pinnedProxy, _ := byUser(proxies, request("job-1", hosts[0]), false)
+	pinned := indexOf(t, proxies, pinnedProxy)
 	for _, host := range hosts {
-		selected := byUser(proxies, request("job-1", host), false)
+		selected, _ := byUser(proxies, request("job-1", host), false)
 		require.Equal(t, pinned, indexOf(t, proxies, selected),
 			"hash-key: user must ignore the destination")
 	}
@@ -90,14 +92,24 @@ func TestLoadBalanceHashKeyInUserSeparatesJobsSharingASourceAddress(t *testing.T
 	proxies := balancedProxies(8)
 	strategy := strategyStickySessions(testUrl, getKeyWithInUser(getKeyWithSrcAndDst))
 
-	first := indexOf(t, proxies, strategy(proxies, request("job-1", "a.example.com"), false))
+	firstProxy, _ := strategy(proxies, request("job-1", "a.example.com"), false)
+	first := indexOf(t, proxies, firstProxy)
 	require.Equal(t, first,
-		indexOf(t, proxies, strategy(proxies, request("job-1", "b.example.org"), false)))
+		func() int {
+			proxy, _ := strategy(proxies, request("job-1", "b.example.org"), false)
+			return indexOf(t, proxies, proxy)
+		}())
 
 	shared := strategyStickySessions(testUrl, getKeyWithSrcAndDst)
 	require.Equal(t,
-		indexOf(t, proxies, shared(proxies, request("job-1", "a.example.com"), false)),
-		indexOf(t, proxies, shared(proxies, request("job-2", "a.example.com"), false)),
+		func() int {
+			proxy, _ := shared(proxies, request("job-1", "a.example.com"), false)
+			return indexOf(t, proxies, proxy)
+		}(),
+		func() int {
+			proxy, _ := shared(proxies, request("job-2", "a.example.com"), false)
+			return indexOf(t, proxies, proxy)
+		}(),
 		"without a supplied key the two jobs are one session")
 }
 
@@ -108,7 +120,7 @@ func TestStickySessionsFallsBackToAnAliveProxy(t *testing.T) {
 	metadata := request("job-1", "a.example.com")
 
 	for i := 0; i < 100; i++ {
-		require.Same(t, proxies[1], strategy(proxies, metadata, true))
+		require.Same(t, proxies[1], func() C.Proxy { proxy, _ := strategy(proxies, metadata, true); return proxy }())
 	}
 }
 
@@ -174,6 +186,48 @@ func TestLoadBalanceHashKeyRejectsUnusableConfigs(t *testing.T) {
 	require.ErrorIs(t, err, errHashKey)
 }
 
+func TestLoadBalanceUnwrapTracksAlternativeState(t *testing.T) {
+	proxies := balancedProxies(4)
+	group, err := NewLoadBalance(
+		GroupCommonOption{Name: "lb-alternative", URL: testUrl},
+		LoadBalanceOption{Strategy: "sticky-sessions"},
+		nil,
+		[]P.ProxyProvider{failoverProvider(t, proxies)},
+	)
+	require.NoError(t, err)
+	metadata := request("job-1", "a.example.com")
+
+	require.True(t, group.Unwrap(metadata, false) != nil)
+	require.True(t, group.hasAlternative.Load())
+
+	for _, proxy := range proxies[1:] {
+		proxy.(aliveStateSetter).SetAliveForTestUrl(testUrl, false)
+	}
+	require.NotNil(t, group.Unwrap(metadata, false))
+	require.False(t, group.hasAlternative.Load())
+}
+
+func BenchmarkLoadBalanceUnwrapSticky(b *testing.B) {
+	proxies := balancedProxies(64)
+	group, err := NewLoadBalance(
+		GroupCommonOption{Name: "lb-unwrap", URL: testUrl},
+		LoadBalanceOption{Strategy: "sticky-sessions"},
+		nil,
+		[]P.ProxyProvider{failoverProvider(b, proxies)},
+	)
+	require.NoError(b, err)
+	metadata := request("", "a.example.com")
+	metadata.SrcIP = netip.MustParseAddr("192.0.2.1")
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; b.Loop(); i++ {
+		if group.Unwrap(metadata, false) == nil {
+			b.Fatal("nil proxy")
+		}
+	}
+}
+
 func BenchmarkStickySessionsProxyPick(b *testing.B) {
 	b.ReportAllocs()
 
@@ -195,6 +249,8 @@ func BenchmarkStickySessionsProxyPick(b *testing.B) {
 	for i := 0; b.Loop(); i++ {
 		metadata := request("", hosts[i%len(hosts)])
 		metadata.SrcIP = srcIPs[(i/len(hosts))%len(srcIPs)]
-		_ = strategy(proxies, metadata, false)
+		if proxy, _ := strategy(proxies, metadata, false); proxy == nil {
+			b.Fatal("nil proxy")
+		}
 	}
 }
