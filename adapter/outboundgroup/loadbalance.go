@@ -24,8 +24,10 @@ import (
 const loadBalanceHashPrime = 1099511628211
 
 const (
-	etldHashCacheShards = 8
-	etldHashCacheSize   = 128
+	etldHashCacheShards      = 8
+	etldHashCacheSize        = 128
+	stickySessionCacheShards = 8
+	stickySessionCacheSize   = 125
 )
 
 var etldHashCaches = func() [etldHashCacheShards]*lru.LruCache[string, uint64] {
@@ -300,13 +302,18 @@ func strategyConsistentHashing(url string, keyOf keyFn) strategyFn {
 func strategyStickySessions(url string, keyOf keyFn) strategyFn {
 	ttl := time.Minute * 10
 	maxRetry := 5
-	lruCache := lru.New[uint64, int](
-		lru.WithAge[uint64, int](int64(ttl.Seconds())),
-		lru.WithSize[uint64, int](1000))
+	var sessionCaches [stickySessionCacheShards]*lru.LruCache[uint64, int]
+	for i := range sessionCaches {
+		sessionCaches[i] = lru.New(
+			lru.WithAge[uint64, int](int64(ttl.Seconds())),
+			lru.WithSize[uint64, int](stickySessionCacheSize),
+		)
+	}
 	return func(proxies []C.Proxy, metadata *C.Metadata, touch bool) C.Proxy {
 		key := keyOf(metadata)
 		length := len(proxies)
-		idx, has := lruCache.Get(key)
+		sessionCache := sessionCaches[key%stickySessionCacheShards]
+		idx, has := sessionCache.Get(key)
 		if !has || idx >= length {
 			idx = int(jumpHash(key+uint64(time.Now().UnixNano()), int32(length)))
 		}
@@ -316,7 +323,7 @@ func strategyStickySessions(url string, keyOf keyFn) strategyFn {
 			proxy := proxies[nowIdx]
 			if proxy.AliveForTestUrl(url) {
 				if !has || nowIdx != idx {
-					lruCache.Set(key, nowIdx)
+					sessionCache.Set(key, nowIdx)
 				}
 
 				return proxy
@@ -327,12 +334,12 @@ func strategyStickySessions(url string, keyOf keyFn) strategyFn {
 
 		for index, proxy := range proxies {
 			if proxy.AliveForTestUrl(url) {
-				lruCache.Set(key, index)
+				sessionCache.Set(key, index)
 				return proxy
 			}
 		}
 
-		lruCache.Set(key, 0)
+		sessionCache.Set(key, 0)
 		return proxies[0]
 	}
 }
