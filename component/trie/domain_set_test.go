@@ -355,6 +355,23 @@ func domainBuildBenchmarkDomains(count int) []string {
 	return domains
 }
 
+func BenchmarkDomainSetBuilderReuse(b *testing.B) {
+	domains := domainBuildBenchmarkDomains(10000)
+	var builder trie.DomainSetBuilder
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for _, domain := range domains {
+			if err := builder.Insert(domain); err != nil {
+				b.Fatal(err)
+			}
+		}
+		set := builder.Build()
+		runtime.KeepAlive(set)
+		builder.Reset()
+	}
+}
 func BenchmarkDomainSetBuild(b *testing.B) {
 	domains := domainBuildBenchmarkDomains(10000)
 

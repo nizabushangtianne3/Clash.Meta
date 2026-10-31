@@ -76,7 +76,7 @@ func (b *DomainSetBuilder) IsEmpty() bool {
 
 // Reset discards all domains accumulated by the builder.
 func (b *DomainSetBuilder) Reset() {
-	b.keys = nil
+	b.keys = b.keys[:0]
 }
 
 // Build consumes the accumulated domains and creates an immutable DomainSet.
@@ -86,7 +86,7 @@ func (b *DomainSetBuilder) Build() *DomainSet {
 		return nil
 	}
 	keys := b.keys
-	b.keys = nil
+	b.keys = keys[:0]
 	return buildDomainSet(keys, nil)
 }
 
