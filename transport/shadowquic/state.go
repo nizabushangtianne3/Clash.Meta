@@ -212,16 +212,22 @@ func (s *connState) storeRecv(id uint16, assoc *association, addr socks5.Addr) {
 	}
 }
 
-func (s *connState) removeRecvIDs(assoc *association, ids map[uint16]struct{}) {
+func (s *connState) removeRecvIDsFor(assoc *association) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for id := range ids {
-		slot := s.recv[id]
+	for id, slot := range s.recv {
 		if slot != nil && slot.target != nil && slot.target.assoc == assoc {
 			delete(s.recv, id)
 		}
 	}
+}
+
+func (s *connState) releaseSendID(id uint16) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	delete(s.activeSend, id)
 }
 
 func (s *connState) allocSendID() (uint16, error) {
@@ -239,15 +245,6 @@ func (s *connState) allocSendID() (uint16, error) {
 		if s.nextID == start {
 			return 0, errorsTooManyUDPContexts{}
 		}
-	}
-}
-
-func (s *connState) releaseSendIDs(ids map[uint16]struct{}) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	for id := range ids {
-		delete(s.activeSend, id)
 	}
 }
 

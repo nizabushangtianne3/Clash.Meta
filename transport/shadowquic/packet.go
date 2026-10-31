@@ -25,8 +25,6 @@ type association struct {
 
 	mu         sync.Mutex
 	sendIDs    map[netip.AddrPort]uint16
-	sendIDSet  map[uint16]struct{}
-	recvIDSet  map[uint16]struct{}
 	uniStreams map[netip.AddrPort]*quic.SendStream
 
 	closed    chan struct{}
@@ -44,8 +42,6 @@ func newAssociation(parent *connState, control *quic.Stream, mode udpMode) *asso
 		control:       control,
 		input:         make(chan receivedPacket, packetInputQueue),
 		sendIDs:       make(map[netip.AddrPort]uint16),
-		sendIDSet:     make(map[uint16]struct{}),
-		recvIDSet:     make(map[uint16]struct{}),
 		uniStreams:    make(map[netip.AddrPort]*quic.SendStream),
 		closed:        make(chan struct{}),
 		readDeadline:  deadline.MakePipeDeadline(),
@@ -67,9 +63,6 @@ func (a *association) readControl() {
 		if err != nil {
 			return
 		}
-		a.mu.Lock()
-		a.recvIDSet[id] = struct{}{}
-		a.mu.Unlock()
 		a.parent.storeRecv(id, a, addr)
 	}
 }
@@ -141,11 +134,10 @@ func (a *association) WriteToAddrPort(p []byte, addr netip.AddrPort) (n int, err
 			return 0, err
 		}
 		if err = WriteUDPControl(a.control, socks5.AddrFromStdAddrPort(addr), id); err != nil {
-			a.parent.releaseSendIDs(map[uint16]struct{}{id: struct{}{}})
+			a.parent.releaseSendID(id)
 			return 0, err
 		}
 		a.sendIDs[addr] = id
-		a.sendIDSet[id] = struct{}{}
 	}
 
 	switch a.mode {
@@ -192,21 +184,16 @@ func (a *association) close() error {
 	_ = a.control.SetWriteDeadline(time.Now())
 
 	a.mu.Lock()
-	sendIDSet := make(map[uint16]struct{}, len(a.sendIDSet))
-	for id := range a.sendIDSet {
-		sendIDSet[id] = struct{}{}
+	for _, id := range a.sendIDs {
+		a.parent.releaseSendID(id)
 	}
-	recvIDSet := make(map[uint16]struct{}, len(a.recvIDSet))
-	for id := range a.recvIDSet {
-		recvIDSet[id] = struct{}{}
-	}
+	a.parent.removeRecvIDsFor(a)
+	a.mu.Unlock()
+
 	for _, stream := range a.uniStreams {
 		_ = stream.Close()
 	}
-	a.mu.Unlock()
 
-	a.parent.releaseSendIDs(sendIDSet)
-	a.parent.removeRecvIDs(a, recvIDSet)
 	return a.control.Close()
 }
 
