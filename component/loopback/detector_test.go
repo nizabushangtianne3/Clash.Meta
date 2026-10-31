@@ -1,16 +1,17 @@
 package loopback
 
 import (
+	"fmt"
 	"io"
 	"net"
 	"net/netip"
-	"time"
-
-	"github.com/metacubex/sing/common/buf"
+	"sync"
 	"testing"
+	"time"
 
 	N "github.com/metacubex/mihomo/common/net"
 	C "github.com/metacubex/mihomo/constant"
+	"github.com/metacubex/sing/common/buf"
 )
 
 type stubConn struct {
@@ -34,7 +35,12 @@ func (*stubConn) AppendToChains(C.ProxyAdapter)    {}
 func (*stubConn) RemoteDestination() string        { return "" }
 
 func newLoopbackConn() *stubConn {
-	return &stubConn{local: net.UDPAddrFromAddrPort(netip.MustParseAddrPort("127.0.0.1:40001"))}
+	return newLoopbackConnPort(40001)
+}
+
+func newLoopbackConnPort(port uint16) *stubConn {
+	source := netip.AddrPortFrom(netip.AddrFrom4([4]byte{127, 0, 0, 1}), port)
+	return &stubConn{local: net.UDPAddrFromAddrPort(source)}
 }
 
 func TestLoopbackConnIsRemovedOnClose(t *testing.T) {
@@ -42,13 +48,13 @@ func TestLoopbackConnIsRemovedOnClose(t *testing.T) {
 	conn := detector.NewConn(newLoopbackConn())
 	source := netip.MustParseAddrPort("127.0.0.1:40001")
 
-	if _, ok := detector.connMap.Load(source); !ok {
+	if _, ok := detector.connMap[source]; !ok {
 		t.Fatal("loopback connection was not registered")
 	}
 	if err := conn.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := detector.connMap.Load(source); ok {
+	if _, ok := detector.connMap[source]; ok {
 		t.Fatal("loopback connection was not removed")
 	}
 }
@@ -63,5 +69,40 @@ func BenchmarkLoopbackNewConn(b *testing.B) {
 		if err := detector.NewConn(conn).Close(); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+func TestLoopbackConcurrentLifecycle(t *testing.T) {
+	detector := NewDetector()
+	const count = 64
+	conns := make([]C.Conn, count)
+	var ready sync.WaitGroup
+	ready.Add(count)
+	var start sync.WaitGroup
+	start.Add(1)
+	for index := range count {
+		go func(index int) {
+			defer ready.Done()
+			start.Wait()
+			conns[index] = detector.NewConn(newLoopbackConnPort(uint16(40000 + index)))
+		}(index)
+	}
+	start.Done()
+	ready.Wait()
+
+	for index, conn := range conns {
+		if conn == nil {
+			t.Fatal("loopback connection was not wrapped")
+		}
+		source := netip.MustParseAddrPort(fmt.Sprintf("127.0.0.1:%d", 40000+index))
+		if _, ok := detector.connMap[source]; !ok {
+			t.Fatal("loopback connection was not registered")
+		}
+		if err := conn.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(detector.connMap) != 0 {
+		t.Fatal("loopback connections were not removed")
 	}
 }
