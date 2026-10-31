@@ -27,6 +27,7 @@ type Conn struct {
 	disablePipe  atomic.Bool
 	inRead       atomic.Bool
 	resultCh     chan *connReadResult
+	pipeBuf      []byte
 }
 
 func IsConn(conn any) bool {
@@ -83,7 +84,10 @@ func (c *Conn) Read(p []byte) (n int, err error) {
 }
 
 func pipeRead(c *Conn, size int) {
-	buffer := make([]byte, size)
+	if cap(c.pipeBuf) < size {
+		c.pipeBuf = make([]byte, size)
+	}
+	buffer := c.pipeBuf[:size]
 	n, err := c.ExtendedConn.Read(buffer)
 	buffer = buffer[:n]
 	result := connReadResultPool.Get().(*connReadResult)
