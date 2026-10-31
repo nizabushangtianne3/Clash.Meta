@@ -190,3 +190,16 @@ func TestFeedCompletedBagStaysSafeForConcurrentDuplicate(t *testing.T) {
 		finalPacket.DATA = nil
 	}
 }
+
+func TestFeedSingleFragmentBypassesDeFragger(t *testing.T) {
+	data := pool.Get(7)
+	copy(data, "payload")
+	packet := fragmentPacket(0, 1, 7, data[:7])
+	defer pool.Put(packet.DATA)
+
+	var d deFragger
+	assembled, ok := d.Feed(&packet)
+	require.True(t, ok)
+	require.Equal(t, []byte("payload"), assembled.DATA)
+	require.Empty(t, d.bags)
+}

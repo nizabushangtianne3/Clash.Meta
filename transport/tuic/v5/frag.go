@@ -150,6 +150,10 @@ func (d *deFragger) evictOldest() {
 }
 
 func (d *deFragger) Feed(m *Packet) (Packet, bool) {
+	if m.FRAG_TOTAL <= 1 {
+		return *m, true
+	}
+
 	bag := d.bagFor(m)
 	bag.mutex.Lock()
 	defer bag.mutex.Unlock()
@@ -157,9 +161,6 @@ func (d *deFragger) Feed(m *Packet) (Packet, bool) {
 }
 
 func (d *deFragger) feedLocked(m *Packet, bag *packetBag) (packet Packet, ok bool) {
-	if m.FRAG_TOTAL <= 1 {
-		return *m, true
-	}
 	if m.FRAG_ID >= m.FRAG_TOTAL {
 		_ = pool.Put(m.DATA)
 		m.DATA = nil

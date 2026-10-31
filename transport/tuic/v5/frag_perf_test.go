@@ -45,3 +45,21 @@ func BenchmarkFeedFragmented(b *testing.B) {
 		b.Fatal("assembled payload was not released")
 	}
 }
+
+func BenchmarkFeedSingleFragment(b *testing.B) {
+	payload := make([]byte, 1200)
+	packets := make([]Packet, 64)
+	for i := range packets {
+		packets[i] = fragmentPacket(0, 1, uint16(len(payload)), payload)
+		packets[i].PKT_ID = uint16(i)
+	}
+	var d deFragger
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		packet, ok := d.Feed(&packets[i&63])
+		if !ok || len(packet.DATA) != len(payload) {
+			b.Fatal("single fragment was not forwarded")
+		}
+	}
+}
