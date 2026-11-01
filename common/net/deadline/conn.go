@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/metacubex/mihomo/common/atomic"
+	"github.com/metacubex/mihomo/common/pool"
 
 	"github.com/metacubex/sing/common/buf"
 	"github.com/metacubex/sing/common/bufio"
@@ -14,11 +15,22 @@ import (
 )
 
 type connReadResult struct {
-	buffer []byte
+	data   []byte
+	unread []byte
 	err    error
 }
 
 var connReadResultPool = sync.Pool{New: func() any { return new(connReadResult) }}
+
+func (r *connReadResult) release() {
+	if r.data != nil {
+		pool.Put(r.data)
+	}
+	r.data = nil
+	r.unread = nil
+	r.err = nil
+	connReadResultPool.Put(r)
+}
 
 type Conn struct {
 	network.ExtendedConn
@@ -27,7 +39,6 @@ type Conn struct {
 	disablePipe  atomic.Bool
 	inRead       atomic.Bool
 	resultCh     chan *connReadResult
-	pipeBuf      []byte
 }
 
 func IsConn(conn any) bool {
@@ -49,29 +60,27 @@ func (c *Conn) Read(p []byte) (n int, err error) {
 	select {
 	case result := <-c.resultCh:
 		if result != nil {
-			n = copy(p, result.buffer)
+			n = copy(p, result.unread)
 			err = result.err
-			if n >= len(result.buffer) {
-				result.buffer = nil
-				result.err = nil
-				connReadResultPool.Put(result)
-				c.resultCh <- nil // finish cache read
+			result.unread = result.unread[n:]
+			if len(result.unread) == 0 {
+				result.release()
+				c.resultCh <- nil
 			} else {
-				result.buffer = result.buffer[n:]
-				c.resultCh <- result // push back for next call
+				c.resultCh <- result
 			}
 			return
-		} else {
-			c.resultCh <- nil
-			break
 		}
+
+		c.resultCh <- nil
 	case <-c.pipeDeadline.Wait():
 		return 0, os.ErrDeadlineExceeded
 	}
 
 	if c.disablePipe.Load() {
 		return c.ExtendedConn.Read(p)
-	} else if c.deadline.Load().IsZero() {
+	}
+	if c.deadline.Load().IsZero() {
 		c.inRead.Store(true)
 		defer c.inRead.Store(false)
 		return c.ExtendedConn.Read(p)
@@ -79,19 +88,16 @@ func (c *Conn) Read(p []byte) (n int, err error) {
 
 	<-c.resultCh
 	go pipeRead(c, len(p))
-
 	return c.Read(p)
 }
 
 func pipeRead(c *Conn, size int) {
-	if cap(c.pipeBuf) < size {
-		c.pipeBuf = make([]byte, size)
-	}
-	buffer := c.pipeBuf[:size]
-	n, err := c.ExtendedConn.Read(buffer)
-	buffer = buffer[:n]
+	data := pool.Get(size)
+	n, err := c.ExtendedConn.Read(data)
+
 	result := connReadResultPool.Get().(*connReadResult)
-	result.buffer = buffer
+	result.data = data
+	result.unread = data[:n]
 	result.err = err
 	c.resultCh <- result
 }
@@ -100,30 +106,27 @@ func (c *Conn) ReadBuffer(buffer *buf.Buffer) (err error) {
 	select {
 	case result := <-c.resultCh:
 		if result != nil {
-			n, _ := buffer.Write(result.buffer)
+			n, _ := buffer.Write(result.unread)
 			err = result.err
-
-			if n >= len(result.buffer) {
-				result.buffer = nil
-				result.err = nil
-				connReadResultPool.Put(result)
-				c.resultCh <- nil // finish cache read
+			result.unread = result.unread[n:]
+			if len(result.unread) == 0 {
+				result.release()
+				c.resultCh <- nil
 			} else {
-				result.buffer = result.buffer[n:]
-				c.resultCh <- result // push back for next call
+				c.resultCh <- result
 			}
 			return
-		} else {
-			c.resultCh <- nil
-			break
 		}
+
+		c.resultCh <- nil
 	case <-c.pipeDeadline.Wait():
 		return os.ErrDeadlineExceeded
 	}
 
 	if c.disablePipe.Load() {
 		return c.ExtendedConn.ReadBuffer(buffer)
-	} else if c.deadline.Load().IsZero() {
+	}
+	if c.deadline.Load().IsZero() {
 		c.inRead.Store(true)
 		defer c.inRead.Store(false)
 		return c.ExtendedConn.ReadBuffer(buffer)
@@ -131,14 +134,14 @@ func (c *Conn) ReadBuffer(buffer *buf.Buffer) (err error) {
 
 	<-c.resultCh
 	go pipeRead(c, buffer.FreeLen())
-
 	return c.ReadBuffer(buffer)
 }
 
 func (c *Conn) SetReadDeadline(t time.Time) error {
 	if c.disablePipe.Load() {
 		return c.ExtendedConn.SetReadDeadline(t)
-	} else if c.inRead.Load() {
+	}
+	if c.inRead.Load() {
 		c.disablePipe.Store(true)
 		return c.ExtendedConn.SetReadDeadline(t)
 	}
@@ -152,12 +155,10 @@ func (c *Conn) ReaderReplaceable() bool {
 	case result := <-c.resultCh:
 		c.resultCh <- result
 		if result != nil {
-			return false // cache reading
-		} else {
-			break
+			return false
 		}
 	default:
-		return false // pipe reading
+		return false
 	}
 	return c.disablePipe.Load() || c.deadline.Load().IsZero()
 }
