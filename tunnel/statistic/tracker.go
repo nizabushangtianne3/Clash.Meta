@@ -84,9 +84,10 @@ func (c *tcpCounterConn) WriterReplaceable() bool { return false }
 type tcpTracker struct {
 	C.Conn `json:"-"`
 	TrackerInfo
-	manager *Manager
-	stripe  *counterStripe
-	counter tcpCounterConn
+	manager      *Manager
+	stripe       *counterStripe
+	counter      tcpCounterConn
+	writeOptions N.ReadWaitOptions
 
 	pushToManager bool `json:"-"`
 	direct        bool `json:"-"`
@@ -141,6 +142,9 @@ func (tt *tcpTracker) Write(b []byte) (int, error) {
 }
 
 func (tt *tcpTracker) WriteBuffer(buffer *buf.Buffer) (err error) {
+	writeOptions := tt.writeOptions
+	writeOptions.MTU = buffer.Len()
+	buffer = writeOptions.Copy(buffer)
 	upload := int64(buffer.Len())
 	err = tt.Conn.WriteBuffer(buffer)
 	tt.pushUploaded(upload)
@@ -176,6 +180,7 @@ func NewTCPTracker(conn C.Conn, manager *Manager, metadata *C.Metadata, rule C.R
 		},
 		pushToManager: pushToManager,
 		direct:        IsDirect(conn.Chains().Last()),
+		writeOptions:  N.NewReadWaitOptions(nil, conn),
 	}
 	tt.TrackerInfo.UploadTotal.Store(uploadTotal)
 	tt.TrackerInfo.DownloadTotal.Store(downloadTotal)
