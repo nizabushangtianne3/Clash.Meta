@@ -49,20 +49,25 @@ const xrayBufSize = 8192
 
 func (vc *Conn) ReshapeBuffer(buffer *buf.Buffer) []*buf.Buffer {
 	const bufferLimit = xrayBufSize - PaddingHeaderLen
-	if buffer.Len() < bufferLimit {
-		return []*buf.Buffer{buffer}
-	}
 	options := N.NewReadWaitOptions(nil, vc)
 	var buffers []*buf.Buffer
-	for buffer.Len() >= bufferLimit {
-		cutAt := bytes.LastIndex(buffer.Bytes(), tlsApplicationDataStart)
-		if cutAt < 21 || cutAt > bufferLimit {
-			cutAt = xrayBufSize / 2
+
+	for buffer.Len() > 0 {
+		cutAt := min(bufferLimit, buffer.Len())
+		if len(buffers) == 0 {
+			if tlsStart := bytes.LastIndex(buffer.Bytes(), tlsApplicationDataStart); tlsStart >= 21 && tlsStart <= cutAt {
+				cutAt = tlsStart
+			}
 		}
-		buffer2 := options.NewBuffer() // ensure the new buffer can send used in vc.WriteBuffer
-		buf.Must(buf.Error(buffer2.ReadFullFrom(buffer, cutAt)))
-		buffers = append(buffers, buffer2)
+
+		// Pooled source buffers may have no front headroom. Vision padding
+		// prepends headers, so every chunk must own a headroom-ready buffer.
+		headerBuffer := options.NewBuffer()
+		n, _ := headerBuffer.Write(buffer.Bytes()[:cutAt])
+		buffer.Advance(n)
+		buffers = append(buffers, headerBuffer)
 	}
-	buffers = append(buffers, buffer)
+
+	buffer.Release()
 	return buffers
 }
