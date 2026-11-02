@@ -175,7 +175,7 @@ func (f *Fallback) AppendJSON(dst []byte) []byte {
 
 // MarshalJSON implements C.ProxyAdapter
 func (f *Fallback) MarshalJSON() ([]byte, error) {
-	return f.AppendJSON(nil), nil
+	return f.AppendJSON(make([]byte, 0, fallbackJSONLen(f))), nil
 }
 
 // Unwrap implements C.ProxyAdapter

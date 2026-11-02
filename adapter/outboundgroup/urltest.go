@@ -323,7 +323,7 @@ func (u *URLTest) AppendJSON(dst []byte) []byte {
 
 // MarshalJSON implements C.ProxyAdapter
 func (u *URLTest) MarshalJSON() ([]byte, error) {
-	return u.AppendJSON(nil), nil
+	return u.AppendJSON(make([]byte, 0, urlTestJSONLen(u))), nil
 }
 
 func (u *URLTest) Providers() []P.ProxyProvider {

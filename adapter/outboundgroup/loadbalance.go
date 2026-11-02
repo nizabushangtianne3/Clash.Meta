@@ -378,7 +378,7 @@ func (lb *LoadBalance) AppendJSON(dst []byte) []byte {
 
 // MarshalJSON implements C.ProxyAdapter
 func (lb *LoadBalance) MarshalJSON() ([]byte, error) {
-	return lb.AppendJSON(nil), nil
+	return lb.AppendJSON(make([]byte, 0, loadBalanceJSONLen(lb))), nil
 }
 
 func (lb *LoadBalance) Providers() []P.ProxyProvider {

@@ -11,6 +11,9 @@ type Queue[T any] struct {
 	entries []T
 	head    int
 	count   int
+	// ring is the capacity the backing array takes when it first grows, so a
+	// queue that never receives an item allocates no array.
+	ring int
 	lock    sync.RWMutex
 }
 
@@ -97,7 +100,7 @@ func NewWithCapacity[T any](hint int64) *Queue[T] {
 		hint = 0
 	}
 	return &Queue[T]{
-		entries: make([]T, hint),
+		ring: int(hint),
 	}
 }
 
@@ -109,6 +112,9 @@ func (q *Queue[T]) reserve(additional int) {
 	}
 
 	newCap := oldCap
+	if newCap == 0 {
+		newCap = q.ring
+	}
 	if newCap == 0 {
 		newCap = 1
 	}

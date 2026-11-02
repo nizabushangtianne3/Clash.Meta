@@ -79,8 +79,26 @@ func (n NetWork) String() string {
 }
 
 func (n NetWork) MarshalJSON() ([]byte, error) {
-	return strconv.AppendQuote(nil, n.String()), nil
+	// The quoted forms are shared: an encoder only reads them, and every
+	// connection row marshals its network.
+	switch n {
+	case TCP:
+		return netWorkTextTCP, nil
+	case UDP:
+		return netWorkTextUDP, nil
+	case ALLNet:
+		return netWorkTextALLNet, nil
+	default:
+		return netWorkTextInvalid, nil
+	}
 }
+
+var (
+	netWorkTextTCP     = []byte(`"tcp"`)
+	netWorkTextUDP     = []byte(`"udp"`)
+	netWorkTextALLNet  = []byte(`"all"`)
+	netWorkTextInvalid = []byte(`"invalid"`)
+)
 
 type Type int
 
@@ -185,8 +203,80 @@ func ParseType(t string) (*Type, error) {
 }
 
 func (t Type) MarshalJSON() ([]byte, error) {
-	return strconv.AppendQuote(nil, t.String()), nil
+	// The quoted forms are shared: an encoder only reads them, and every
+	// connection row marshals its type.
+	switch t {
+	case HTTP:
+		return typeTextHTTP, nil
+	case HTTPS:
+		return typeTextHTTPS, nil
+	case SOCKS4:
+		return typeTextSOCKS4, nil
+	case SOCKS5:
+		return typeTextSOCKS5, nil
+	case SHADOWSOCKS:
+		return typeTextSHADOWSOCKS, nil
+	case SNELL:
+		return typeTextSNELL, nil
+	case VMESS:
+		return typeTextVMESS, nil
+	case VLESS:
+		return typeTextVLESS, nil
+	case REDIR:
+		return typeTextREDIR, nil
+	case TPROXY:
+		return typeTextTPROXY, nil
+	case TROJAN:
+		return typeTextTROJAN, nil
+	case TUNNEL:
+		return typeTextTUNNEL, nil
+	case TUN:
+		return typeTextTUN, nil
+	case TUIC:
+		return typeTextTUIC, nil
+	case HYSTERIA2:
+		return typeTextHYSTERIA2, nil
+	case ANYTLS:
+		return typeTextANYTLS, nil
+	case MIERU:
+		return typeTextMIERU, nil
+	case SUDOKU:
+		return typeTextSUDOKU, nil
+	case TRUSTTUNNEL:
+		return typeTextTRUSTTUNNEL, nil
+	case SHADOWQUIC:
+		return typeTextSHADOWQUIC, nil
+	case INNER:
+		return typeTextINNER, nil
+	default:
+		return typeTextUnknown, nil
+	}
 }
+
+var (
+	typeTextHTTP        = []byte(`"HTTP"`)
+	typeTextHTTPS       = []byte(`"HTTPS"`)
+	typeTextSOCKS4      = []byte(`"Socks4"`)
+	typeTextSOCKS5      = []byte(`"Socks5"`)
+	typeTextSHADOWSOCKS = []byte(`"ShadowSocks"`)
+	typeTextSNELL       = []byte(`"Snell"`)
+	typeTextVMESS       = []byte(`"Vmess"`)
+	typeTextVLESS       = []byte(`"Vless"`)
+	typeTextREDIR       = []byte(`"Redir"`)
+	typeTextTPROXY      = []byte(`"TProxy"`)
+	typeTextTROJAN      = []byte(`"Trojan"`)
+	typeTextTUNNEL      = []byte(`"Tunnel"`)
+	typeTextTUN         = []byte(`"Tun"`)
+	typeTextTUIC        = []byte(`"Tuic"`)
+	typeTextHYSTERIA2   = []byte(`"Hysteria2"`)
+	typeTextANYTLS      = []byte(`"AnyTLS"`)
+	typeTextMIERU       = []byte(`"Mieru"`)
+	typeTextSUDOKU      = []byte(`"Sudoku"`)
+	typeTextTRUSTTUNNEL = []byte(`"TrustTunnel"`)
+	typeTextSHADOWQUIC  = []byte(`"ShadowQuic"`)
+	typeTextINNER       = []byte(`"Inner"`)
+	typeTextUnknown     = []byte(`"Unknown"`)
+)
 
 // Metadata is used to store connection address
 type Metadata struct {

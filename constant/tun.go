@@ -33,8 +33,27 @@ func (e *TUNStack) UnmarshalText(data []byte) error {
 
 // MarshalText serialize TUNStack with json
 func (e TUNStack) MarshalText() ([]byte, error) {
-	return []byte(e.String()), nil
+	switch e {
+	case TunGvisor:
+		return tunStackTextGvisor, nil
+	case TunSystem:
+		return tunStackTextSystem, nil
+	case TunMixed:
+		return tunStackTextMixed, nil
+	case TunMips:
+		return tunStackTextMips, nil
+	default:
+		return tunStackTextUnknown, nil
+	}
 }
+
+var (
+	tunStackTextGvisor  = []byte("gVisor")
+	tunStackTextSystem  = []byte("System")
+	tunStackTextMixed   = []byte("Mixed")
+	tunStackTextMips    = []byte("Mips")
+	tunStackTextUnknown = []byte("unknown")
+)
 
 func (e TUNStack) String() string {
 	switch e {

@@ -83,7 +83,7 @@ func (s *Selector) AppendJSON(dst []byte) []byte {
 
 // MarshalJSON implements C.ProxyAdapter
 func (s *Selector) MarshalJSON() ([]byte, error) {
-	return s.AppendJSON(nil), nil
+	return s.AppendJSON(make([]byte, 0, selectorJSONLen(s))), nil
 }
 
 func (s *Selector) Now() string {

@@ -19,5 +19,19 @@ func TestAppendStringMatchesEncodingJSON(t *testing.T) {
 		expected, err := json.Marshal(value)
 		require.NoError(t, err)
 		require.Equal(t, string(expected), string(AppendString(nil, value)))
+		require.Equal(t, len(expected), StringLen(value), "size of %q", value)
+	}
+}
+
+func TestStringLenSizesEveryEscape(t *testing.T) {
+	probes := []string{
+		"\x00\x01\x1f",
+		"tab\there",
+		"\u2028\u2029\u007f\u0080",
+		"plain ascii",
+		"\xff\xfe",
+	}
+	for _, probe := range probes {
+		require.Equal(t, len(AppendString(nil, probe)), StringLen(probe), "size of %q", probe)
 	}
 }

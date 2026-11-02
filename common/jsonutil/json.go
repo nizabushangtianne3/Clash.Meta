@@ -7,6 +7,43 @@ import (
 
 const hexDigits = "0123456789abcdef"
 
+// StringLen reports the byte count AppendString adds for s, so a caller can
+// size a buffer that never grows while the strings of one document are
+// appended. A wrong count only costs a reallocation.
+func StringLen(s string) int {
+	length := 2
+	for i := 0; i < len(s); {
+		if b := s[i]; b < utf8.RuneSelf {
+			switch b {
+			case '\\', '"':
+				length += 2
+			case '\b', '\f', '\n', '\r', '\t':
+				length += 2
+			default:
+				if b < 0x20 || b == '<' || b == '>' || b == '&' {
+					length += 6
+				} else {
+					length++
+				}
+			}
+			i++
+			continue
+		}
+
+		r, size := utf8.DecodeRuneInString(s[i:])
+		switch {
+		case r == utf8.RuneError && size == 1:
+			length += utf8.RuneLen(utf8.RuneError)
+		case r == '\u2028' || r == '\u2029':
+			length += 6
+		default:
+			length += size
+		}
+		i += size
+	}
+	return length
+}
+
 // AppendString quotes a string with encoding/json HTML escaping enabled.
 func AppendString(dst []byte, s string) []byte {
 	dst = append(dst, '"')

@@ -95,33 +95,18 @@ func TestGroupViewKeySet(t *testing.T) {
 }
 
 func TestGroupMarshalJSONEscapesLikeEncodingJSON(t *testing.T) {
-	members := []C.Proxy{
-		adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{
-			Name: `quote"slash\\html<&>line\n`,
-		})),
-		adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{
-			Name: "unicode\u2028\u2029\ufffd",
-		})),
-	}
-	groupName := `group<&>"\u2028"`
-	group, err := NewSelector(
-		GroupCommonOption{Name: groupName},
-		SelectorOption{},
-		adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "COMPATIBLE"})),
-		[]P.ProxyProvider{failoverProvider(t, members)},
-	)
-	require.NoError(t, err)
+	group := escapedGroupViewGroup(t)
 
-	data, err := adapter.NewProxy(group).Adapter().MarshalJSON()
+	data, err := group.Adapter().MarshalJSON()
 	require.NoError(t, err)
 	var view map[string]json.RawMessage
 	require.NoError(t, json.Unmarshal(data, &view))
 
 	for key, raw := range map[string]any{
 		"type":          "Selector",
-		"name":          groupName,
-		"now":           members[0].Name(),
-		"all":           []string{members[0].Name(), members[1].Name()},
+		"name":          escapedGroupViewName,
+		"now":           escapedGroupViewMemberA,
+		"all":           []string{escapedGroupViewMemberA, escapedGroupViewMemberB},
 		"testUrl":       "",
 		"hidden":        false,
 		"icon":          "",
@@ -130,6 +115,47 @@ func TestGroupMarshalJSONEscapesLikeEncodingJSON(t *testing.T) {
 		expected, err := json.Marshal(raw)
 		require.NoError(t, err, key)
 		require.JSONEq(t, string(expected), string(view[key]), key)
+	}
+}
+
+const (
+	escapedGroupViewName    = `group<&>"\u2028"`
+	escapedGroupViewMemberA = `quote"slash\\html<&>line\n`
+	escapedGroupViewMemberB = "unicode\u2028\u2029\ufffd"
+)
+
+func escapedGroupViewGroup(tb testing.TB) C.Proxy {
+	tb.Helper()
+	members := []C.Proxy{
+		adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: escapedGroupViewMemberA})),
+		adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: escapedGroupViewMemberB})),
+	}
+	group, err := NewSelector(
+		GroupCommonOption{Name: escapedGroupViewName},
+		SelectorOption{},
+		adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "COMPATIBLE"})),
+		[]P.ProxyProvider{failoverProvider(tb, members)},
+	)
+	require.NoError(tb, err)
+	return adapter.NewProxy(group)
+}
+
+// A group document is sized before it is written, so the only allocation one
+// marshal costs is its buffer. Escaped names take the size function through
+// every branch the escaper has.
+func TestGroupMarshalJSONSizesItsBuffer(t *testing.T) {
+	groups := map[string]C.Proxy{"escaped selector": escapedGroupViewGroup(t)}
+	for kind, proxy := range groupViewGroups(t, 7) {
+		groups[kind] = proxy
+	}
+
+for kind, proxy := range groups {
+	allocations := testing.AllocsPerRun(50, func() {
+		if _, err := proxy.Adapter().MarshalJSON(); err != nil {
+			t.Fatal(err)
+		}
+	})
+		require.LessOrEqual(t, allocations, float64(1), "%s marshal allocations: %v", kind, allocations)
 	}
 }
 

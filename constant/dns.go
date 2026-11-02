@@ -33,8 +33,29 @@ func (e *DNSMode) UnmarshalText(data []byte) error {
 
 // MarshalText serialize EnhancedMode
 func (e DNSMode) MarshalText() ([]byte, error) {
-	return []byte(e.String()), nil
+	// The text slices below are shared: every caller is an encoder, which only
+	// reads them.
+	switch e {
+	case DNSNormal:
+		return dnsModeTextNormal, nil
+	case DNSFakeIP:
+		return dnsModeTextFakeIP, nil
+	case DNSMapping:
+		return dnsModeTextMapping, nil
+	case DNSHosts:
+		return dnsModeTextHosts, nil
+	default:
+		return dnsModeTextUnknown, nil
+	}
 }
+
+var (
+	dnsModeTextNormal  = []byte("normal")
+	dnsModeTextFakeIP  = []byte("fake-ip")
+	dnsModeTextMapping = []byte("redir-host")
+	dnsModeTextHosts   = []byte("hosts")
+	dnsModeTextUnknown = []byte("unknown")
+)
 
 func (e DNSMode) String() string {
 	switch e {
@@ -87,8 +108,29 @@ func (d DNSPrefer) String() string {
 }
 
 func (d DNSPrefer) MarshalText() ([]byte, error) {
-	return []byte(d.String()), nil
+	switch d {
+	case DualStack:
+		return dnsPreferTextDual, nil
+	case IPv4Only:
+		return dnsPreferTextIPv4Only, nil
+	case IPv6Only:
+		return dnsPreferTextIPv6Only, nil
+	case IPv4Prefer:
+		return dnsPreferTextIPv4Prefer, nil
+	case IPv6Prefer:
+		return dnsPreferTextIPv6Prefer, nil
+	default:
+		return dnsPreferTextDual, nil
+	}
 }
+
+var (
+	dnsPreferTextDual       = []byte("dual")
+	dnsPreferTextIPv4Only   = []byte("ipv4")
+	dnsPreferTextIPv6Only   = []byte("ipv6")
+	dnsPreferTextIPv4Prefer = []byte("ipv4-prefer")
+	dnsPreferTextIPv6Prefer = []byte("ipv6-prefer")
+)
 
 func (d *DNSPrefer) UnmarshalText(data []byte) error {
 	p, exist := dnsPreferMap[strings.ToLower(string(data))]
@@ -128,8 +170,24 @@ func (e FilterMode) String() string {
 }
 
 func (e FilterMode) MarshalText() ([]byte, error) {
-	return []byte(e.String()), nil
+	switch e {
+	case FilterBlackList:
+		return filterModeTextBlackList, nil
+	case FilterWhiteList:
+		return filterModeTextWhiteList, nil
+	case FilterRule:
+		return filterModeTextRule, nil
+	default:
+		return filterModeTextUnknown, nil
+	}
 }
+
+var (
+	filterModeTextBlackList = []byte("blacklist")
+	filterModeTextWhiteList = []byte("whitelist")
+	filterModeTextRule      = []byte("rule")
+	filterModeTextUnknown   = []byte("unknown")
+)
 
 func (e *FilterMode) UnmarshalText(data []byte) error {
 	mode, exist := FilterModeMapping[strings.ToLower(string(data))]
