@@ -90,11 +90,36 @@ type cacheAAAA struct {
 	data   [16]byte
 }
 
+// cachedASlab keeps a small all-A cache hit in one caller-owned allocation.
+type cachedASlab struct {
+	msg D.Msg
+	rr  [2]D.RR
+	a   [2]cacheA
+}
+
 // copyCachedMsg returns a message whose RR payloads are independent of src.
 // Question remains shared because dns.Msg treats it as immutable. Cache writes
 // also discard OPT before cloning, so that RFC-forbidden record never pays for
 // an allocation.
 func copyCachedMsg(src *D.Msg, discardOPT bool) *D.Msg {
+	if !discardOPT && len(src.Ns) == 0 && len(src.Extra) == 0 && len(src.Answer) > 0 && len(src.Answer) <= 2 && allA(src.Answer) {
+		slab := &cachedASlab{}
+		dst := &slab.msg
+		dst.MsgHdr = src.MsgHdr
+		dst.Compress = src.Compress
+		dst.Question = src.Question
+		dst.Answer = slab.rr[:len(src.Answer):len(src.Answer)]
+		for index, rr := range src.Answer {
+			value := rr.(*D.A)
+			record := &slab.a[index]
+			record.header = *value
+			copy(record.data[:], value.A)
+			record.header.A = record.data[:]
+			dst.Answer[index] = &record.header
+		}
+		return dst
+	}
+
 	dst := &D.Msg{}
 	dst.MsgHdr = src.MsgHdr
 	dst.Compress = src.Compress
@@ -563,4 +588,13 @@ func batchExchange(ctx context.Context, clients []dnsClient, m *D.Msg) (msg *D.M
 		}
 	}
 	return
+}
+
+func allA(records []D.RR) bool {
+	for _, rr := range records {
+		if _, ok := rr.(*D.A); !ok {
+			return false
+		}
+	}
+	return true
 }
