@@ -1,0 +1,46 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/listener/sing
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkNewConnectionTCPHandoff          	 9875803	       114.2 ns/op	     416 B/op	       1 allocs/op
+BenchmarkNewConnectionTCPHandoff          	10579957	       113.4 ns/op	     416 B/op	       1 allocs/op
+BenchmarkNewConnectionTCPHandoff          	11163018	       108.3 ns/op	     416 B/op	       1 allocs/op
+BenchmarkNewConnectionTCPHandoff          	11198166	       108.1 ns/op	     416 B/op	       1 allocs/op
+BenchmarkNewConnectionTCPHandoff          	11243640	       109.3 ns/op	     416 B/op	       1 allocs/op
+BenchmarkNewConnectionTCPHandoff          	10944950	       108.9 ns/op	     416 B/op	       1 allocs/op
+BenchmarkNewConnectionTCPHandoff          	11134214	       108.7 ns/op	     416 B/op	       1 allocs/op
+BenchmarkNewConnectionTCPHandoff          	11031205	       108.0 ns/op	     416 B/op	       1 allocs/op
+BenchmarkNewConnectionTCPHandoff          	11100112	       109.1 ns/op	     416 B/op	       1 allocs/op
+BenchmarkNewConnectionTCPHandoff          	10962016	       108.5 ns/op	     416 B/op	       1 allocs/op
+BenchmarkNewPacketConnectionDatagramBatch 	  101376	     11835 ns/op	   48228 B/op	     104 allocs/op
+BenchmarkNewPacketConnectionDatagramBatch 	  102842	     11712 ns/op	   48228 B/op	     104 allocs/op
+BenchmarkNewPacketConnectionDatagramBatch 	   98042	     11767 ns/op	   48228 B/op	     104 allocs/op
+BenchmarkNewPacketConnectionDatagramBatch 	  103330	     11971 ns/op	   48228 B/op	     104 allocs/op
+BenchmarkNewPacketConnectionDatagramBatch 	   96763	     11781 ns/op	   48228 B/op	     104 allocs/op
+BenchmarkNewPacketConnectionDatagramBatch 	   99316	     11812 ns/op	   48228 B/op	     104 allocs/op
+BenchmarkNewPacketConnectionDatagramBatch 	  103454	     11677 ns/op	   48228 B/op	     104 allocs/op
+BenchmarkNewPacketConnectionDatagramBatch 	  102663	     11755 ns/op	   48228 B/op	     104 allocs/op
+BenchmarkNewPacketConnectionDatagramBatch 	  101190	     11689 ns/op	   48228 B/op	     104 allocs/op
+BenchmarkNewPacketConnectionDatagramBatch 	  103236	     11990 ns/op	   48228 B/op	     104 allocs/op
+BenchmarkNewPacketSingleDatagram          	  536374	      1958 ns/op	   17046 B/op	       3 allocs/op
+BenchmarkNewPacketSingleDatagram          	  656077	      1862 ns/op	   17048 B/op	       3 allocs/op
+BenchmarkNewPacketSingleDatagram          	  661674	      1780 ns/op	   17046 B/op	       3 allocs/op
+BenchmarkNewPacketSingleDatagram          	  645452	      1734 ns/op	   17047 B/op	       3 allocs/op
+BenchmarkNewPacketSingleDatagram          	  634852	      1779 ns/op	   17046 B/op	       3 allocs/op
+BenchmarkNewPacketSingleDatagram          	  581750	      1796 ns/op	   17046 B/op	       3 allocs/op
+BenchmarkNewPacketSingleDatagram          	  685221	      1844 ns/op	   17044 B/op	       3 allocs/op
+BenchmarkNewPacketSingleDatagram          	  627309	      1739 ns/op	   17047 B/op	       3 allocs/op
+BenchmarkNewPacketSingleDatagram          	  618186	      1743 ns/op	   17046 B/op	       3 allocs/op
+BenchmarkNewPacketSingleDatagram          	  637669	      1769 ns/op	   17046 B/op	       3 allocs/op
+BenchmarkSingPacketWriteBack              	69896668	        17.02 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSingPacketWriteBack              	69438014	        17.04 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSingPacketWriteBack              	71286846	        17.03 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSingPacketWriteBack              	70983655	        17.02 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSingPacketWriteBack              	70819021	        17.08 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSingPacketWriteBack              	70779338	        17.01 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSingPacketWriteBack              	71161292	        17.00 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSingPacketWriteBack              	70847871	        17.30 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSingPacketWriteBack              	71180709	        17.05 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSingPacketWriteBack              	70521446	        17.03 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/listener/sing	52.514s
