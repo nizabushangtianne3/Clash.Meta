@@ -44,7 +44,7 @@ func genericUnpack(t *testing.T, wire []byte) *D.Msg {
 func TestUnpackSimpleUDPReplyParsesCompressedA(t *testing.T) {
 	wire, _ := simpleReplyWire(t, D.TypeA, true)
 	generic := genericUnpack(t, wire)
-	fast, ok := unpackSimpleUDPReply(wire)
+	fast, ok := unpackSimpleUDPReply(wire, generic.Question[0])
 	require.True(t, ok)
 	require.Equal(t, generic, fast)
 	require.Len(t, fast.Question, 1)
@@ -58,7 +58,7 @@ func TestUnpackSimpleUDPReplyParsesCompressedA(t *testing.T) {
 func TestUnpackSimpleUDPReplyParsesUncompressedAAAA(t *testing.T) {
 	wire, _ := simpleReplyWire(t, D.TypeAAAA, false)
 	generic := genericUnpack(t, wire)
-	fast, ok := unpackSimpleUDPReply(wire)
+	fast, ok := unpackSimpleUDPReply(wire, generic.Question[0])
 	require.True(t, ok)
 	require.Equal(t, generic, fast)
 	answer := fast.Answer[0].(*D.AAAA)
@@ -75,7 +75,7 @@ func TestUnpackSimpleUDPReplyFallbacksToGeneric(t *testing.T) {
 	reply.Extra = append(reply.Extra, &D.OPT{Hdr: D.RR_Header{Name: ".", Rrtype: D.TypeOPT}})
 	wire, err := reply.Pack()
 	require.NoError(t, err)
-	_, ok := unpackSimpleUDPReply(wire)
+	_, ok := unpackSimpleUDPReply(wire, query.Question[0])
 	require.False(t, ok)
 
 	cname := D.Msg{}
@@ -86,14 +86,19 @@ func TestUnpackSimpleUDPReplyFallbacksToGeneric(t *testing.T) {
 	})
 	wire, err = cname.Pack()
 	require.NoError(t, err)
-	_, ok = unpackSimpleUDPReply(wire)
+	_, ok = unpackSimpleUDPReply(wire, query.Question[0])
 	require.False(t, ok)
 
 	question := D.Msg{}
 	question.SetQuestion("simple.example.com.", D.TypeMX)
 	wire, err = question.Pack()
 	require.NoError(t, err)
-	_, ok = unpackSimpleUDPReply(wire)
+	_, ok = unpackSimpleUDPReply(wire, query.Question[0])
+	require.False(t, ok)
+
+	wrongQuery := query.Question[0]
+	wrongQuery.Qtype = D.TypeMX
+	_, ok = unpackSimpleUDPReply(wire, wrongQuery)
 	require.False(t, ok)
 }
 
@@ -101,7 +106,7 @@ func TestUnpackSimpleUDPReplyRejectsBadRDataLength(t *testing.T) {
 	wire, _ := simpleReplyWire(t, D.TypeA, false)
 	wire[len(wire)-6] = 0
 	wire[len(wire)-5] = 3
-	_, ok := unpackSimpleUDPReply(wire)
+	_, ok := unpackSimpleUDPReply(wire, D.Question{Name: "simple.example.com.", Qtype: D.TypeA, Qclass: D.ClassINET})
 	require.False(t, ok)
 
 	var generic D.Msg
@@ -124,7 +129,7 @@ func BenchmarkUnpackSimpleUDPReplyOneA(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, ok := unpackSimpleUDPReply(wire); !ok {
+		if _, ok := unpackSimpleUDPReply(wire, query.Question[0]); !ok {
 			b.Fatal("simple reply was rejected")
 		}
 	}

@@ -2,6 +2,7 @@ package dns
 
 import (
 	"encoding/binary"
+	"strings"
 
 	D "github.com/miekg/dns"
 )
@@ -37,7 +38,7 @@ type udpReplySlab struct {
 // unpackSimpleUDPReply decodes the common UDP shape: one question and one
 // direct A/AAAA answer with no authority, additional or TSIG records. Anything
 // else returns false for the complete miekg parser.
-func unpackSimpleUDPReply(wire []byte) (*D.Msg, bool) {
+func unpackSimpleUDPReply(wire []byte, query D.Question) (*D.Msg, bool) {
 	if len(wire) < 12 ||
 		wire[4] != 0 || wire[5] != 1 || // one question
 		wire[6] != 0 || wire[7] != 1 || // one answer
@@ -62,7 +63,7 @@ func unpackSimpleUDPReply(wire []byte) (*D.Msg, bool) {
 		Rcode:              int(bits & dnsFlagRcode),
 	}
 
-	question, off, ok := unpackUDPReplyQuestion(wire)
+	question, off, ok := matchUDPReplyQuestion(wire, query)
 	if !ok {
 		return nil, false
 	}
@@ -116,16 +117,75 @@ func unpackSimpleUDPReply(wire []byte) (*D.Msg, bool) {
 	return &slab.msg, true
 }
 
-func unpackUDPReplyQuestion(wire []byte) (D.Question, int, bool) {
-	name, off, err := D.UnpackDomainName(wire, 12)
-	if err != nil || off+4 > len(wire) {
+// matchUDPReplyQuestion avoids allocating a domain string for the common reply:
+// it matches the request wire labels in place and falls back for escaped names.
+func matchUDPReplyQuestion(wire []byte, query D.Question) (D.Question, int, bool) {
+	off := 12
+	name := query.Name
+	if name == "" || name == "." {
+		if off >= len(wire) || wire[off] != 0 {
+			return D.Question{}, 0, false
+		}
+		off++
+	} else {
+		if name[0] == '.' || name[len(name)-1] != '.' || strings.IndexByte(name, '\\') >= 0 {
+			return D.Question{}, 0, false
+		}
+		begin := 0
+		for begin < len(name)-1 {
+			end := strings.IndexByte(name[begin:], '.')
+			if end >= 0 {
+				end += begin
+			}
+			if end < 0 || end == begin || end-begin > 63 {
+				return D.Question{}, 0, false
+			}
+			if off >= len(wire) || int(wire[off]) != end-begin || off+1+end-begin > len(wire) {
+				return D.Question{}, 0, false
+			}
+			off++
+			if !asciiEqualFold(wire[off:off+end-begin], name[begin:end]) {
+				return D.Question{}, 0, false
+			}
+			off += end - begin
+			begin = end + 1
+		}
+		if off >= len(wire) || wire[off] != 0 {
+			return D.Question{}, 0, false
+		}
+		off++
+	}
+	if off+4 > len(wire) {
 		return D.Question{}, 0, false
 	}
-	return D.Question{
+	question := D.Question{
 		Name:   name,
 		Qtype:  binary.BigEndian.Uint16(wire[off:]),
 		Qclass: binary.BigEndian.Uint16(wire[off+2:]),
-	}, off + 4, true
+	}
+	if question.Qtype != query.Qtype || question.Qclass != query.Qclass {
+		return D.Question{}, 0, false
+	}
+	return question, off + 4, true
+}
+
+func asciiEqualFold(a []byte, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		aa, bb := a[i], b[i]
+		if aa >= 'A' && aa <= 'Z' {
+			aa += 'a' - 'A'
+		}
+		if bb >= 'A' && bb <= 'Z' {
+			bb += 'a' - 'A'
+		}
+		if aa != bb {
+			return false
+		}
+	}
+	return true
 }
 
 // unpackUDPReplyName avoids a second domain-name allocation when the answer

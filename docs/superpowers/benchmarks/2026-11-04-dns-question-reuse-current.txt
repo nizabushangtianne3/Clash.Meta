@@ -1,0 +1,26 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/dns
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkClientExchangeUDP        	   58653	     21389 ns/op	     608 B/op	      11 allocs/op
+BenchmarkClientExchangeUDP        	   56038	     21177 ns/op	     608 B/op	      11 allocs/op
+BenchmarkClientExchangeUDP        	   58377	     19210 ns/op	     608 B/op	      11 allocs/op
+BenchmarkClientExchangeUDP        	   61224	     19070 ns/op	     608 B/op	      11 allocs/op
+BenchmarkClientExchangeUDP        	   64131	     19071 ns/op	     608 B/op	      11 allocs/op
+BenchmarkClientExchangeUDP        	   63783	     19267 ns/op	     608 B/op	      11 allocs/op
+BenchmarkClientExchangeUDP        	   62317	     19118 ns/op	     608 B/op	      11 allocs/op
+BenchmarkClientExchangeUDP        	   62442	     19249 ns/op	     608 B/op	      11 allocs/op
+BenchmarkClientExchangeUDP        	   62260	     18837 ns/op	     608 B/op	      11 allocs/op
+BenchmarkClientExchangeUDP        	   62107	     18976 ns/op	     608 B/op	      11 allocs/op
+BenchmarkUnpackSimpleUDPReplyOneA 	 9471385	       126.9 ns/op	     320 B/op	       1 allocs/op
+BenchmarkUnpackSimpleUDPReplyOneA 	 9502722	       136.6 ns/op	     320 B/op	       1 allocs/op
+BenchmarkUnpackSimpleUDPReplyOneA 	 8046433	       147.8 ns/op	     320 B/op	       1 allocs/op
+BenchmarkUnpackSimpleUDPReplyOneA 	 8003088	       149.3 ns/op	     320 B/op	       1 allocs/op
+BenchmarkUnpackSimpleUDPReplyOneA 	 8128053	       148.2 ns/op	     320 B/op	       1 allocs/op
+BenchmarkUnpackSimpleUDPReplyOneA 	 8047447	       150.1 ns/op	     320 B/op	       1 allocs/op
+BenchmarkUnpackSimpleUDPReplyOneA 	 8090008	       147.1 ns/op	     320 B/op	       1 allocs/op
+BenchmarkUnpackSimpleUDPReplyOneA 	 8122959	       147.5 ns/op	     320 B/op	       1 allocs/op
+BenchmarkUnpackSimpleUDPReplyOneA 	 8051815	       150.5 ns/op	     320 B/op	       1 allocs/op
+BenchmarkUnpackSimpleUDPReplyOneA 	 8137248	       148.0 ns/op	     320 B/op	       1 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/dns	27.667s
