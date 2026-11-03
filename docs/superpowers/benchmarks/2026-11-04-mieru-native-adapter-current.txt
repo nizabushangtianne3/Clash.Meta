@@ -1,0 +1,36 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/listener/mieru
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkMieruPacketAdapter/wrapped         	48086163	        27.07 ns/op	      64 B/op	       1 allocs/op
+BenchmarkMieruPacketAdapter/wrapped         	51483584	        24.53 ns/op	      64 B/op	       1 allocs/op
+BenchmarkMieruPacketAdapter/wrapped         	50323327	        23.87 ns/op	      64 B/op	       1 allocs/op
+BenchmarkMieruPacketAdapter/wrapped         	48696357	        24.53 ns/op	      64 B/op	       1 allocs/op
+BenchmarkMieruPacketAdapter/wrapped         	44092682	        23.86 ns/op	      64 B/op	       1 allocs/op
+BenchmarkMieruPacketAdapter/wrapped         	49307233	        24.14 ns/op	      64 B/op	       1 allocs/op
+BenchmarkMieruPacketAdapter/wrapped         	49732479	        23.59 ns/op	      64 B/op	       1 allocs/op
+BenchmarkMieruPacketAdapter/wrapped         	48670089	        25.17 ns/op	      64 B/op	       1 allocs/op
+BenchmarkMieruPacketAdapter/wrapped         	50398356	        23.92 ns/op	      64 B/op	       1 allocs/op
+BenchmarkMieruPacketAdapter/wrapped         	49072126	        23.80 ns/op	      64 B/op	       1 allocs/op
+BenchmarkMieruPacketAdapter/native          	545377200	         2.199 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMieruPacketAdapter/native          	552581337	         2.196 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMieruPacketAdapter/native          	552931689	         2.185 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMieruPacketAdapter/native          	552191024	         2.190 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMieruPacketAdapter/native          	553332745	         2.188 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMieruPacketAdapter/native          	540986244	         2.194 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMieruPacketAdapter/native          	545398269	         2.190 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMieruPacketAdapter/native          	546972393	         2.190 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMieruPacketAdapter/native          	514829226	         2.215 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMieruPacketAdapter/native          	538576192	         2.238 ns/op	       0 B/op	       0 allocs/op
+BenchmarkMieruUDPHandle                     	13025086	        94.84 ns/op	     112 B/op	       1 allocs/op
+BenchmarkMieruUDPHandle                     	13272104	        93.21 ns/op	     112 B/op	       1 allocs/op
+BenchmarkMieruUDPHandle                     	12746552	       100.6 ns/op	     112 B/op	       1 allocs/op
+BenchmarkMieruUDPHandle                     	11663404	        98.25 ns/op	     112 B/op	       1 allocs/op
+BenchmarkMieruUDPHandle                     	13197631	        97.04 ns/op	     112 B/op	       1 allocs/op
+BenchmarkMieruUDPHandle                     	11883740	        95.36 ns/op	     112 B/op	       1 allocs/op
+BenchmarkMieruUDPHandle                     	12458846	        91.75 ns/op	     112 B/op	       1 allocs/op
+BenchmarkMieruUDPHandle                     	13201596	        92.64 ns/op	     112 B/op	       1 allocs/op
+BenchmarkMieruUDPHandle                     	13098477	        99.24 ns/op	     112 B/op	       1 allocs/op
+BenchmarkMieruUDPHandle                     	12440802	        97.93 ns/op	     112 B/op	       1 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/listener/mieru	41.202s

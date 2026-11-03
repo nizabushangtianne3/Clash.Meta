@@ -38,6 +38,7 @@ func newWriteBackTestPacket(conn net.PacketConn) *packet {
 	return &packet{
 		pc:      conn,
 		udpAddr: net.UDPAddrFromAddrPort(netip.MustParseAddrPort("198.51.100.7:5353")),
+		source:  netip.MustParseAddrPort("198.51.100.7:5353"),
 	}
 }
 
@@ -160,6 +161,44 @@ func (c *mieruCaptureTunnel) HandleUDPPacket(udpPacket C.UDPPacket, metadata *C.
 
 func (mieruDropOnlyTunnel) HandleUDPPacket(udpPacket C.UDPPacket, _ *C.Metadata) {
 	udpPacket.Drop()
+}
+
+func TestMieruPacketIsNativePacketAdapter(t *testing.T) {
+	source := netip.MustParseAddrPort("192.168.1.2:54321")
+	metadata := &C.Metadata{SrcIP: source.Addr(), SrcPort: source.Port()}
+	packet := newMieruPacket(&recordingPacketConn{}, net.UDPAddrFromAddrPort(source), source, []byte("data"), []byte("data"), metadata)
+
+	adapter, ok := any(packet).(C.PacketAdapter)
+	require.True(t, ok)
+	require.Same(t, metadata, adapter.Metadata())
+	require.Equal(t, source, adapter.FlowKey())
+	require.EqualValues(t, 0, testing.AllocsPerRun(100, func() {
+		adapter := any(packet).(C.PacketAdapter)
+		adapter.Drop()
+	}))
+}
+
+func BenchmarkMieruPacketAdapter(b *testing.B) {
+	source := netip.MustParseAddrPort("192.168.1.2:54321")
+	metadata := &C.Metadata{SrcIP: source.Addr(), SrcPort: source.Port()}
+	packet := newMieruPacket(&recordingPacketConn{}, net.UDPAddrFromAddrPort(source), source, []byte("ping"), []byte("ping"), metadata)
+
+	b.Run("wrapped", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			C.NewPacketAdapter(packet, metadata).Drop()
+		}
+	})
+	b.Run("native", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			adapter, ok := any(packet).(C.PacketAdapter)
+			if !ok {
+				b.Fatal("mieru packet is not a native adapter")
+			}
+			adapter.Drop()
+		}
+	})
 }
 
 func BenchmarkMieruUDPHandle(b *testing.B) {

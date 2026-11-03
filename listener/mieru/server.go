@@ -88,9 +88,10 @@ const (
 )
 
 type mieruUDPFlow struct {
-	metadata *C.Metadata
-	target   []byte
-	rAddr    *net.UDPAddr
+	metadata  *C.Metadata
+	target    []byte
+	rAddr     *net.UDPAddr
+	rAddrPort netip.AddrPort
 }
 
 func newMieruUDPFlowCache() *lru.LruCache[netip.AddrPort, *mieruUDPFlow] {
@@ -109,38 +110,44 @@ func handleMieruUDPPacket(pc net.PacketConn, tunnel C.Tunnel, data []byte, addr 
 	flow, hit := flows.Get(addr)
 	if !hit || !bytes.Equal(target, flow.target) {
 		rAddr := net.UDPAddrFromAddrPort(addr)
-		packet := newMieruPacket(pc, rAddr, data, payload)
+		packet := newMieruPacket(pc, rAddr, addr, data, payload, nil)
 		_, metadata := inbound.NewPacket(target, packet, C.MIERU, additions...)
+		packet.metadata = metadata
 		flow = &mieruUDPFlow{
-			metadata: metadata,
-			target:   bytes.Clone(target),
-			rAddr:    rAddr,
+			metadata:  metadata,
+			target:    bytes.Clone(target),
+			rAddr:     rAddr,
+			rAddrPort: addr,
 		}
 		flows.Set(addr, flow)
 		tunnel.HandleUDPPacket(packet, metadata)
 		return
 	}
-	tunnel.HandleUDPPacket(newMieruPacket(pc, flow.rAddr, data, payload), flow.metadata)
+	tunnel.HandleUDPPacket(newMieruPacket(pc, flow.rAddr, flow.rAddrPort, data, payload, flow.metadata), flow.metadata)
 }
 
 // The wrapper is allocated per datagram on purpose: a flow keeps the packet it
 // last handed the sender so replies can be written back through it, and Drop
 // runs long before that flow ends. Recycling the object here would let the next
 // datagram claim it and move those replies onto another client's socket.
-func newMieruPacket(pc net.PacketConn, udpAddr *net.UDPAddr, data, payload []byte) *packet {
+func newMieruPacket(pc net.PacketConn, udpAddr *net.UDPAddr, source netip.AddrPort, data, payload []byte, metadata *C.Metadata) *packet {
 	return &packet{
-		pc:      pc,
-		udpAddr: udpAddr,
-		data:    data,
-		payload: payload,
+		pc:       pc,
+		udpAddr:  udpAddr,
+		source:   source,
+		data:     data,
+		payload:  payload,
+		metadata: metadata,
 	}
 }
 
 type packet struct {
-	pc      net.PacketConn
-	udpAddr *net.UDPAddr // source (i.e. remote) IP & Port of the packet
-	data    []byte
-	payload []byte
+	pc       net.PacketConn
+	udpAddr  *net.UDPAddr // source (i.e. remote) IP & Port of the packet
+	source   netip.AddrPort
+	data     []byte
+	payload  []byte
+	metadata *C.Metadata
 }
 
 var _ C.UDPPacket = (*packet)(nil)
@@ -158,6 +165,16 @@ func (c *packet) WriteBack(b []byte, addr netip.AddrPort) (n int, err error) {
 		return
 	}
 	return c.pc.WriteTo(packet, c.udpAddr)
+}
+
+func (c *packet) FlowKey() netip.AddrPort {
+	return c.source
+}
+
+// Metadata makes mieru packets native PacketAdapters so the tunnel can preserve
+// the cached metadata pointer instead of wrapping every datagram.
+func (c *packet) Metadata() *C.Metadata {
+	return c.metadata
 }
 
 func (c *packet) Drop() {
