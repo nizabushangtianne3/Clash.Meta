@@ -1,0 +1,46 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/common/jsonutil
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkAppendStringSafeASCII32-16     	 1000000	        49.84 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringSafeASCII32-16     	 1000000	        47.43 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringSafeASCII32-16     	 1000000	        47.46 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringSafeASCII32-16     	 1000000	        47.49 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringSafeASCII32-16     	 1000000	        54.75 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringSafeASCII32-16     	 1000000	        47.48 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringSafeASCII32-16     	 1000000	        48.68 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringSafeASCII32-16     	 1000000	        47.57 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringSafeASCII32-16     	 1000000	        54.28 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringSafeASCII32-16     	 1000000	        47.24 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringSafeASCII256-16    	 1000000	       291.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringSafeASCII256-16    	 1000000	       301.6 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringSafeASCII256-16    	 1000000	       298.6 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringSafeASCII256-16    	 1000000	       301.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringSafeASCII256-16    	 1000000	       308.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringSafeASCII256-16    	 1000000	       300.1 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringSafeASCII256-16    	 1000000	       292.1 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringSafeASCII256-16    	 1000000	       288.1 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringSafeASCII256-16    	 1000000	       288.7 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringSafeASCII256-16    	 1000000	       295.1 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringEscaped32-16       	 1000000	        72.60 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringEscaped32-16       	 1000000	        73.19 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringEscaped32-16       	 1000000	        73.37 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringEscaped32-16       	 1000000	        72.39 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringEscaped32-16       	 1000000	        74.08 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringEscaped32-16       	 1000000	        77.84 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringEscaped32-16       	 1000000	        72.94 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringEscaped32-16       	 1000000	        73.00 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringEscaped32-16       	 1000000	        73.13 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringEscaped32-16       	 1000000	        84.35 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringUnicode32-16       	 1000000	       161.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringUnicode32-16       	 1000000	       143.3 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringUnicode32-16       	 1000000	       143.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringUnicode32-16       	 1000000	       155.7 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringUnicode32-16       	 1000000	       141.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringUnicode32-16       	 1000000	       147.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringUnicode32-16       	 1000000	       142.6 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringUnicode32-16       	 1000000	       144.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringUnicode32-16       	 1000000	       141.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendStringUnicode32-16       	 1000000	       147.2 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/common/jsonutil	6.327s
