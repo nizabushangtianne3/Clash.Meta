@@ -24,8 +24,18 @@ var jsonUnsafeASCII = func() [utf8.RuneSelf]bool {
 // size a buffer that never grows while the strings of one document are
 // appended. A wrong count only costs a reallocation.
 func StringLen(s string) int {
-	length := 2
-	for i := 0; i < len(s); {
+	start := 0
+	for start < len(s) {
+		if b := s[start]; b >= utf8.RuneSelf || jsonUnsafeASCII[b] {
+			break
+		}
+		start++
+	}
+	if start == len(s) {
+		return len(s) + 2
+	}
+	length := start + 2
+	for i := start; i < len(s); {
 		if b := s[i]; b < utf8.RuneSelf {
 			switch b {
 			case '\\', '"':
