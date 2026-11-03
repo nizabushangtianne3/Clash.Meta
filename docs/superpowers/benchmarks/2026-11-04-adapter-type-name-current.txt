@@ -1,0 +1,46 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/constant
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkAdapterTypeString/Direct-16         	10000000	         1.137 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/Direct-16         	10000000	         1.106 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/Direct-16         	10000000	         1.057 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/Direct-16         	10000000	         0.9631 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/Direct-16         	10000000	         1.650 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/Direct-16         	10000000	         1.186 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/Direct-16         	10000000	         1.067 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/Direct-16         	10000000	         1.074 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/Direct-16         	10000000	         1.046 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/Direct-16         	10000000	         1.022 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/Shadowsocks-16    	10000000	         1.063 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/Shadowsocks-16    	10000000	         1.100 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/Shadowsocks-16    	10000000	         1.094 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/Shadowsocks-16    	10000000	         1.074 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/Shadowsocks-16    	10000000	         1.036 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/Shadowsocks-16    	10000000	         1.037 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/Shadowsocks-16    	10000000	         1.092 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/Shadowsocks-16    	10000000	         1.065 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/Shadowsocks-16    	10000000	         1.033 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/Shadowsocks-16    	10000000	         1.010 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/URLTest-16        	10000000	         1.045 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/URLTest-16        	10000000	         1.074 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/URLTest-16        	10000000	         1.041 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/URLTest-16        	10000000	         1.024 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/URLTest-16        	10000000	         1.214 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/URLTest-16        	10000000	         1.116 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/URLTest-16        	10000000	         1.041 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/URLTest-16        	10000000	         1.092 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/URLTest-16        	10000000	         1.092 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/URLTest-16        	10000000	         1.022 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/GostRelay-16      	10000000	         1.067 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/GostRelay-16      	10000000	         1.007 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/GostRelay-16      	10000000	         0.9969 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/GostRelay-16      	10000000	         1.023 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/GostRelay-16      	10000000	         1.046 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/GostRelay-16      	10000000	         1.095 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/GostRelay-16      	10000000	         1.177 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/GostRelay-16      	10000000	         1.167 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/GostRelay-16      	10000000	         1.046 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAdapterTypeString/GostRelay-16      	10000000	         1.031 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/constant	1.172s
