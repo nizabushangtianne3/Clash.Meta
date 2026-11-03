@@ -33,3 +33,13 @@ func BenchmarkBaseDialOptionsFull(b *testing.B) {
 		_ = base.DialOptions()
 	}
 }
+
+func BenchmarkPacketConnLocalAddr(b *testing.B) {
+	base := NewBase(BaseOption{Name: "bench", Type: C.Direct, Prefer: C.DualStack})
+	pc := NewPacketConn(&nopPacketConn{}, base)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = pc.LocalAddr()
+	}
+}

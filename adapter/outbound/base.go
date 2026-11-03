@@ -315,6 +315,7 @@ type packetConn struct {
 	adapterName string
 	connID      string
 	adapterAddr string
+	localAddr   net.Addr
 	resolveUDP  func(ctx context.Context, metadata *C.Metadata) error
 }
 
@@ -344,8 +345,9 @@ func (c *packetConn) AppendToChains(a C.ProxyAdapter) {
 }
 
 func (c *packetConn) LocalAddr() net.Addr {
-	lAddr := c.EnhancePacketConn.LocalAddr()
-	return N.NewCustomAddr(c.adapterName, c.connID, lAddr) // make quic-go's connMultiplexer happy
+	// quic-go's connMultiplexer expects this adapter identity; packet conns are
+	// immutable, so build the wrapper once instead of on every local-address read.
+	return c.localAddr
 }
 
 func (c *packetConn) Upstream() any {
@@ -366,7 +368,15 @@ func (c *packetConn) AddRef(ref any) {
 
 func NewPacketConn(pc net.PacketConn, a ProxyAdapter) C.PacketConn {
 	epc := N.NewEnhancePacketConn(pc)
-	cpc := &packetConn{epc, nil, nil, a.Name(), strconv.FormatUint(packetConnID.Add(1), 10), a.Addr(), a.ResolveUDP}
+	connID := strconv.FormatUint(packetConnID.Add(1), 10)
+	cpc := &packetConn{
+		EnhancePacketConn: epc,
+		adapterName:       a.Name(),
+		connID:            connID,
+		adapterAddr:       a.Addr(),
+		localAddr:         N.NewCustomAddr(a.Name(), connID, epc.LocalAddr()),
+		resolveUDP:        a.ResolveUDP,
+	}
 	cpc.AppendToChains(a)
 	return cpc
 }
