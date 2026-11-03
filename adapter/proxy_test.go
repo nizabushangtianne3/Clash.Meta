@@ -7,11 +7,13 @@ import (
 	"net"
 	stdhttp "net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"github.com/metacubex/mihomo/adapter/outbound"
 	"github.com/metacubex/mihomo/common/utils"
 	"github.com/metacubex/mihomo/component/ca"
+	C "github.com/metacubex/mihomo/constant"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -155,15 +157,89 @@ func BenchmarkProxyMarshalJSON(b *testing.B) {
 		}
 	}
 }
+
+// pipeListener and pipeProxyAdapter keep the URL-test benchmark entirely in
+// process. Windows can otherwise allocate an outbound ephemeral port equal to
+// the httptest listener port, making benchmark iterations depend on kernel port
+// allocation rather than the URL-test implementation.
+type pipeListener struct {
+	conns chan net.Conn
+	done  chan struct{}
+	once  sync.Once
+	addr  net.Addr
+}
+
+func newPipeListener() *pipeListener {
+	return &pipeListener{
+		conns: make(chan net.Conn, 128),
+		done:  make(chan struct{}),
+		addr:  &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 80},
+	}
+}
+
+func (l *pipeListener) Accept() (net.Conn, error) {
+	select {
+	case conn := <-l.conns:
+		return conn, nil
+	case <-l.done:
+		return nil, net.ErrClosed
+	}
+}
+
+func (l *pipeListener) enqueue(conn net.Conn) error {
+	select {
+	case l.conns <- conn:
+		return nil
+	case <-l.done:
+		_ = conn.Close()
+		return net.ErrClosed
+	}
+}
+
+func (l *pipeListener) Close() error {
+	l.once.Do(func() { close(l.done) })
+	return nil
+}
+
+func (*pipeListener) Addr() net.Addr { return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 80} }
+
+type pipeProxyAdapter struct {
+	*outbound.Base
+	listener *pipeListener
+}
+
+func (p *pipeProxyAdapter) DialContext(ctx context.Context, _ *C.Metadata) (C.Conn, error) {
+	client, server := net.Pipe()
+	if err := p.listener.enqueue(server); err != nil {
+		return nil, err
+	}
+	return outbound.NewConn(client, p), nil
+}
+
 func BenchmarkProxyURLTestHTTP(b *testing.B) {
-	server := testStatusServer(b, stdhttp.StatusNoContent)
-	proxy := testProxy()
+	listener := newPipeListener()
+	server := &stdhttp.Server{Handler: stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+		w.WriteHeader(stdhttp.StatusNoContent)
+	})}
+	serverError := make(chan error, 1)
+	go func() { serverError <- server.Serve(listener) }()
+	b.Cleanup(func() {
+		_ = server.Close()
+		_ = listener.Close()
+		<-serverError
+	})
+
+	proxy := NewProxy(&pipeProxyAdapter{
+		Base:     outbound.NewBase(outbound.BaseOption{Name: "pipe-bench", Type: C.Direct, Prefer: C.DualStack}),
+		listener: listener,
+	})
 	ctx := context.Background()
+	const url = "http://benchmark.test/delay"
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := proxy.URLTest(ctx, server.URL, nil); err != nil {
+		if _, err := proxy.URLTest(ctx, url, nil); err != nil {
 			b.Fatal(err)
 		}
 	}
