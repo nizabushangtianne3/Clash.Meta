@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"syscall"
 
+	"github.com/gofrs/uuid/v5"
 	"github.com/metacubex/mihomo/common/jsonutil"
 	N "github.com/metacubex/mihomo/common/net"
 	"github.com/metacubex/mihomo/common/utils"
@@ -40,7 +41,7 @@ type Base struct {
 	prefer      C.DNSPrefer
 	dialOptions []dialer.Option
 	dialer      C.Dialer
-	id          string
+	id          uuid.UUID
 }
 
 type BaseOption struct {
@@ -71,7 +72,7 @@ func NewBase(opt BaseOption) *Base {
 		rmark:       opt.RoutingMark,
 		prefer:      opt.Prefer,
 		dialOptions: buildDialOptions(opt),
-		id:          utils.NewUUIDV4().String(),
+		id:          utils.NewUUIDV4(),
 	}
 }
 
@@ -110,11 +111,6 @@ func buildDialOptions(opt BaseOption) []dialer.Option {
 // Name implements C.ProxyAdapter
 func (b *Base) Name() string {
 	return b.name
-}
-
-// Id implements C.ProxyAdapter
-func (b *Base) Id() string {
-	return b.id
 }
 
 // Type implements C.ProxyAdapter
@@ -163,7 +159,7 @@ func (b *Base) AppendJSON(dst []byte) []byte {
 	dst = append(dst, `{"type":`...)
 	dst = jsonutil.AppendString(dst, b.Type().String())
 	dst = append(dst, `,"id":`...)
-	dst = jsonutil.AppendString(dst, b.Id())
+	dst = jsonutil.AppendUUID(dst, b.id)
 	dst = append(dst, `,"name":`...)
 	dst = jsonutil.AppendString(dst, b.Name())
 	return append(dst, '}')

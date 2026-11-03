@@ -3,6 +3,8 @@ package jsonutil
 import (
 	"time"
 	"unicode/utf8"
+
+	"github.com/gofrs/uuid/v5"
 )
 
 const hexDigits = "0123456789abcdef"
@@ -95,6 +97,20 @@ func AppendString(dst []byte, s string) []byte {
 	}
 	dst = append(dst, s[start:]...)
 	return append(dst, '"')
+}
+
+// AppendUUID writes the canonical lower-case UUID form inside JSON quotes.
+func AppendUUID(dst []byte, u uuid.UUID) []byte {
+	dst = append(dst, '"')
+	dst = append(dst, hexDigits[u[0]>>4], hexDigits[u[0]&0x0f], hexDigits[u[1]>>4], hexDigits[u[1]&0x0f], hexDigits[u[2]>>4], hexDigits[u[2]&0x0f], hexDigits[u[3]>>4], hexDigits[u[3]&0x0f])
+	dst = append(dst, '-')
+	dst = append(dst, hexDigits[u[4]>>4], hexDigits[u[4]&0x0f], hexDigits[u[5]>>4], hexDigits[u[5]&0x0f])
+	dst = append(dst, '-')
+	dst = append(dst, hexDigits[u[6]>>4], hexDigits[u[6]&0x0f], hexDigits[u[7]>>4], hexDigits[u[7]&0x0f])
+	dst = append(dst, '-')
+	dst = append(dst, hexDigits[u[8]>>4], hexDigits[u[8]&0x0f], hexDigits[u[9]>>4], hexDigits[u[9]&0x0f])
+	dst = append(dst, '-')
+	return append(dst, hexDigits[u[10]>>4], hexDigits[u[10]&0x0f], hexDigits[u[11]>>4], hexDigits[u[11]&0x0f], hexDigits[u[12]>>4], hexDigits[u[12]&0x0f], hexDigits[u[13]>>4], hexDigits[u[13]&0x0f], hexDigits[u[14]>>4], hexDigits[u[14]&0x0f], hexDigits[u[15]>>4], hexDigits[u[15]&0x0f], '"')
 }
 
 // AppendBool appends the JSON spelling of value.
