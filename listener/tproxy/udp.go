@@ -118,9 +118,11 @@ func (l *UDPListener) handlePacketConn(pc net.PacketConn, tunnel C.Tunnel, buf [
 	if !hit || flow.rAddr != rAddr {
 		_, metadata := inbound.NewPacketFromAddrPort(rAddr, pkt, C.TPROXY, l.additions...)
 		metadata.DSCP = dscp
+		pkt.metadata = metadata
 		l.flowCache.Set(lAddr, &tproxyUDPFlow{metadata: metadata, rAddr: rAddr})
 		tunnel.HandleUDPPacket(pkt, metadata)
 		return
 	}
+	pkt.metadata = flow.metadata
 	tunnel.HandleUDPPacket(pkt, flow.metadata)
 }

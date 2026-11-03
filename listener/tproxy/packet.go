@@ -26,11 +26,12 @@ func newTproxyPacket(pc net.PacketConn, lAddr netip.AddrPort, buf []byte, tunnel
 }
 
 type packet struct {
-	pc     net.PacketConn
-	lAddr  netip.AddrPort
-	buf    []byte
-	tunnel C.Tunnel
-	l      *UDPListener
+	pc       net.PacketConn
+	lAddr    netip.AddrPort
+	buf      []byte
+	tunnel   C.Tunnel
+	l        *UDPListener
+	metadata *C.Metadata
 }
 
 func (c *packet) Data() []byte {
@@ -40,6 +41,12 @@ func (c *packet) Data() []byte {
 // FlowKey returns the flow key the tunnel keys this packet's flow by.
 func (c *packet) FlowKey() netip.AddrPort {
 	return c.lAddr
+}
+
+// Metadata makes tproxy packets native PacketAdapters so the tunnel can preserve
+// the cached metadata pointer instead of wrapping every datagram.
+func (c *packet) Metadata() *C.Metadata {
+	return c.metadata
 }
 
 // WriteBack opens a new socket binding `addr` to write UDP packet back

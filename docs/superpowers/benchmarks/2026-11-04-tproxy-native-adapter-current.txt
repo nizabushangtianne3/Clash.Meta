@@ -1,0 +1,26 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/listener/tproxy
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkTProxyPacketAdapter/wrapped         	49520464	        24.10 ns/op	      64 B/op	       1 allocs/op
+BenchmarkTProxyPacketAdapter/wrapped         	52521697	        23.03 ns/op	      64 B/op	       1 allocs/op
+BenchmarkTProxyPacketAdapter/wrapped         	51890545	        22.78 ns/op	      64 B/op	       1 allocs/op
+BenchmarkTProxyPacketAdapter/wrapped         	52861806	        22.74 ns/op	      64 B/op	       1 allocs/op
+BenchmarkTProxyPacketAdapter/wrapped         	51510546	        22.68 ns/op	      64 B/op	       1 allocs/op
+BenchmarkTProxyPacketAdapter/wrapped         	51972124	        22.84 ns/op	      64 B/op	       1 allocs/op
+BenchmarkTProxyPacketAdapter/wrapped         	43124514	        23.74 ns/op	      64 B/op	       1 allocs/op
+BenchmarkTProxyPacketAdapter/wrapped         	51855564	        22.94 ns/op	      64 B/op	       1 allocs/op
+BenchmarkTProxyPacketAdapter/wrapped         	52499638	        22.72 ns/op	      64 B/op	       1 allocs/op
+BenchmarkTProxyPacketAdapter/wrapped         	53643991	        22.79 ns/op	      64 B/op	       1 allocs/op
+BenchmarkTProxyPacketAdapter/native          	924069230	         1.293 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTProxyPacketAdapter/native          	927686095	         1.280 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTProxyPacketAdapter/native          	941328559	         1.300 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTProxyPacketAdapter/native          	914718506	         1.288 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTProxyPacketAdapter/native          	942945510	         1.281 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTProxyPacketAdapter/native          	928454100	         1.288 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTProxyPacketAdapter/native          	940802362	         1.274 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTProxyPacketAdapter/native          	941691261	         1.285 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTProxyPacketAdapter/native          	942379759	         1.280 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTProxyPacketAdapter/native          	908543029	         1.277 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/listener/tproxy	26.851s
