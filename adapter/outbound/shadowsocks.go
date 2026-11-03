@@ -24,6 +24,9 @@ import (
 	"github.com/metacubex/sing/common/uot"
 )
 
+// SS and Snell decode plugin options with the same immutable settings, so one decoder serves every proxy.
+var obfsDecoder = structure.NewDecoder(structure.Option{TagName: "obfs", WeaklyTypedInput: true})
+
 type ShadowSocks struct {
 	*Base
 	method shadowsocks.Method
@@ -317,10 +320,9 @@ func NewShadowSocks(option ShadowSocksOption) (*ShadowSocks, error) {
 	var kcptunClient *kcptun.Client
 	obfsMode := ""
 
-	decoder := structure.NewDecoder(structure.Option{TagName: "obfs", WeaklyTypedInput: true})
 	if option.Plugin == "obfs" {
 		opts := simpleObfsOption{Host: "bing.com"}
-		if err := decoder.Decode(option.PluginOpts, &opts); err != nil {
+		if err := obfsDecoder.Decode(option.PluginOpts, &opts); err != nil {
 			return nil, fmt.Errorf("ss %s initialize obfs error: %w", addr, err)
 		}
 
@@ -331,7 +333,7 @@ func NewShadowSocks(option ShadowSocksOption) (*ShadowSocks, error) {
 		obfsOption = &opts
 	} else if option.Plugin == "v2ray-plugin" {
 		opts := v2rayObfsOption{Host: "bing.com", Mux: true}
-		if err := decoder.Decode(option.PluginOpts, &opts); err != nil {
+		if err := obfsDecoder.Decode(option.PluginOpts, &opts); err != nil {
 			return nil, fmt.Errorf("ss %s initialize v2ray-plugin error: %w", addr, err)
 		}
 
@@ -364,7 +366,7 @@ func NewShadowSocks(option ShadowSocksOption) (*ShadowSocks, error) {
 		}
 	} else if option.Plugin == "gost-plugin" {
 		opts := gostObfsOption{Host: "bing.com", Mux: true}
-		if err := decoder.Decode(option.PluginOpts, &opts); err != nil {
+		if err := obfsDecoder.Decode(option.PluginOpts, &opts); err != nil {
 			return nil, fmt.Errorf("ss %s initialize gost-plugin error: %w", addr, err)
 		}
 
@@ -398,7 +400,7 @@ func NewShadowSocks(option ShadowSocksOption) (*ShadowSocks, error) {
 		opt := &shadowTLSOption{
 			Version: 2,
 		}
-		if err := decoder.Decode(option.PluginOpts, opt); err != nil {
+		if err := obfsDecoder.Decode(option.PluginOpts, opt); err != nil {
 			return nil, fmt.Errorf("ss %s initialize shadow-tls-plugin error: %w", addr, err)
 		}
 
@@ -422,7 +424,7 @@ func NewShadowSocks(option ShadowSocksOption) (*ShadowSocks, error) {
 	} else if option.Plugin == restls.Mode {
 		obfsMode = restls.Mode
 		restlsOpt := &restlsOption{}
-		if err := decoder.Decode(option.PluginOpts, restlsOpt); err != nil {
+		if err := obfsDecoder.Decode(option.PluginOpts, restlsOpt); err != nil {
 			return nil, fmt.Errorf("ss %s initialize restls-plugin error: %w", addr, err)
 		}
 
@@ -443,7 +445,7 @@ func NewShadowSocks(option ShadowSocksOption) (*ShadowSocks, error) {
 	} else if option.Plugin == jls.Mode {
 		obfsMode = jls.Mode
 		jlsOpt := &jlsOption{}
-		if err := decoder.Decode(option.PluginOpts, jlsOpt); err != nil {
+		if err := obfsDecoder.Decode(option.PluginOpts, jlsOpt); err != nil {
 			return nil, fmt.Errorf("ss %s initialize jls-plugin error: %w", addr, err)
 		}
 		jlsConfig, err = jls.NewClientConfig(jlsOpt.Host, jlsOpt.Username, jlsOpt.Password, jlsOpt.ALPN)
@@ -454,7 +456,7 @@ func NewShadowSocks(option ShadowSocksOption) (*ShadowSocks, error) {
 	} else if option.Plugin == kcptun.Mode {
 		obfsMode = kcptun.Mode
 		kcptunOpt := &kcpTunOption{}
-		if err := decoder.Decode(option.PluginOpts, kcptunOpt); err != nil {
+		if err := obfsDecoder.Decode(option.PluginOpts, kcptunOpt); err != nil {
 			return nil, fmt.Errorf("ss %s initialize kcptun-plugin error: %w", addr, err)
 		}
 

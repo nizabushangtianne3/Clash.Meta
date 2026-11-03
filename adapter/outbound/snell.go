@@ -7,7 +7,6 @@ import (
 	"strconv"
 
 	N "github.com/metacubex/mihomo/common/net"
-	"github.com/metacubex/mihomo/common/structure"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/transport/jls"
 	"github.com/metacubex/mihomo/transport/restls"
@@ -168,9 +167,8 @@ func NewSnell(option SnellOption) (*Snell, error) {
 	addr := net.JoinHostPort(option.Server, strconv.Itoa(option.Port))
 	psk := []byte(option.Psk)
 
-	decoder := structure.NewDecoder(structure.Option{TagName: "obfs", WeaklyTypedInput: true})
 	obfsOption := &simpleObfsOption{Host: "bing.com"}
-	if err := decoder.Decode(option.ObfsOpts, obfsOption); err != nil {
+	if err := obfsDecoder.Decode(option.ObfsOpts, obfsOption); err != nil {
 		return nil, fmt.Errorf("snell %s initialize obfs error: %w", addr, err)
 	}
 
@@ -184,7 +182,7 @@ func NewSnell(option SnellOption) (*Snell, error) {
 		opt := &shadowTLSOption{
 			Version: 2,
 		}
-		if err := decoder.Decode(option.ObfsOpts, opt); err != nil {
+		if err := obfsDecoder.Decode(option.ObfsOpts, opt); err != nil {
 			return nil, fmt.Errorf("snell %s initialize shadow-tls-plugin error: %w", addr, err)
 		}
 
@@ -207,7 +205,7 @@ func NewSnell(option SnellOption) (*Snell, error) {
 		}
 	case restls.Mode:
 		opt := &restlsOption{}
-		if err := decoder.Decode(option.ObfsOpts, opt); err != nil {
+		if err := obfsDecoder.Decode(option.ObfsOpts, opt); err != nil {
 			return nil, fmt.Errorf("snell %s initialize restls-plugin error: %w", addr, err)
 		}
 
@@ -227,7 +225,7 @@ func NewSnell(option SnellOption) (*Snell, error) {
 		restlsConfig.ForceTLS12 = opt.ForceTLS12
 	case jls.Mode:
 		opt := &jlsOption{}
-		if err := decoder.Decode(option.ObfsOpts, opt); err != nil {
+		if err := obfsDecoder.Decode(option.ObfsOpts, opt); err != nil {
 			return nil, fmt.Errorf("snell %s initialize jls-plugin error: %w", addr, err)
 		}
 
