@@ -94,8 +94,9 @@ func (l *UDPListener) handleSocksUDP(pc net.PacketConn, tunnel C.Tunnel, buf []b
 
 	flow, hit := l.flowCache.Get(addr)
 	if !hit || !bytes.Equal(target, flow.target) {
-		src := newSSPacket(pc, net.UDPAddrFromAddrPort(addr), buf, payload)
+		src := newSSPacket(pc, net.UDPAddrFromAddrPort(addr), addr, buf, payload, nil)
 		_, metadata := inbound.NewPacket(target, src, C.SHADOWSOCKS, additions...)
+		src.metadata = metadata
 		flow = &ssUDPFlow{
 			metadata: metadata,
 			target:   bytes.Clone(target),
@@ -104,6 +105,6 @@ func (l *UDPListener) handleSocksUDP(pc net.PacketConn, tunnel C.Tunnel, buf []b
 		l.flowCache.Set(addr, flow)
 	}
 
-	ssPacket := newSSPacket(pc, flow.rAddr, buf, payload)
+	ssPacket := newSSPacket(pc, flow.rAddr, addr, buf, payload, flow.metadata)
 	tunnel.HandleUDPPacket(ssPacket, flow.metadata)
 }

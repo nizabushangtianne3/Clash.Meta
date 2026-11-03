@@ -1,0 +1,26 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/listener/shadowsocks
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkSSPacketAdapter/wrapped         	38882768	        30.67 ns/op	      64 B/op	       1 allocs/op
+BenchmarkSSPacketAdapter/wrapped         	46245981	        27.65 ns/op	      64 B/op	       1 allocs/op
+BenchmarkSSPacketAdapter/wrapped         	38594763	        28.81 ns/op	      64 B/op	       1 allocs/op
+BenchmarkSSPacketAdapter/wrapped         	46874266	        25.96 ns/op	      64 B/op	       1 allocs/op
+BenchmarkSSPacketAdapter/wrapped         	42711313	        25.10 ns/op	      64 B/op	       1 allocs/op
+BenchmarkSSPacketAdapter/wrapped         	48533086	        26.16 ns/op	      64 B/op	       1 allocs/op
+BenchmarkSSPacketAdapter/wrapped         	38284350	        26.62 ns/op	      64 B/op	       1 allocs/op
+BenchmarkSSPacketAdapter/wrapped         	48210195	        24.67 ns/op	      64 B/op	       1 allocs/op
+BenchmarkSSPacketAdapter/wrapped         	48140762	        24.98 ns/op	      64 B/op	       1 allocs/op
+BenchmarkSSPacketAdapter/wrapped         	49162395	        24.96 ns/op	      64 B/op	       1 allocs/op
+BenchmarkSSPacketAdapter/native          	567278791	         2.124 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSSPacketAdapter/native          	567570175	         2.137 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSSPacketAdapter/native          	562440240	         2.119 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSSPacketAdapter/native          	566525962	         2.122 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSSPacketAdapter/native          	573229056	         2.156 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSSPacketAdapter/native          	552168410	         2.119 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSSPacketAdapter/native          	567617425	         2.128 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSSPacketAdapter/native          	567509512	         2.127 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSSPacketAdapter/native          	557150397	         2.126 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSSPacketAdapter/native          	572019112	         2.135 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/listener/shadowsocks	26.954s

@@ -170,3 +170,26 @@ func BenchmarkShadowSocksUDPHandleCached(b *testing.B) {
 		listener.handleSocksUDP(conn, tunnel, dgram, source)
 	}
 }
+
+func BenchmarkSSPacketAdapter(b *testing.B) {
+	source := netip.MustParseAddrPort("192.168.1.2:54321")
+	metadata := &C.Metadata{SrcIP: source.Addr(), SrcPort: source.Port()}
+	packet := newSSPacket(ssFakePacketConn{}, net.UDPAddrFromAddrPort(source), source, []byte("ping"), []byte("ping"), metadata)
+
+	b.Run("wrapped", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			C.NewPacketAdapter(packet, metadata).Drop()
+		}
+	})
+	b.Run("native", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			adapter, ok := any(packet).(C.PacketAdapter)
+			if !ok {
+				b.Fatal("shadowsocks packet is not a native adapter")
+			}
+			adapter.Drop()
+		}
+	})
+}

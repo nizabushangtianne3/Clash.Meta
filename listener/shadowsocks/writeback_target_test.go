@@ -44,6 +44,21 @@ func (c *writeBackRecordingConn) SetWriteDeadline(time.Time) error {
 // reply can be written back to that client, and the sender drops that packet as
 // soon as it processed it. The wrapper therefore cannot be recycled: the next
 // datagram would claim it and the flow's replies would follow it there.
+func TestSSPacketIsNativePacketAdapter(t *testing.T) {
+	source := netip.MustParseAddrPort("192.168.1.2:54321")
+	metadata := &C.Metadata{SrcIP: source.Addr(), SrcPort: source.Port()}
+	packet := newSSPacket(&writeBackRecordingConn{}, net.UDPAddrFromAddrPort(source), source, []byte("ping"), []byte("ping"), metadata)
+
+	adapter, ok := any(packet).(C.PacketAdapter)
+	require.True(t, ok)
+	require.Same(t, metadata, adapter.Metadata())
+	require.Equal(t, source, adapter.FlowKey())
+	require.EqualValues(t, 0, testing.AllocsPerRun(100, func() {
+		adapter := any(packet).(C.PacketAdapter)
+		adapter.Drop()
+	}))
+}
+
 func TestFlowWriteBackKeepsItsClientAfterThePacketIsDropped(t *testing.T) {
 	clientA := &writeBackRecordingConn{}
 	clientB := &writeBackRecordingConn{}
@@ -52,12 +67,12 @@ func TestFlowWriteBackKeepsItsClientAfterThePacketIsDropped(t *testing.T) {
 	replyTarget := netip.MustParseAddrPort("1.2.3.4:53")
 
 	for round := 0; round < 100; round++ {
-		packet := newSSPacket(clientA, addrA, []byte("request"), []byte("request"))
+		packet := newSSPacket(clientA, addrA, netip.MustParseAddrPort("192.168.1.2:1111"), []byte("request"), []byte("request"), nil)
 		proxy := nat.NewWriteBackProxy(C.NewPacketAdapter(packet, &C.Metadata{}))
 		packet.Drop() // what packetSender.processPacket does right after it sends
 
 		// the next datagram on this listener gets its own wrapper
-		_ = newSSPacket(clientB, addrB, []byte("other"), []byte("other"))
+		_ = newSSPacket(clientB, addrB, netip.MustParseAddrPort("192.168.1.3:2222"), []byte("other"), []byte("other"), nil)
 
 		_, err := proxy.WriteBack([]byte("reply"), replyTarget)
 		require.NoError(t, err)
