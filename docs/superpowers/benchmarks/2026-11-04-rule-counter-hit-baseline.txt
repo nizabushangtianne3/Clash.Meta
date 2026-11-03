@@ -1,0 +1,16 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/rules/wrapper
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkRuleWrapperHit-16    	 1000000	        13.31 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRuleWrapperHit-16    	 1000000	        13.24 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRuleWrapperHit-16    	 1000000	        14.39 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRuleWrapperHit-16    	 1000000	        15.82 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRuleWrapperHit-16    	 1000000	        17.00 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRuleWrapperHit-16    	 1000000	        22.34 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRuleWrapperHit-16    	 1000000	        36.76 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRuleWrapperHit-16    	 1000000	        33.34 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRuleWrapperHit-16    	 1000000	        21.72 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRuleWrapperHit-16    	 1000000	        21.93 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/rules/wrapper	0.814s

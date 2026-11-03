@@ -1,0 +1,26 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/rules/wrapper
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkRuleWrapperHit-16     	 1000000	         9.322 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRuleWrapperHit-16     	 1000000	         9.591 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRuleWrapperHit-16     	 1000000	         8.840 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRuleWrapperHit-16     	 1000000	         8.887 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRuleWrapperHit-16     	 1000000	         8.913 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRuleWrapperHit-16     	 1000000	         8.949 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRuleWrapperHit-16     	 1000000	         9.130 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRuleWrapperHit-16     	 1000000	         9.183 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRuleWrapperHit-16     	 1000000	         9.056 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRuleWrapperHit-16     	 1000000	         9.195 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRuleWrapperMiss-16    	 1000000	         8.795 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRuleWrapperMiss-16    	 1000000	         8.792 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRuleWrapperMiss-16    	 1000000	         8.797 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRuleWrapperMiss-16    	 1000000	         8.795 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRuleWrapperMiss-16    	 1000000	         8.801 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRuleWrapperMiss-16    	 1000000	         8.703 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRuleWrapperMiss-16    	 1000000	         8.823 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRuleWrapperMiss-16    	 1000000	         8.606 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRuleWrapperMiss-16    	 1000000	         9.557 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRuleWrapperMiss-16    	 1000000	         8.689 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/rules/wrapper	0.798s
