@@ -176,46 +176,48 @@ func (p *Proxy) AppendJSON(dst []byte) []byte {
 	dst = append(dst, ']')
 
 	dst = append(dst, `,"extra":{`...)
-	urls := make([]string, 0)
-	p.extra.RangeRelaxed(func(url string, _ *internalProxyState) bool {
-		urls = append(urls, url)
-		return true
-	})
-	sort.Strings(urls)
-	for index, url := range urls {
-		if index != 0 {
-			dst = append(dst, ',')
+	if p.extra.Size() != 0 {
+		urls := make([]string, 0, p.extra.Size())
+		p.extra.RangeRelaxed(func(url string, _ *internalProxyState) bool {
+			urls = append(urls, url)
+			return true
+		})
+		sort.Strings(urls)
+		for index, url := range urls {
+			if index != 0 {
+				dst = append(dst, ',')
+			}
+			dst = jsonutil.AppendString(dst, url)
+			dst = append(dst, ':')
+			alive := false
+			var history *queue.Queue[C.DelayHistory]
+			if state, ok := p.extra.Load(url); ok {
+				alive = state.alive.Load()
+				history = state.history
+			}
+			dst = append(dst, `{"alive":`...)
+			dst = jsonutil.AppendBool(dst, alive)
+			dst = append(dst, `,"history":[`...)
+			if history != nil {
+				firstHistory := true
+				history.Range(func(item C.DelayHistory) bool {
+					if !firstHistory {
+						dst = append(dst, ',')
+					}
+					firstHistory = false
+					dst = append(dst, `{"time":`...)
+					dst = append(dst, '"')
+					dst = item.Time.AppendFormat(dst, time.RFC3339Nano)
+					dst = append(dst, '"')
+					dst = append(dst, `,"delay":`...)
+					dst = strconv.AppendUint(dst, uint64(item.Delay), 10)
+					dst = append(dst, '}')
+					return true
+				})
+			}
+			dst = append(dst, ']')
+			dst = append(dst, '}')
 		}
-		dst = jsonutil.AppendString(dst, url)
-		dst = append(dst, ':')
-		alive := false
-		var history *queue.Queue[C.DelayHistory]
-		if state, ok := p.extra.Load(url); ok {
-			alive = state.alive.Load()
-			history = state.history
-		}
-		dst = append(dst, `{"alive":`...)
-		dst = jsonutil.AppendBool(dst, alive)
-		dst = append(dst, `,"history":[`...)
-		if history != nil {
-			firstHistory := true
-			history.Range(func(item C.DelayHistory) bool {
-				if !firstHistory {
-					dst = append(dst, ',')
-				}
-				firstHistory = false
-				dst = append(dst, `{"time":`...)
-				dst = append(dst, '"')
-				dst = item.Time.AppendFormat(dst, time.RFC3339Nano)
-				dst = append(dst, '"')
-				dst = append(dst, `,"delay":`...)
-				dst = strconv.AppendUint(dst, uint64(item.Delay), 10)
-				dst = append(dst, '}')
-				return true
-			})
-		}
-		dst = append(dst, ']')
-		dst = append(dst, '}')
 	}
 	dst = append(dst, '}')
 

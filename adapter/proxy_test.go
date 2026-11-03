@@ -144,6 +144,7 @@ func TestProxyMarshalJSONCarriesDelayState(t *testing.T) {
 	assert.Equal(t, true, mapping["alive"])
 	assert.Contains(t, mapping, "history")
 	assert.Contains(t, mapping, "extra")
+	assert.Empty(t, mapping["extra"])
 }
 
 func BenchmarkProxyMarshalJSON(b *testing.B) {
