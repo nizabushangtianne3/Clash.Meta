@@ -134,3 +134,25 @@ func BenchmarkUnpackSimpleUDPReplyOneA(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkUnpackSimpleUDPReplyOneAAAAUncompressed(b *testing.B) {
+	query := &D.Msg{}
+	query.SetQuestion("aaaa.example.com.", D.TypeAAAA)
+	reply := D.Msg{}
+	reply.SetReply(query)
+	reply.RecursionAvailable = true
+	reply.Answer = append(reply.Answer, &D.AAAA{
+		Hdr:  D.RR_Header{Name: query.Question[0].Name, Rrtype: D.TypeAAAA, Class: D.ClassINET, Ttl: 60},
+		AAAA: net.ParseIP("2001:db8::10").To16(),
+	})
+	wire, err := reply.Pack()
+	require.NoError(b, err)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, ok := unpackSimpleUDPReply(wire, query.Question[0]); !ok {
+			b.Fatal("simple reply was rejected")
+		}
+	}
+}

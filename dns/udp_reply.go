@@ -70,7 +70,7 @@ func unpackSimpleUDPReply(wire []byte, query D.Question) (*D.Msg, bool) {
 	slab.question[0] = question
 	slab.msg.Question = slab.question[:1:1]
 
-	answerName, off, ok := unpackUDPReplyName(wire, off, question.Name)
+	answerName, off, ok := unpackUDPReplyName(wire, off, question.Name, query)
 	if !ok || off+10 > len(wire) {
 		return nil, false
 	}
@@ -120,53 +120,19 @@ func unpackSimpleUDPReply(wire []byte, query D.Question) (*D.Msg, bool) {
 // matchUDPReplyQuestion avoids allocating a domain string for the common reply:
 // it matches the request wire labels in place and falls back for escaped names.
 func matchUDPReplyQuestion(wire []byte, query D.Question) (D.Question, int, bool) {
-	off := 12
-	name := query.Name
-	if name == "" || name == "." {
-		if off >= len(wire) || wire[off] != 0 {
-			return D.Question{}, 0, false
-		}
-		off++
-	} else {
-		if name[0] == '.' || name[len(name)-1] != '.' || strings.IndexByte(name, '\\') >= 0 {
-			return D.Question{}, 0, false
-		}
-		begin := 0
-		for begin < len(name)-1 {
-			end := strings.IndexByte(name[begin:], '.')
-			if end >= 0 {
-				end += begin
-			}
-			if end < 0 || end == begin || end-begin > 63 {
-				return D.Question{}, 0, false
-			}
-			if off >= len(wire) || int(wire[off]) != end-begin || off+1+end-begin > len(wire) {
-				return D.Question{}, 0, false
-			}
-			off++
-			if !asciiEqualFold(wire[off:off+end-begin], name[begin:end]) {
-				return D.Question{}, 0, false
-			}
-			off += end - begin
-			begin = end + 1
-		}
-		if off >= len(wire) || wire[off] != 0 {
-			return D.Question{}, 0, false
-		}
-		off++
-	}
-	if off+4 > len(wire) {
+	end, ok := matchUDPReplyName(wire, 12, query.Name)
+	if !ok || end+4 > len(wire) {
 		return D.Question{}, 0, false
 	}
 	question := D.Question{
-		Name:   name,
-		Qtype:  binary.BigEndian.Uint16(wire[off:]),
-		Qclass: binary.BigEndian.Uint16(wire[off+2:]),
+		Name:   query.Name,
+		Qtype:  binary.BigEndian.Uint16(wire[end:]),
+		Qclass: binary.BigEndian.Uint16(wire[end+2:]),
 	}
 	if question.Qtype != query.Qtype || question.Qclass != query.Qclass {
 		return D.Question{}, 0, false
 	}
-	return question, off + 4, true
+	return question, end + 4, true
 }
 
 func asciiEqualFold(a []byte, b string) bool {
@@ -188,14 +154,52 @@ func asciiEqualFold(a []byte, b string) bool {
 	return true
 }
 
-// unpackUDPReplyName avoids a second domain-name allocation when the answer
-// owner is the conventional compression pointer back to the question name.
-func unpackUDPReplyName(wire []byte, off int, owner string) (string, int, bool) {
+func matchUDPReplyName(wire []byte, off int, name string) (int, bool) {
+	if name == "" || name == "." {
+		if off >= len(wire) || wire[off] != 0 {
+			return 0, false
+		}
+		return off + 1, true
+	}
+	if name[0] == '.' || name[len(name)-1] != '.' || strings.IndexByte(name, '\\') >= 0 {
+		return 0, false
+	}
+	begin := 0
+	for begin < len(name)-1 {
+		end := strings.IndexByte(name[begin:], '.')
+		if end >= 0 {
+			end += begin
+		}
+		if end < 0 || end == begin || end-begin > 63 {
+			return 0, false
+		}
+		if off >= len(wire) || int(wire[off]) != end-begin || off+1+end-begin > len(wire) {
+			return 0, false
+		}
+		off++
+		if !asciiEqualFold(wire[off:off+end-begin], name[begin:end]) {
+			return 0, false
+		}
+		off += end - begin
+		begin = end + 1
+	}
+	if off >= len(wire) || wire[off] != 0 {
+		return 0, false
+	}
+	return off + 1, true
+}
+
+// unpackUDPReplyName reuses the request name when the answer owner is either
+// compressed back to offset 12 or written uncompressed in place.
+func unpackUDPReplyName(wire []byte, off int, owner string, query D.Question) (string, int, bool) {
 	if off+2 <= len(wire) && wire[off]&0xc0 == 0xc0 {
 		pointer := binary.BigEndian.Uint16(wire[off:]) & 0x3fff
 		if pointer == 12 {
 			return owner, off + 2, true
 		}
+	}
+	if end, ok := matchUDPReplyName(wire, off, query.Name); ok {
+		return owner, end, true
 	}
 	name, next, err := D.UnpackDomainName(wire, off)
 	if err != nil {
