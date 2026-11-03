@@ -218,6 +218,9 @@ func exchangeUDPWithConn(ctx context.Context, dClient *D.Client, m *D.Msg, conn 
 		if binary.BigEndian.Uint16(buffer[:2]) != m.Id {
 			continue
 		}
+		if reply, ok := unpackSimpleUDPReply(buffer[:n]); ok {
+			return reply, nil
+		}
 
 		msg := new(D.Msg)
 		err = msg.Unpack(buffer[:n])
