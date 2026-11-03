@@ -83,3 +83,53 @@ func BenchmarkPutMsgToCacheTypical(b *testing.B) {
 		putMsgToCache(r.cache, key, msg)
 	}
 }
+
+func benchmarkCacheMessage(qtype uint16, addresses []net.IP) *D.Msg {
+	msg := &D.Msg{}
+	msg.SetQuestion(D.Fqdn("cache-multi.example."), qtype)
+	msg.RecursionAvailable = true
+	for _, address := range addresses {
+		if qtype == D.TypeA {
+			msg.Answer = append(msg.Answer, &D.A{
+				Hdr: D.RR_Header{Name: msg.Question[0].Name, Rrtype: qtype, Class: D.ClassINET, Ttl: 120},
+				A:   address,
+			})
+		} else {
+			msg.Answer = append(msg.Answer, &D.AAAA{
+				Hdr:  D.RR_Header{Name: msg.Question[0].Name, Rrtype: qtype, Class: D.ClassINET, Ttl: 120},
+				AAAA: address,
+			})
+		}
+	}
+	return msg
+}
+
+func BenchmarkCacheHitFourA(b *testing.B) {
+	msg := benchmarkCacheMessage(D.TypeA, []net.IP{
+		net.IPv4(192, 0, 2, 1), net.IPv4(192, 0, 2, 2),
+		net.IPv4(192, 0, 2, 3), net.IPv4(192, 0, 2, 4),
+	})
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if copyCachedMsg(msg, false) == nil {
+			b.Fatal("cache copy failed")
+		}
+	}
+}
+
+func BenchmarkCacheHitFourAAAA(b *testing.B) {
+	msg := benchmarkCacheMessage(D.TypeAAAA, []net.IP{
+		net.ParseIP("2001:db8::1"), net.ParseIP("2001:db8::2"),
+		net.ParseIP("2001:db8::3"), net.ParseIP("2001:db8::4"),
+	})
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if copyCachedMsg(msg, false) == nil {
+			b.Fatal("cache copy failed")
+		}
+	}
+}

@@ -116,6 +116,28 @@ type cachedAAAASlab struct {
 	aaaa     [2]cacheAAAA
 }
 
+// maxCacheRecords matches the UDP fast-path answer bound while leaving larger
+// responses on the generic copy path.
+const maxCacheRecords = 8
+
+// cachedMultiASlab keeps larger all-A cache hits in one caller-owned
+// allocation.
+type cachedMultiASlab struct {
+	msg      D.Msg
+	question [1]D.Question
+	rr       [maxCacheRecords]D.RR
+	a        [maxCacheRecords]cacheA
+}
+
+// cachedMultiAAAASlab keeps larger all-AAAA cache hits in one caller-owned
+// allocation.
+type cachedMultiAAAASlab struct {
+	msg      D.Msg
+	question [1]D.Question
+	rr       [maxCacheRecords]D.RR
+	aaaa     [maxCacheRecords]cacheAAAA
+}
+
 // copyCachedMsg returns a message whose RR payloads are independent of src.
 // Question remains shared because dns.Msg treats it as immutable. Cache writes
 // also discard OPT before cloning, so that RFC-forbidden record never pays for
@@ -185,6 +207,36 @@ func copyCachedMsg(src *D.Msg, discardOPT bool) *D.Msg {
 			return dst
 		}
 	}
+	if len(src.Ns) == 0 && len(src.Answer) > 2 && len(src.Answer) <= maxCacheRecords && allAAAA(src.Answer) {
+		fits := !discardOPT && len(src.Extra) == 0
+		if discardOPT {
+			fits = len(src.Question) == 1 && allExtraDiscardable(src.Extra)
+		}
+		if fits {
+			slab := &cachedMultiAAAASlab{}
+			dst := &slab.msg
+			dst.MsgHdr = src.MsgHdr
+			dst.Compress = src.Compress
+			dst.Answer = slab.rr[:len(src.Answer):len(src.Answer)]
+			if discardOPT {
+				slab.question[0] = src.Question[0]
+				dst.Question = slab.question[:1:1]
+				dst.Extra = nil
+			} else {
+				dst.Question = src.Question
+				dst.Extra = src.Extra
+			}
+			for index, rr := range src.Answer {
+				value := rr.(*D.AAAA)
+				record := &slab.aaaa[index]
+				record.header = *value
+				copy(record.data[:], value.AAAA)
+				record.header.AAAA = record.data[:]
+				dst.Answer[index] = &record.header
+			}
+			return dst
+		}
+	}
 	if len(src.Ns) == 0 && len(src.Answer) > 0 && len(src.Answer) <= 2 && allA(src.Answer) {
 		fits := !discardOPT && len(src.Extra) == 0
 		if discardOPT {
@@ -192,6 +244,36 @@ func copyCachedMsg(src *D.Msg, discardOPT bool) *D.Msg {
 		}
 		if fits {
 			slab := &cachedASlab{}
+			dst := &slab.msg
+			dst.MsgHdr = src.MsgHdr
+			dst.Compress = src.Compress
+			dst.Answer = slab.rr[:len(src.Answer):len(src.Answer)]
+			if discardOPT {
+				slab.question[0] = src.Question[0]
+				dst.Question = slab.question[:1:1]
+				dst.Extra = nil
+			} else {
+				dst.Question = src.Question
+				dst.Extra = src.Extra
+			}
+			for index, rr := range src.Answer {
+				value := rr.(*D.A)
+				record := &slab.a[index]
+				record.header = *value
+				copy(record.data[:], value.A)
+				record.header.A = record.data[:]
+				dst.Answer[index] = &record.header
+			}
+			return dst
+		}
+	}
+	if len(src.Ns) == 0 && len(src.Answer) > 2 && len(src.Answer) <= maxCacheRecords && allA(src.Answer) {
+		fits := !discardOPT && len(src.Extra) == 0
+		if discardOPT {
+			fits = len(src.Question) == 1 && allExtraDiscardable(src.Extra)
+		}
+		if fits {
+			slab := &cachedMultiASlab{}
 			dst := &slab.msg
 			dst.MsgHdr = src.MsgHdr
 			dst.Compress = src.Compress

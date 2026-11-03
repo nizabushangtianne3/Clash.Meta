@@ -1,0 +1,26 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/dns
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkCacheHitFourA    	 5013253	       233.0 ns/op	     464 B/op	       3 allocs/op
+BenchmarkCacheHitFourA    	 6204535	       233.3 ns/op	     464 B/op	       3 allocs/op
+BenchmarkCacheHitFourA    	 4811938	       215.9 ns/op	     464 B/op	       3 allocs/op
+BenchmarkCacheHitFourA    	 4815736	       233.9 ns/op	     464 B/op	       3 allocs/op
+BenchmarkCacheHitFourA    	 6277197	       182.7 ns/op	     464 B/op	       3 allocs/op
+BenchmarkCacheHitFourA    	 6761872	       243.3 ns/op	     464 B/op	       3 allocs/op
+BenchmarkCacheHitFourA    	 4719213	       237.3 ns/op	     464 B/op	       3 allocs/op
+BenchmarkCacheHitFourA    	 5958259	       181.6 ns/op	     464 B/op	       3 allocs/op
+BenchmarkCacheHitFourA    	 4975130	       245.5 ns/op	     464 B/op	       3 allocs/op
+BenchmarkCacheHitFourA    	 4865056	       241.1 ns/op	     464 B/op	       3 allocs/op
+BenchmarkCacheHitFourAAAA 	 5432306	       214.8 ns/op	     496 B/op	       3 allocs/op
+BenchmarkCacheHitFourAAAA 	 6035306	       189.9 ns/op	     496 B/op	       3 allocs/op
+BenchmarkCacheHitFourAAAA 	 6397252	       191.6 ns/op	     496 B/op	       3 allocs/op
+BenchmarkCacheHitFourAAAA 	 5476159	       205.5 ns/op	     496 B/op	       3 allocs/op
+BenchmarkCacheHitFourAAAA 	 5801456	       226.3 ns/op	     496 B/op	       3 allocs/op
+BenchmarkCacheHitFourAAAA 	 5338453	       234.5 ns/op	     496 B/op	       3 allocs/op
+BenchmarkCacheHitFourAAAA 	 5265601	       232.1 ns/op	     496 B/op	       3 allocs/op
+BenchmarkCacheHitFourAAAA 	 4844556	       236.7 ns/op	     496 B/op	       3 allocs/op
+BenchmarkCacheHitFourAAAA 	 4965954	       226.7 ns/op	     496 B/op	       3 allocs/op
+BenchmarkCacheHitFourAAAA 	 4892919	       234.4 ns/op	     496 B/op	       3 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/dns	29.671s
