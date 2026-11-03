@@ -327,7 +327,7 @@ func (s *snellUDPSession) handle(payload []byte, request snell.UDPRequest) {
 		s.flows[key] = metadata
 	}
 
-	packet := newSnellPacket(s.stream, s.writeMu, s.localAddr, s.source, pool.Get(len(payload)))
+	packet := newSnellPacket(s.stream, s.writeMu, s.localAddr, s.source, pool.Get(len(payload)), metadata)
 	copy(packet.data, payload)
 	s.tunnel.HandleUDPPacket(packet, metadata)
 }
@@ -429,15 +429,17 @@ type udpPacket struct {
 	writeMu   *sync.Mutex
 	localAddr net.Addr
 	source    netip.AddrPort
+	metadata  *C.Metadata
 }
 
-func newSnellPacket(conn *snell.Snell, writeMu *sync.Mutex, localAddr net.Addr, source netip.AddrPort, data []byte) *udpPacket {
+func newSnellPacket(conn *snell.Snell, writeMu *sync.Mutex, localAddr net.Addr, source netip.AddrPort, data []byte, metadata *C.Metadata) *udpPacket {
 	return &udpPacket{
 		data:      data,
 		conn:      conn,
 		writeMu:   writeMu,
 		localAddr: localAddr,
 		source:    source,
+		metadata:  metadata,
 	}
 }
 
@@ -465,6 +467,12 @@ func (p *udpPacket) LocalAddr() net.Addr {
 
 func (p *udpPacket) FlowKey() netip.AddrPort {
 	return p.source
+}
+
+// Metadata makes snell packets native PacketAdapters so the tunnel can preserve
+// the cached metadata pointer instead of wrapping every datagram.
+func (p *udpPacket) Metadata() *C.Metadata {
+	return p.metadata
 }
 
 var _ C.MultiAddrListener = (*Listener)(nil)

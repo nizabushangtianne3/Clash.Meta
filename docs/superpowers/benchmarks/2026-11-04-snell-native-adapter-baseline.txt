@@ -1,0 +1,26 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/listener/snell
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkSnellPacketAdapter/wrapped         	45724039	        29.62 ns/op	      64 B/op	       1 allocs/op
+BenchmarkSnellPacketAdapter/wrapped         	50351833	        25.04 ns/op	      64 B/op	       1 allocs/op
+BenchmarkSnellPacketAdapter/wrapped         	50510364	        25.25 ns/op	      64 B/op	       1 allocs/op
+BenchmarkSnellPacketAdapter/wrapped         	41308245	        26.97 ns/op	      64 B/op	       1 allocs/op
+BenchmarkSnellPacketAdapter/wrapped         	46688610	        24.97 ns/op	      64 B/op	       1 allocs/op
+BenchmarkSnellPacketAdapter/wrapped         	47718271	        26.09 ns/op	      64 B/op	       1 allocs/op
+BenchmarkSnellPacketAdapter/wrapped         	47839069	        25.02 ns/op	      64 B/op	       1 allocs/op
+BenchmarkSnellPacketAdapter/wrapped         	44792832	        24.96 ns/op	      64 B/op	       1 allocs/op
+BenchmarkSnellPacketAdapter/wrapped         	46317918	        24.91 ns/op	      64 B/op	       1 allocs/op
+BenchmarkSnellPacketAdapter/wrapped         	47677698	        27.19 ns/op	      64 B/op	       1 allocs/op
+BenchmarkSnellPacketAdapter/native          	934891797	         1.284 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSnellPacketAdapter/native          	950888208	         1.278 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSnellPacketAdapter/native          	936375616	         1.303 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSnellPacketAdapter/native          	938430364	         1.278 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSnellPacketAdapter/native          	935420880	         1.276 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSnellPacketAdapter/native          	862052863	         1.277 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSnellPacketAdapter/native          	941991385	         1.278 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSnellPacketAdapter/native          	928434704	         1.284 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSnellPacketAdapter/native          	941158754	         1.312 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSnellPacketAdapter/native          	942188121	         1.277 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/listener/snell	27.300s

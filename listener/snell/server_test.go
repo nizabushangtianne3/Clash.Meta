@@ -116,12 +116,27 @@ func TestSnellPacketFlowKeyReturnsTheSource(t *testing.T) {
 	require.Equal(t, source, flowPacket.FlowKey())
 }
 
+func TestSnellPacketIsNativePacketAdapter(t *testing.T) {
+	source := netip.MustParseAddrPort("192.168.1.2:54321")
+	metadata := &C.Metadata{SrcIP: source.Addr(), SrcPort: source.Port()}
+	packet := newSnellPacket(nil, nil, nil, source, []byte("ping"), metadata)
+
+	adapter, ok := any(packet).(C.PacketAdapter)
+	require.True(t, ok)
+	require.Same(t, metadata, adapter.Metadata())
+	require.Equal(t, source, adapter.FlowKey())
+	require.EqualValues(t, 0, testing.AllocsPerRun(100, func() {
+		adapter := any(packet).(C.PacketAdapter)
+		adapter.Drop()
+	}))
+}
+
 func TestSnellPacketDropIsAllocationFree(t *testing.T) {
 	source := netip.MustParseAddrPort("192.168.1.2:54321")
-	newSnellPacket(nil, nil, nil, source, pool.Get(64)).Drop()
+	newSnellPacket(nil, nil, nil, source, pool.Get(64), nil).Drop()
 
 	allocations := testing.AllocsPerRun(100, func() {
-		newSnellPacket(nil, nil, nil, source, pool.Get(64)).Drop()
+		newSnellPacket(nil, nil, nil, source, pool.Get(64), nil).Drop()
 	})
 	require.Zero(t, allocations)
 }
@@ -155,4 +170,27 @@ func BenchmarkSnellUDPHandle(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		session.handle(request.Payload, request)
 	}
+}
+
+func BenchmarkSnellPacketAdapter(b *testing.B) {
+	source := netip.MustParseAddrPort("192.168.1.2:54321")
+	metadata := &C.Metadata{SrcIP: source.Addr(), SrcPort: source.Port()}
+	packet := newSnellPacket(nil, nil, nil, source, []byte("ping"), metadata)
+
+	b.Run("wrapped", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			C.NewPacketAdapter(packet, metadata).Drop()
+		}
+	})
+	b.Run("native", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			adapter, ok := any(packet).(C.PacketAdapter)
+			if !ok {
+				b.Fatal("snell packet is not a native adapter")
+			}
+			adapter.Drop()
+		}
+	})
 }
