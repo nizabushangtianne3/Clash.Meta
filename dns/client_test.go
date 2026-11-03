@@ -154,6 +154,87 @@ func TestClientExchangeUDP(t *testing.T) {
 	}
 }
 
+func TestClientExchangeUDPDiscardsMismatchedIDs(t *testing.T) {
+	conn, err := net.ListenPacket("udp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+	udp := conn.(*net.UDPConn)
+
+	_, port, err := net.SplitHostPort(conn.LocalAddr().String())
+	require.NoError(t, err)
+	query := newClientTestQuery()
+
+	serverDone := make(chan struct{})
+	go func() {
+		defer close(serverDone)
+		buffer := make([]byte, 1500)
+		n, remote, readErr := udp.ReadFromUDP(buffer)
+		if readErr != nil {
+			return
+		}
+		var request D.Msg
+		require.NoError(t, request.Unpack(buffer[:n]))
+		response := D.Msg{}
+		response.SetReply(&request)
+		response.Answer = append(response.Answer, &D.A{
+			Hdr: D.RR_Header{Name: request.Question[0].Name, Rrtype: D.TypeA, Class: D.ClassINET, Ttl: 60},
+			A:   net.IPv4(192, 0, 2, 11),
+		})
+
+		response.Id++
+		mismatched, packErr := response.Pack()
+		require.NoError(t, packErr)
+		response.Id--
+		matching, packErr := response.Pack()
+		require.NoError(t, packErr)
+
+		_, err := udp.WriteToUDP(mismatched, remote)
+		require.NoError(t, err)
+		_, err = udp.WriteToUDP(matching, remote)
+		require.NoError(t, err)
+	}()
+
+	response, err := newLocalUDPClient(port).ExchangeContext(context.Background(), query)
+	require.NoError(t, err)
+	require.Len(t, response.Answer, 1)
+	<-serverDone
+}
+func TestClientExchangeUDPRejectsATsigReply(t *testing.T) {
+	conn, err := net.ListenPacket("udp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+	udp := conn.(*net.UDPConn)
+
+	_, port, err := net.SplitHostPort(conn.LocalAddr().String())
+	require.NoError(t, err)
+	query := newClientTestQuery()
+
+	serverDone := make(chan struct{})
+	go func() {
+		defer close(serverDone)
+		buffer := make([]byte, 1500)
+		n, remote, readErr := udp.ReadFromUDP(buffer)
+		if readErr != nil {
+			return
+		}
+		var request D.Msg
+		require.NoError(t, request.Unpack(buffer[:n]))
+		response := D.Msg{}
+		response.SetReply(&request)
+		response.Extra = append(response.Extra, &D.TSIG{
+			Hdr:       D.RR_Header{Name: "hmac-sha256.", Rrtype: D.TypeTSIG, Class: D.ClassANY, Ttl: 0},
+			Algorithm: D.HmacSHA256,
+		})
+		wire, packErr := response.Pack()
+		require.NoError(t, packErr)
+		_, err := udp.WriteToUDP(wire, remote)
+		require.NoError(t, err)
+	}()
+
+	_, err = newLocalUDPClient(port).ExchangeContext(context.Background(), query)
+	require.ErrorIs(t, err, D.ErrSig)
+	<-serverDone
+}
 func TestClientExchangeUDPDeadline(t *testing.T) {
 	conn, err := net.ListenPacket("udp", "127.0.0.1:0")
 	require.NoError(t, err)

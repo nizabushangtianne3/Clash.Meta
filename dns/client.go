@@ -2,11 +2,13 @@ package dns
 
 import (
 	"context"
+	"encoding/binary"
 	"net"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/metacubex/mihomo/common/pool"
 	"github.com/metacubex/mihomo/component/resolver"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/log"
@@ -50,7 +52,12 @@ func (c *client) ExchangeContext(ctx context.Context, m *D.Msg) (*D.Msg, error) 
 		return nil, err
 	}
 
-	msg, err := exchangeWithConn(ctx, &c.dClient, m, conn)
+	var msg *D.Msg
+	if c.network == "udp" {
+		msg, err = exchangeUDPWithConn(ctx, &c.dClient, m, conn)
+	} else {
+		msg, err = exchangeWithConn(ctx, &c.dClient, m, conn)
+	}
 
 	// Resolvers MUST resend queries over TCP if they receive a truncated UDP response (with TC=1 set)!
 	if msg != nil && msg.Truncated && c.network == "udp" {
@@ -141,6 +148,85 @@ func exchangeWithConn(ctx context.Context, dClient *D.Client, m *D.Msg, conn net
 		}
 	}
 	return msg, err
+}
+
+func writeUDPMessage(m *D.Msg, conn net.Conn) error {
+	wire := pool.Get(D.MinMsgSize)
+	defer func() { _ = pool.Put(wire) }()
+
+	packed, err := m.PackBuffer(wire[:0])
+	if err != nil {
+		return err
+	}
+	_, err = conn.Write(packed)
+	return err
+}
+
+func dnsUDPReceiveSize(m *D.Msg, dClient *D.Client) int {
+	if opt := m.IsEdns0(); opt != nil && opt.UDPSize() >= D.MinMsgSize {
+		return int(opt.UDPSize())
+	}
+	if dClient.UDPSize >= D.MinMsgSize {
+		return int(dClient.UDPSize)
+	}
+	return D.MinMsgSize
+}
+
+func exchangeUDPWithConn(ctx context.Context, dClient *D.Client, m *D.Msg, conn net.Conn) (*D.Msg, error) {
+	deadline := time.Now().Add(dClient.Timeout)
+	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+		deadline = ctxDeadline
+	}
+	if err := conn.SetWriteDeadline(deadline); err != nil {
+		return nil, err
+	}
+	if err := conn.SetReadDeadline(deadline); err != nil {
+		return nil, err
+	}
+
+	var stop func() bool
+	if ctx.Done() != nil {
+		stop = context.AfterFunc(ctx, func() {
+			_ = conn.Close()
+		})
+		defer stop()
+	}
+
+	if err := writeUDPMessage(m, conn); err != nil {
+		return nil, err
+	}
+
+	readSize := dnsUDPReceiveSize(m, dClient)
+	buffer := pool.Get(readSize)
+	defer func() { _ = pool.Put(buffer) }()
+
+	for {
+		n, err := conn.Read(buffer)
+		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
+			}
+			if !time.Now().Before(deadline) {
+				return nil, context.DeadlineExceeded
+			}
+			return nil, err
+		}
+		if n < 12 {
+			return nil, D.ErrShortRead
+		}
+		if binary.BigEndian.Uint16(buffer[:2]) != m.Id {
+			continue
+		}
+
+		msg := new(D.Msg)
+		err = msg.Unpack(buffer[:n])
+		if err == nil && msg.IsTsig() != nil {
+			// The internal DNS client carries no TSIG credentials, so an
+			// unsigned wire parser must not silently accept a signed reply.
+			return msg, D.ErrSig
+		}
+		return msg, err
+	}
 }
 
 func (c *client) ResetConnection() {
