@@ -35,6 +35,31 @@ func benchmarkCachePutAAAAMessage() *D.Msg {
 	return msg
 }
 
+func benchmarkCachePutOneA() *D.Msg {
+	msg := &D.Msg{}
+	msg.SetQuestion(D.Fqdn("cache-put-one.example."), D.TypeA)
+	msg.Rcode = D.RcodeSuccess
+	msg.Answer = []D.RR{
+		&D.A{Hdr: D.RR_Header{Name: D.Fqdn("cache-put-one.example."), Rrtype: D.TypeA, Class: D.ClassINET, Ttl: 180}, A: net.IP{192, 0, 2, 9}},
+	}
+	msg.Extra = []D.RR{
+		&D.OPT{Hdr: D.RR_Header{Name: ".", Rrtype: D.TypeOPT}},
+	}
+	return msg
+}
+
+func BenchmarkPutMsgToCacheOneA(b *testing.B) {
+	r := seededBenchResolver()
+	msg := benchmarkCachePutOneA()
+	key := questionKey(msg.Question[0])
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		putMsgToCache(r.cache, key, msg)
+	}
+}
+
 func BenchmarkPutMsgToCacheTypicalAAAA(b *testing.B) {
 	r := seededBenchResolver()
 	msg := benchmarkCachePutAAAAMessage()

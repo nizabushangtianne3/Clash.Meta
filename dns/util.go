@@ -90,6 +90,15 @@ type cacheAAAA struct {
 	data   [16]byte
 }
 
+// cachedOneASlab keeps the most common one-A cache record in a smaller
+// caller-owned allocation.
+type cachedOneASlab struct {
+	msg      D.Msg
+	question [1]D.Question
+	rr       [1]D.RR
+	a        [1]cacheA
+}
+
 // cachedASlab keeps a small all-A cache hit in one caller-owned allocation.
 type cachedASlab struct {
 	msg      D.Msg
@@ -112,6 +121,40 @@ type cachedAAAASlab struct {
 // also discard OPT before cloning, so that RFC-forbidden record never pays for
 // an allocation.
 func copyCachedMsg(src *D.Msg, discardOPT bool) *D.Msg {
+	if !discardOPT && len(src.Ns) == 0 && len(src.Extra) == 0 && len(src.Answer) == 1 && allA(src.Answer) {
+		slab := &cachedOneASlab{}
+		dst := &slab.msg
+		dst.MsgHdr = src.MsgHdr
+		dst.Compress = src.Compress
+		dst.Question = src.Question
+		value := src.Answer[0].(*D.A)
+		record := &slab.a[0]
+		record.header = *value
+		copy(record.data[:], value.A)
+		record.header.A = record.data[:]
+		slab.rr[0] = &record.header
+		dst.Answer = slab.rr[:1:1]
+		return dst
+	}
+
+	if discardOPT && len(src.Question) == 1 && len(src.Ns) == 0 && len(src.Answer) == 1 && allA(src.Answer) && allExtraDiscardable(src.Extra) {
+		slab := &cachedOneASlab{}
+		dst := &slab.msg
+		dst.MsgHdr = src.MsgHdr
+		dst.Compress = src.Compress
+		slab.question[0] = src.Question[0]
+		dst.Question = slab.question[:1:1]
+		dst.Extra = nil
+		value := src.Answer[0].(*D.A)
+		record := &slab.a[0]
+		record.header = *value
+		copy(record.data[:], value.A)
+		record.header.A = record.data[:]
+		slab.rr[0] = &record.header
+		dst.Answer = slab.rr[:1:1]
+		return dst
+	}
+
 	if len(src.Ns) == 0 && len(src.Answer) > 0 && len(src.Answer) <= 2 && allAAAA(src.Answer) {
 		fits := !discardOPT && len(src.Extra) == 0
 		if discardOPT {

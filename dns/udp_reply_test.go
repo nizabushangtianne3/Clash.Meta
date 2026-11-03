@@ -107,3 +107,25 @@ func TestUnpackSimpleUDPReplyRejectsBadRDataLength(t *testing.T) {
 	var generic D.Msg
 	require.Error(t, generic.Unpack(wire))
 }
+
+func BenchmarkUnpackSimpleUDPReplyOneA(b *testing.B) {
+	query := &D.Msg{}
+	query.SetQuestion("one.example.com.", D.TypeA)
+	reply := D.Msg{Compress: true}
+	reply.SetReply(query)
+	reply.RecursionAvailable = true
+	reply.Answer = append(reply.Answer, &D.A{
+		Hdr: D.RR_Header{Name: query.Question[0].Name, Rrtype: D.TypeA, Class: D.ClassINET, Ttl: 60},
+		A:   net.IPv4(192, 0, 2, 10),
+	})
+	wire, err := reply.Pack()
+	require.NoError(b, err)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, ok := unpackSimpleUDPReply(wire); !ok {
+			b.Fatal("simple reply was rejected")
+		}
+	}
+}

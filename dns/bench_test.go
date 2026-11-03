@@ -72,6 +72,25 @@ func BenchmarkExchangeContextCacheHitAAAA(b *testing.B) {
 	}
 }
 
+func BenchmarkExchangeContextCacheHitOneA(b *testing.B) {
+	r := seededBenchResolver()
+	query := &D.Msg{}
+	query.SetQuestion(D.Fqdn("cached-one-a.example."), D.TypeA)
+	query.Answer = []D.RR{
+		&D.A{Hdr: D.RR_Header{Name: D.Fqdn("cached-one-a.example."), Rrtype: D.TypeA, Class: D.ClassINET, Ttl: 300}, A: net.ParseIP("192.0.2.4").To4()},
+	}
+	putMsgToCache(r.cache, questionKey(query.Question[0]), query)
+	ctx := context.Background()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := r.ExchangeContext(ctx, query); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func BenchmarkLookupIPCached(b *testing.B) {
 	r := seededBenchResolver()
 	ips := []netip.Addr{netip.MustParseAddr("1.2.3.4"), netip.MustParseAddr("1.2.3.5")}
