@@ -243,7 +243,7 @@ func (p *Proxy) AppendJSON(dst []byte) []byte {
 
 // MarshalJSON implements C.ProxyAdapter
 func (p *Proxy) MarshalJSON() ([]byte, error) {
-	return p.AppendJSON(nil), nil
+	return p.AppendJSON(make([]byte, 0, 512+jsonutil.StringLen(p.Name()))), nil
 }
 
 type urlTestExchange struct {
