@@ -13,20 +13,22 @@ import (
 // last handed the sender so replies can be written back through it, and Drop
 // runs long before that flow ends. Recycling the object here would let the next
 // datagram claim it and move those replies onto another client's socket.
-func newTrojanPacket(pc trojanUDPConn, source netip.AddrPort, data []byte) *packet {
+func newTrojanPacket(pc trojanUDPConn, source netip.AddrPort, data []byte, metadata *C.Metadata) *packet {
 	return &packet{
-		pc:      pc,
-		source:  source,
-		data:    data,
-		payload: data,
+		pc:       pc,
+		source:   source,
+		data:     data,
+		payload:  data,
+		metadata: metadata,
 	}
 }
 
 type packet struct {
-	pc      trojanUDPConn
-	source  netip.AddrPort
-	data    []byte
-	payload []byte
+	pc       trojanUDPConn
+	source   netip.AddrPort
+	data     []byte
+	payload  []byte
+	metadata *C.Metadata
 }
 
 type trojanUDPConn interface {
@@ -60,7 +62,7 @@ func newTrojanUDPSession(
 
 func (s *trojanUDPSession) handle(data []byte, addr netip.AddrPort) {
 	metadata, ok := s.flows[addr]
-	pkt := newTrojanPacket(s.pc, s.source, data)
+	pkt := newTrojanPacket(s.pc, s.source, data, metadata)
 	if !ok {
 		if s.flows == nil {
 			s.flows = make(map[netip.AddrPort]*C.Metadata, 8)
@@ -68,6 +70,7 @@ func (s *trojanUDPSession) handle(data []byte, addr netip.AddrPort) {
 			clear(s.flows)
 		}
 		_, metadata = inbound.NewPacketFromAddrPort(addr, pkt, C.TROJAN, s.additions...)
+		pkt.metadata = metadata
 		s.flows[addr] = metadata
 	}
 	s.tunnel.HandleUDPPacket(pkt, metadata)
@@ -80,6 +83,12 @@ func (c *packet) Data() []byte {
 // FlowKey returns the source address the tunnel keys this packet's flow by.
 func (c *packet) FlowKey() netip.AddrPort {
 	return c.source
+}
+
+// Metadata makes trojan packets native PacketAdapters so the tunnel can preserve
+// the cached metadata pointer instead of wrapping every datagram.
+func (c *packet) Metadata() *C.Metadata {
+	return c.metadata
 }
 
 // WriteBack wirtes UDP packet with source(ip, port) = `addr`

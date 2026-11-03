@@ -37,13 +37,52 @@ func TestNewPacketAdapterOnTrojanPacketSkipsTheUDPAddr(t *testing.T) {
 	require.EqualValues(t, 1, allocations)
 }
 
+func TestTrojanPacketIsNativePacketAdapter(t *testing.T) {
+	source := netip.MustParseAddrPort("192.168.1.2:54321")
+	metadata := &C.Metadata{SrcIP: source.Addr(), SrcPort: source.Port()}
+	packet := newTrojanPacket(&fixedLocalPacketConn{}, source, []byte("ping"), metadata)
+
+	adapter, ok := any(packet).(C.PacketAdapter)
+	require.True(t, ok)
+	require.Same(t, metadata, adapter.Metadata())
+	require.Equal(t, source, adapter.FlowKey())
+	require.EqualValues(t, 0, testing.AllocsPerRun(100, func() {
+		adapter := any(packet).(C.PacketAdapter)
+		adapter.Drop()
+	}))
+}
+
 func BenchmarkTrojanPacketDrop(b *testing.B) {
 	pc := &fixedLocalPacketConn{}
 	source := netip.MustParseAddrPort("192.168.1.2:54321")
 
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		pkt := newTrojanPacket(pc, source, pool.Get(64))
+		pkt := newTrojanPacket(pc, source, pool.Get(64), nil)
 		pkt.Drop()
 	}
+}
+
+func BenchmarkTrojanPacketAdapter(b *testing.B) {
+	pc := &fixedLocalPacketConn{}
+	source := netip.MustParseAddrPort("192.168.1.2:54321")
+	metadata := &C.Metadata{SrcIP: source.Addr(), SrcPort: source.Port()}
+	packet := newTrojanPacket(pc, source, []byte("ping"), metadata)
+
+	b.Run("wrapped", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			C.NewPacketAdapter(packet, metadata).Drop()
+		}
+	})
+	b.Run("native", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			adapter, ok := any(packet).(C.PacketAdapter)
+			if !ok {
+				b.Fatal("trojan packet is not a native adapter")
+			}
+			adapter.Drop()
+		}
+	})
 }
