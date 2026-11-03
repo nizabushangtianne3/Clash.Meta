@@ -111,6 +111,60 @@ func BenchmarkHandleUDPConnExistingFlow(b *testing.B) {
 	}
 }
 
+type nativeQueuedPacket struct {
+	C.UDPPacket
+	metadata *C.Metadata
+	source   netip.AddrPort
+	data     []byte
+}
+
+func (packet *nativeQueuedPacket) Data() []byte                                  { return packet.data }
+func (packet *nativeQueuedPacket) Metadata() *C.Metadata                         { return packet.metadata }
+func (packet *nativeQueuedPacket) FlowKey() netip.AddrPort                       { return packet.source }
+func (packet *nativeQueuedPacket) WriteBack([]byte, netip.AddrPort) (int, error) { return 0, nil }
+func (packet *nativeQueuedPacket) LocalAddr() net.Addr                           { return net.UDPAddrFromAddrPort(packet.source) }
+func (*nativeQueuedPacket) Drop()                                                {}
+
+func BenchmarkHandleUDPConnExistingFlowAdapter(b *testing.B) {
+	previous := status.Load()
+	status.Store(Running)
+	b.Cleanup(func() { status.Store(previous) })
+
+	key := netip.MustParseAddrPort("192.168.1.2:54321")
+	metadata := &C.Metadata{
+		NetWork: C.UDP,
+		Type:    C.SOCKS5,
+		DstIP:   netip.MustParseAddr("1.2.3.4"),
+		DstPort: 53,
+	}
+	sender, _ := natTable.GetOrCreateForFlow(key, newPacketSender)
+	pc := &destinationRecordingPacketConn{}
+	go sender.Process(pc, nil)
+	b.Cleanup(func() {
+		sender.Close()
+		natTable.DeleteForFlow(key)
+	})
+	sender.AddMapping(&C.Metadata{DstIP: netip.MustParseAddr("192.168.1.2")}, &C.Metadata{DstIP: netip.MustParseAddr("203.0.113.3")})
+
+	b.Run("wrapped", func(b *testing.B) {
+		packet := deadlineTestPacket{localAddr: net.UDPAddrFromAddrPort(key), data: []byte("ping")}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			adapter := C.NewPacketAdapter(packet, metadata)
+			handleUDPConn(udpPacket{packet: adapter, key: key})
+		}
+	})
+	b.Run("native", func(b *testing.B) {
+		packet := &nativeQueuedPacket{metadata: metadata, source: key, data: []byte("ping")}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			handleUDPConn(udpPacket{packet: packet, key: key})
+		}
+	})
+}
+
 func benchmarkMetadata() C.Metadata {
 	return C.Metadata{
 		NetWork: C.TCP,

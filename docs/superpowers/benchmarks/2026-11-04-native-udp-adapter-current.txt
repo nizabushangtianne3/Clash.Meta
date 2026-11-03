@@ -1,0 +1,26 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/tunnel
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkHandleUDPConnExistingFlowAdapter/wrapped         	12291932	       114.8 ns/op	     128 B/op	       2 allocs/op
+BenchmarkHandleUDPConnExistingFlowAdapter/wrapped         	10415491	       117.1 ns/op	     128 B/op	       2 allocs/op
+BenchmarkHandleUDPConnExistingFlowAdapter/wrapped         	10238269	       114.4 ns/op	     128 B/op	       2 allocs/op
+BenchmarkHandleUDPConnExistingFlowAdapter/wrapped         	10556233	       114.1 ns/op	     128 B/op	       2 allocs/op
+BenchmarkHandleUDPConnExistingFlowAdapter/wrapped         	10474000	       114.5 ns/op	     128 B/op	       2 allocs/op
+BenchmarkHandleUDPConnExistingFlowAdapter/wrapped         	10488280	       114.4 ns/op	     128 B/op	       2 allocs/op
+BenchmarkHandleUDPConnExistingFlowAdapter/wrapped         	10328648	       113.8 ns/op	     128 B/op	       2 allocs/op
+BenchmarkHandleUDPConnExistingFlowAdapter/wrapped         	10491234	       113.1 ns/op	     128 B/op	       2 allocs/op
+BenchmarkHandleUDPConnExistingFlowAdapter/wrapped         	10484982	       119.5 ns/op	     128 B/op	       2 allocs/op
+BenchmarkHandleUDPConnExistingFlowAdapter/wrapped         	10384386	       116.3 ns/op	     128 B/op	       2 allocs/op
+BenchmarkHandleUDPConnExistingFlowAdapter/native          	29451393	        41.05 ns/op	       0 B/op	       0 allocs/op
+BenchmarkHandleUDPConnExistingFlowAdapter/native          	29713928	        40.52 ns/op	       0 B/op	       0 allocs/op
+BenchmarkHandleUDPConnExistingFlowAdapter/native          	29694811	        40.72 ns/op	       0 B/op	       0 allocs/op
+BenchmarkHandleUDPConnExistingFlowAdapter/native          	29866050	        40.68 ns/op	       0 B/op	       0 allocs/op
+BenchmarkHandleUDPConnExistingFlowAdapter/native          	29152676	        40.60 ns/op	       0 B/op	       0 allocs/op
+BenchmarkHandleUDPConnExistingFlowAdapter/native          	29241332	        41.16 ns/op	       0 B/op	       0 allocs/op
+BenchmarkHandleUDPConnExistingFlowAdapter/native          	29826558	        40.69 ns/op	       0 B/op	       0 allocs/op
+BenchmarkHandleUDPConnExistingFlowAdapter/native          	27275949	        41.09 ns/op	       0 B/op	       0 allocs/op
+BenchmarkHandleUDPConnExistingFlowAdapter/native          	29408232	        40.93 ns/op	       0 B/op	       0 allocs/op
+BenchmarkHandleUDPConnExistingFlowAdapter/native          	29334258	        40.67 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/tunnel	26.537s

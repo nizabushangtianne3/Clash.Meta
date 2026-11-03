@@ -39,6 +39,24 @@ func TestNewPacketAdapterOnSingPacketSkipsTheUDPAddr(t *testing.T) {
 	require.EqualValues(t, 1, allocations)
 }
 
+func TestSingPacketIsNativePacketAdapter(t *testing.T) {
+	source := netip.MustParseAddrPort("192.168.1.2:54321")
+	metadata := &C.Metadata{SrcIP: source.Addr(), SrcPort: source.Port()}
+	state := newSingPacketState(fakePacketWriter{})
+	pkt := newSingPacket(&state, source, nil, nil)
+	pkt.metadata = *metadata
+
+	adapter, ok := any(pkt).(C.PacketAdapter)
+	require.True(t, ok)
+	require.Equal(t, metadata, adapter.Metadata())
+	require.Equal(t, source, adapter.FlowKey())
+
+	require.EqualValues(t, 0, testing.AllocsPerRun(100, func() {
+		adapter := any(pkt).(C.PacketAdapter)
+		adapter.Drop()
+	}))
+}
+
 func TestPacketWriterStateClosesOnce(t *testing.T) {
 	state := newSingPacketState(fakePacketWriter{})
 

@@ -388,6 +388,12 @@ func (c *packet) FlowKey() netip.AddrPort {
 	return c.source
 }
 
+// Metadata makes sing packets native PacketAdapters so the tunnel can preserve
+// the already-owned metadata pointer instead of wrapping every datagram.
+func (c *packet) Metadata() *C.Metadata {
+	return &c.metadata
+}
+
 // WriteBack wirtes UDP packet with source(ip, port) = `addr`
 func (c *packet) WriteBack(b []byte, addr netip.AddrPort) (n int, err error) {
 	return c.state.writeBack(b, addr)
