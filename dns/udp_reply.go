@@ -32,7 +32,7 @@ const maxUDPFastAnswers = 8
 type udpReplySlab struct {
 	msg        D.Msg
 	question   [1]D.Question
-	answers    [2]D.RR
+	answer     [1]D.RR
 	optRecord  D.OPT
 	optRR      [1]D.RR
 	aRecord    D.A
@@ -113,18 +113,18 @@ func unpackSimpleUDPReply(wire []byte, query D.Question) (*D.Msg, bool) {
 		}
 		copy(slab.aData[:], wire[off:end])
 		slab.aRecord = D.A{Hdr: header, A: slab.aData[:]}
-		slab.answers[0] = &slab.aRecord
+		slab.answer[0] = &slab.aRecord
 	case D.TypeAAAA:
 		if rdlength != len(slab.aaaaData) {
 			return nil, false
 		}
 		copy(slab.aaaaData[:], wire[off:end])
 		slab.aaaaRecord = D.AAAA{Hdr: header, AAAA: slab.aaaaData[:]}
-		slab.answers[0] = &slab.aaaaRecord
+		slab.answer[0] = &slab.aaaaRecord
 	default:
 		return nil, false
 	}
-	slab.msg.Answer = slab.answers[:1:1]
+	slab.msg.Answer = slab.answer[:1:1]
 	if !slab.setEmptyEDNS(wire, end) {
 		return nil, false
 	}

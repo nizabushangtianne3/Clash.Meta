@@ -1,0 +1,36 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/dns
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkUnpackSimpleUDPReplyOneA     	 6828218	       175.1 ns/op	     416 B/op	       1 allocs/op
+BenchmarkUnpackSimpleUDPReplyOneA     	 6583732	       176.6 ns/op	     416 B/op	       1 allocs/op
+BenchmarkUnpackSimpleUDPReplyOneA     	 6482109	       184.7 ns/op	     416 B/op	       1 allocs/op
+BenchmarkUnpackSimpleUDPReplyOneA     	 7660795	       163.3 ns/op	     416 B/op	       1 allocs/op
+BenchmarkUnpackSimpleUDPReplyOneA     	 6408811	       171.4 ns/op	     416 B/op	       1 allocs/op
+BenchmarkUnpackSimpleUDPReplyOneA     	 6907833	       175.0 ns/op	     416 B/op	       1 allocs/op
+BenchmarkUnpackSimpleUDPReplyOneA     	 6839932	       172.1 ns/op	     416 B/op	       1 allocs/op
+BenchmarkUnpackSimpleUDPReplyOneA     	 7568536	       175.4 ns/op	     416 B/op	       1 allocs/op
+BenchmarkUnpackSimpleUDPReplyOneA     	 6675849	       169.8 ns/op	     416 B/op	       1 allocs/op
+BenchmarkUnpackSimpleUDPReplyOneA     	 7155374	       160.1 ns/op	     416 B/op	       1 allocs/op
+BenchmarkUnpackSimpleUDPReplyOneAEDNS 	 7145391	       191.3 ns/op	     416 B/op	       1 allocs/op
+BenchmarkUnpackSimpleUDPReplyOneAEDNS 	 6657416	       191.3 ns/op	     416 B/op	       1 allocs/op
+BenchmarkUnpackSimpleUDPReplyOneAEDNS 	 6758373	       188.7 ns/op	     416 B/op	       1 allocs/op
+BenchmarkUnpackSimpleUDPReplyOneAEDNS 	 6409033	       189.6 ns/op	     416 B/op	       1 allocs/op
+BenchmarkUnpackSimpleUDPReplyOneAEDNS 	 6627376	       193.0 ns/op	     416 B/op	       1 allocs/op
+BenchmarkUnpackSimpleUDPReplyOneAEDNS 	 6194295	       174.3 ns/op	     416 B/op	       1 allocs/op
+BenchmarkUnpackSimpleUDPReplyOneAEDNS 	 7169178	       192.4 ns/op	     416 B/op	       1 allocs/op
+BenchmarkUnpackSimpleUDPReplyOneAEDNS 	 6413137	       187.8 ns/op	     416 B/op	       1 allocs/op
+BenchmarkUnpackSimpleUDPReplyOneAEDNS 	 6594464	       172.8 ns/op	     416 B/op	       1 allocs/op
+BenchmarkUnpackSimpleUDPReplyOneAEDNS 	 5986807	       174.8 ns/op	     416 B/op	       1 allocs/op
+BenchmarkUnpackSimpleUDPReplyCNAMEA   	 3899385	       328.9 ns/op	     528 B/op	       3 allocs/op
+BenchmarkUnpackSimpleUDPReplyCNAMEA   	 3401649	       311.6 ns/op	     528 B/op	       3 allocs/op
+BenchmarkUnpackSimpleUDPReplyCNAMEA   	 3530324	       295.2 ns/op	     528 B/op	       3 allocs/op
+BenchmarkUnpackSimpleUDPReplyCNAMEA   	 3364150	       320.0 ns/op	     528 B/op	       3 allocs/op
+BenchmarkUnpackSimpleUDPReplyCNAMEA   	 4082612	       319.1 ns/op	     528 B/op	       3 allocs/op
+BenchmarkUnpackSimpleUDPReplyCNAMEA   	 3850846	       334.8 ns/op	     528 B/op	       3 allocs/op
+BenchmarkUnpackSimpleUDPReplyCNAMEA   	 3941978	       324.9 ns/op	     528 B/op	       3 allocs/op
+BenchmarkUnpackSimpleUDPReplyCNAMEA   	 3948309	       304.7 ns/op	     528 B/op	       3 allocs/op
+BenchmarkUnpackSimpleUDPReplyCNAMEA   	 3938636	       324.6 ns/op	     528 B/op	       3 allocs/op
+BenchmarkUnpackSimpleUDPReplyCNAMEA   	 3959863	       329.7 ns/op	     528 B/op	       3 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/dns	43.303s
