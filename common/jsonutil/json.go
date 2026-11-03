@@ -121,8 +121,12 @@ func AppendBool(dst []byte, value bool) []byte {
 	return append(dst, "false"...)
 }
 
-// AppendTime writes value in encoding/json's RFC3339Nano form.
+// AppendTime writes value in encoding/json's RFC3339Nano form. Rule APIs
+// append many untouched hit/miss timestamps, so the zero form is precomputed.
 func AppendTime(dst []byte, value time.Time) []byte {
+	if value.IsZero() {
+		return append(dst, `"0001-01-01T00:00:00Z"`...)
+	}
 	dst = append(dst, '"')
 	dst = value.AppendFormat(dst, time.RFC3339Nano)
 	return append(dst, '"')

@@ -1,0 +1,26 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/common/jsonutil
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkAppendTime/zero-16         	 1000000	         4.416 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendTime/zero-16         	 1000000	         5.903 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendTime/zero-16         	 1000000	         3.967 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendTime/zero-16         	 1000000	         3.949 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendTime/zero-16         	 1000000	         3.958 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendTime/zero-16         	 1000000	         3.938 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendTime/zero-16         	 1000000	         3.938 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendTime/zero-16         	 1000000	         4.014 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendTime/zero-16         	 1000000	         3.955 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendTime/zero-16         	 1000000	         3.947 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendTime/value-16        	 1000000	        50.96 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendTime/value-16        	 1000000	        50.83 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendTime/value-16        	 1000000	        50.91 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendTime/value-16        	 1000000	        49.92 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendTime/value-16        	 1000000	        50.20 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendTime/value-16        	 1000000	        50.16 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendTime/value-16        	 1000000	        49.83 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendTime/value-16        	 1000000	        50.01 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendTime/value-16        	 1000000	        49.84 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendTime/value-16        	 1000000	        50.07 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/common/jsonutil	1.179s
