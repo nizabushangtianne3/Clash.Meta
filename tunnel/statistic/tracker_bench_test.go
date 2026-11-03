@@ -59,3 +59,22 @@ func BenchmarkTCPTrackerUnwrap(b *testing.B) {
 		tracker.UnwrapWriter()
 	}
 }
+
+type isolatedBenchmarkPacketConn struct{ C.PacketConn }
+
+func (c *isolatedBenchmarkPacketConn) Chains() C.Chain           { return benchmarkIsolatedChain }
+func (c *isolatedBenchmarkPacketConn) ProviderChains() C.Chain   { return nil }
+func (c *isolatedBenchmarkPacketConn) RemoteDestination() string { return "" }
+
+func BenchmarkNewUDPTrackerIsolated(b *testing.B) {
+	manager := newStripedManager()
+	metadata := benchmarkMetadata()
+	metadata.NetWork = C.UDP
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		tracker := NewUDPTracker(&isolatedBenchmarkPacketConn{}, manager, metadata, nil, 0, 0, true)
+		manager.Leave(tracker)
+	}
+}

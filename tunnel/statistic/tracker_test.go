@@ -239,3 +239,29 @@ func TestManagerMemoryReadsThePlatformModule(t *testing.T) {
 	// a second read is stable enough to be the same process
 	assert.Equal(t, memory, manager.Memory())
 }
+
+type mutableChainPacketConn struct {
+	C.PacketConn
+	chain C.Chain
+}
+
+func (c *mutableChainPacketConn) Chains() C.Chain           { return c.chain }
+func (c *mutableChainPacketConn) ProviderChains() C.Chain   { return nil }
+func (c *mutableChainPacketConn) RemoteDestination() string { return "" }
+
+func TestUDPTrackerChainsStayAppendIsolated(t *testing.T) {
+	conn := &mutableChainPacketConn{chain: C.Chain{"DIRECT"}}
+	tracker := NewUDPTracker(
+		conn,
+		newStripedManager(),
+		&C.Metadata{NetWork: C.UDP, DstPort: 53},
+		nil,
+		0,
+		0,
+		false,
+	)
+
+	conn.chain = append(conn.chain, "mutated")
+	assert.Equal(t, C.Chain{"DIRECT"}, tracker.TrackerInfo.Chain)
+	assert.Equal(t, len(tracker.TrackerInfo.Chain), cap(tracker.TrackerInfo.Chain))
+}

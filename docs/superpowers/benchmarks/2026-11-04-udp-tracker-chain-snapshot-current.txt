@@ -1,0 +1,16 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/tunnel/statistic
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkNewUDPTrackerIsolated 	 4463616	       266.8 ns/op	     752 B/op	       3 allocs/op
+BenchmarkNewUDPTrackerIsolated 	 4602784	       269.0 ns/op	     752 B/op	       3 allocs/op
+BenchmarkNewUDPTrackerIsolated 	 4490482	       295.3 ns/op	     752 B/op	       3 allocs/op
+BenchmarkNewUDPTrackerIsolated 	 4402722	       313.2 ns/op	     752 B/op	       3 allocs/op
+BenchmarkNewUDPTrackerIsolated 	 4061665	       295.2 ns/op	     752 B/op	       3 allocs/op
+BenchmarkNewUDPTrackerIsolated 	 4011150	       274.1 ns/op	     752 B/op	       3 allocs/op
+BenchmarkNewUDPTrackerIsolated 	 3921541	       292.2 ns/op	     752 B/op	       3 allocs/op
+BenchmarkNewUDPTrackerIsolated 	 3920283	       300.2 ns/op	     752 B/op	       3 allocs/op
+BenchmarkNewUDPTrackerIsolated 	 3499702	       332.2 ns/op	     752 B/op	       3 allocs/op
+BenchmarkNewUDPTrackerIsolated 	 4419363	       280.9 ns/op	     752 B/op	       3 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/tunnel/statistic	15.794s

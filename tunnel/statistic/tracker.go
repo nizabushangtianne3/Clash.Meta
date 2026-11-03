@@ -166,7 +166,7 @@ func (tt *tcpTracker) Upstream() any {
 }
 
 func NewTCPTracker(conn C.Conn, manager *Manager, metadata *C.Metadata, rule C.Rule, uploadTotal int64, downloadTotal int64, pushToManager bool) *tcpTracker {
-	chains, providerChains := cloneChains(conn.Chains(), conn.ProviderChains())
+	chains, providerChains := snapshotChains(conn.Chains(), conn.ProviderChains())
 	tt := &tcpTracker{
 		Conn:    conn,
 		manager: manager,
@@ -271,7 +271,7 @@ func (ut *udpTracker) Upstream() any {
 }
 
 func NewUDPTracker(conn C.PacketConn, manager *Manager, metadata *C.Metadata, rule C.Rule, uploadTotal int64, downloadTotal int64, pushToManager bool) *udpTracker {
-	chains, providerChains := cloneChains(conn.Chains(), conn.ProviderChains())
+	chains, providerChains := snapshotChains(conn.Chains(), conn.ProviderChains())
 	ut := &udpTracker{
 		PacketConn: conn,
 		manager:    manager,
@@ -310,15 +310,23 @@ func NewUDPTracker(conn C.PacketConn, manager *Manager, metadata *C.Metadata, ru
 	return ut
 }
 
-func cloneChains(chain, providerChain C.Chain) (C.Chain, C.Chain) {
-	total := len(chain) + len(providerChain)
-	if total == 0 {
+// snapshotChains pins one-part chains to their current length so a later source
+// append cannot grow the tracker slice in place; this avoids copying the common
+// single-chain flow while preserving the tracker snapshot.
+func snapshotChains(chain, providerChain C.Chain) (C.Chain, C.Chain) {
+	if len(chain)+len(providerChain) == 0 {
 		return nil, nil
 	}
+	if len(providerChain) == 0 {
+		return chain[:len(chain):len(chain)], nil
+	}
+	if len(chain) == 0 {
+		return nil, providerChain[:len(providerChain):len(providerChain)]
+	}
 
+	total := len(chain) + len(providerChain)
 	combined := make(C.Chain, 0, total)
 	combined = append(combined, chain...)
 	combined = append(combined, providerChain...)
-
 	return combined[:len(chain):len(chain)], combined[len(chain):total:total]
 }
