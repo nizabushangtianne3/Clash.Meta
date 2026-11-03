@@ -29,6 +29,8 @@ type udpReplySlab struct {
 	msg        D.Msg
 	question   [1]D.Question
 	answer     [1]D.RR
+	optRecord  D.OPT
+	optRR      [1]D.RR
 	aRecord    D.A
 	aaaaRecord D.AAAA
 	aData      [4]byte
@@ -36,14 +38,15 @@ type udpReplySlab struct {
 }
 
 // unpackSimpleUDPReply decodes the common UDP shape: one question and one
-// direct A/AAAA answer with no authority, additional or TSIG records. Anything
-// else returns false for the complete miekg parser.
+// direct A/AAAA answer with no authority records. An additional record is
+// accepted only when it is an empty EDNS OPT; anything else, including TSIG,
+// returns false for the complete miekg parser.
 func unpackSimpleUDPReply(wire []byte, query D.Question) (*D.Msg, bool) {
 	if len(wire) < 12 ||
 		wire[4] != 0 || wire[5] != 1 || // one question
 		wire[6] != 0 || wire[7] != 1 || // one answer
 		wire[8] != 0 || wire[9] != 0 || // no authority
-		wire[10] != 0 || wire[11] != 0 { // no additional/TSIG
+		wire[10] != 0 || wire[11] > 1 { // at most one additional/TSIG
 		return nil, false
 	}
 
@@ -109,11 +112,20 @@ func unpackSimpleUDPReply(wire []byte, query D.Question) (*D.Msg, bool) {
 	default:
 		return nil, false
 	}
-	if end != len(wire) {
+	slab.msg.Answer = slab.answer[:1:1]
+	if wire[11] == 0 {
+		if end != len(wire) {
+			return nil, false
+		}
+		return &slab.msg, true
+	}
+	opt, ok := unpackUDPOPT(wire, end)
+	if !ok {
 		return nil, false
 	}
-
-	slab.msg.Answer = slab.answer[:1:1]
+	slab.optRecord = opt
+	slab.optRR[0] = &slab.optRecord
+	slab.msg.Extra = slab.optRR[:1:1]
 	return &slab.msg, true
 }
 
@@ -206,4 +218,22 @@ func unpackUDPReplyName(wire []byte, off int, owner string, query D.Question) (s
 		return "", 0, false
 	}
 	return name, next, true
+}
+
+// unpackUDPOPT accepts only the common empty EDNS response record. Options have
+// variable ownership and allocation shapes, so they stay on the full parser.
+func unpackUDPOPT(wire []byte, off int) (D.OPT, bool) {
+	if off+11 > len(wire) ||
+		wire[off] != 0 ||
+		binary.BigEndian.Uint16(wire[off+1:]) != D.TypeOPT ||
+		binary.BigEndian.Uint16(wire[off+9:]) != 0 ||
+		off+11 != len(wire) {
+		return D.OPT{}, false
+	}
+	return D.OPT{Hdr: D.RR_Header{
+		Name:   ".",
+		Rrtype: D.TypeOPT,
+		Class:  binary.BigEndian.Uint16(wire[off+3:]),
+		Ttl:    binary.BigEndian.Uint32(wire[off+5:]),
+	}}, true
 }

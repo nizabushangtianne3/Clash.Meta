@@ -72,10 +72,25 @@ func TestUnpackSimpleUDPReplyFallbacksToGeneric(t *testing.T) {
 
 	reply := D.Msg{}
 	reply.SetReply(query)
+	reply.Answer = append(reply.Answer, &D.A{
+		Hdr: D.RR_Header{Name: query.Question[0].Name, Rrtype: D.TypeA, Class: D.ClassINET, Ttl: 60},
+		A:   net.IPv4(192, 0, 2, 10),
+	})
 	reply.Extra = append(reply.Extra, &D.OPT{Hdr: D.RR_Header{Name: ".", Rrtype: D.TypeOPT}})
 	wire, err := reply.Pack()
 	require.NoError(t, err)
-	_, ok := unpackSimpleUDPReply(wire, query.Question[0])
+	generic := genericUnpack(t, wire)
+	fast, ok := unpackSimpleUDPReply(wire, query.Question[0])
+	require.True(t, ok)
+	require.Equal(t, generic, fast)
+
+	options := D.OPT{Hdr: D.RR_Header{Name: ".", Rrtype: D.TypeOPT}}
+	options.Option = append(options.Option, &D.EDNS0_LOCAL{Code: 0xffd0, Data: []byte{1}})
+	reply.Answer = []D.RR{reply.Answer[0]}
+	reply.Extra = []D.RR{&options}
+	wire, err = reply.Pack()
+	require.NoError(t, err)
+	_, ok = unpackSimpleUDPReply(wire, query.Question[0])
 	require.False(t, ok)
 
 	cname := D.Msg{}
@@ -153,6 +168,29 @@ func BenchmarkUnpackSimpleUDPReplyOneAAAAUncompressed(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		if _, ok := unpackSimpleUDPReply(wire, query.Question[0]); !ok {
 			b.Fatal("simple reply was rejected")
+		}
+	}
+}
+
+func BenchmarkUnpackSimpleUDPReplyOneAEDNS(b *testing.B) {
+	query := &D.Msg{}
+	query.SetQuestion("edns.example.com.", D.TypeA)
+	reply := D.Msg{Compress: true}
+	reply.SetReply(query)
+	reply.RecursionAvailable = true
+	reply.Answer = append(reply.Answer, &D.A{
+		Hdr: D.RR_Header{Name: query.Question[0].Name, Rrtype: D.TypeA, Class: D.ClassINET, Ttl: 60},
+		A:   net.IPv4(192, 0, 2, 10),
+	})
+	reply.Extra = append(reply.Extra, &D.OPT{Hdr: D.RR_Header{Name: ".", Rrtype: D.TypeOPT}})
+	wire, err := reply.Pack()
+	require.NoError(b, err)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, ok := unpackSimpleUDPReply(wire, query.Question[0]); !ok {
+			b.Fatal("EDNS reply was rejected")
 		}
 	}
 }
