@@ -154,7 +154,8 @@ func writeUDPMessage(m *D.Msg, conn net.Conn) error {
 	wire := pool.Get(D.MinMsgSize)
 	defer func() { _ = pool.Put(wire) }()
 
-	packed, err := m.PackBuffer(wire[:0])
+	// PackBuffer checks len, not cap; wire[:0] would make it allocate a new buffer every call.
+	packed, err := m.PackBuffer(wire)
 	if err != nil {
 		return err
 	}
