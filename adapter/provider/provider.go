@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -298,6 +299,41 @@ func (cp *compatibleProvider) MarshalJSON() ([]byte, error) {
 	return cp.AppendJSON(nil), nil
 }
 
+// providerJSONLen reports a conservative capacity for the provider document.
+// Proxy names are the dominant variable data; other fields are short and the
+// final Grow still handles an unusual escape without changing the bytes.
+func providerJSONLen(
+	name string,
+	providerType string,
+	vehicleType string,
+	proxies []C.Proxy,
+	testURL string,
+	expectedStatus string,
+	updatedAt time.Time,
+	subscriptionInfo *SubscriptionInfo,
+) int {
+	length := len(`{"name":`) + jsonutil.StringLen(name) +
+		len(`,"type":`) + jsonutil.StringLen(providerType) +
+		len(`,"vehicleType":`) + jsonutil.StringLen(vehicleType) +
+		len(`,"proxies":[`)
+	for _, proxy := range proxies {
+		length += 1 + jsonutil.StringLen(proxy.Name())
+	}
+	length += len(`],"testUrl":`) + jsonutil.StringLen(testURL) +
+		len(`,"expectedStatus":`) + jsonutil.StringLen(expectedStatus)
+
+	if !updatedAt.IsZero() {
+		length += len(`,"updatedAt":`) + 2 + len(time.RFC3339Nano)
+	}
+	if subscriptionInfo != nil {
+		length += len(`,"subscriptionInfo":{"Upload":`) + 20 +
+			len(`,"Download":`) + 20 +
+			len(`,"Total":`) + 20 +
+			len(`,"Expire":`) + 20 + 2
+	}
+	return length + 2 + 1 // closing braces and protocol newline
+}
+
 func appendProviderJSON(
 	dst []byte,
 	name string,
@@ -309,6 +345,7 @@ func appendProviderJSON(
 	updatedAt time.Time,
 	subscriptionInfo *SubscriptionInfo,
 ) []byte {
+	dst = slices.Grow(dst, providerJSONLen(name, providerType, vehicleType, proxies, testURL, expectedStatus, updatedAt, subscriptionInfo))
 	dst = append(dst, `{"name":`...)
 	dst = jsonutil.AppendString(dst, name)
 	dst = append(dst, `,"type":`...)
