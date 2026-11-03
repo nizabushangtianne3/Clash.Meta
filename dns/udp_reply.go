@@ -26,19 +26,65 @@ const (
 // the full parser rather than reserving an unbounded response-shaped slab.
 const maxUDPFastAnswers = 8
 
-// udpReplySlab keeps the returned message and its fixed-shape records together.
-// The returned *D.Msg points into this slab, so the slab lives exactly as long
-// as the caller-owned reply.
-type udpReplySlab struct {
-	msg        D.Msg
-	question   [1]D.Question
-	answer     [1]D.RR
-	optRecord  D.OPT
-	optRR      [1]D.RR
-	aRecord    D.A
-	aaaaRecord D.AAAA
-	aData      [4]byte
-	aaaaData   [16]byte
+// udpReplyBase owns fields shared by every fast-path response. The returned
+// *D.Msg points into its containing slab, so the slab lives exactly as long as
+// the caller-owned reply.
+type udpReplyBase struct {
+	msg       D.Msg
+	question  [1]D.Question
+	optRecord D.OPT
+	optRR     [1]D.RR
+}
+
+func newUDPReplyBase(id, bits uint16) udpReplyBase {
+	return udpReplyBase{msg: D.Msg{MsgHdr: D.MsgHdr{
+		Id:                 id,
+		Response:           bits&dnsFlagResponse != 0,
+		Opcode:             int(bits & dnsFlagOpcode >> 11),
+		Authoritative:      bits&dnsFlagAA != 0,
+		Truncated:          bits&dnsFlagTC != 0,
+		RecursionDesired:   bits&dnsFlagRD != 0,
+		RecursionAvailable: bits&dnsFlagRA != 0,
+		Zero:               bits&dnsFlagZero != 0,
+		AuthenticatedData:  bits&dnsFlagAD != 0,
+		CheckingDisabled:   bits&dnsFlagCD != 0,
+		Rcode:              int(bits & dnsFlagRcode),
+	}}}
+}
+
+func (b *udpReplyBase) setQuestion(question D.Question) {
+	b.question[0] = question
+	b.msg.Question = b.question[:1:1]
+}
+
+func (b *udpReplyBase) setEmptyEDNS(wire []byte, end int) bool {
+	if wire[11] == 0 {
+		return end == len(wire)
+	}
+	opt, ok := unpackUDPOPT(wire, end)
+	if !ok {
+		return false
+	}
+	b.optRecord = opt
+	b.optRR[0] = &b.optRecord
+	b.msg.Extra = b.optRR[:1:1]
+	return true
+}
+
+// directAUDPReplySlab owns only the fields required by an A response.
+type directAUDPReplySlab struct {
+	udpReplyBase
+	record D.A
+	data   [4]byte
+	answer [1]D.RR
+}
+
+// directAAAAUDPReplySlab owns only the fields required by an AAAA response.
+type directAAAAUDPReplySlab struct {
+	udpReplyBase
+	record D.AAAA
+	data   [16]byte
+	answer [1]D.RR
 }
 
 // unpackSimpleUDPReply decodes the common UDP shapes: direct A/AAAA addresses
@@ -56,91 +102,95 @@ func unpackSimpleUDPReply(wire []byte, query D.Question) (*D.Msg, bool) {
 	}
 
 	bits := binary.BigEndian.Uint16(wire[2:])
-	slab := &udpReplySlab{}
-	slab.msg.MsgHdr = D.MsgHdr{
-		Id:                 binary.BigEndian.Uint16(wire),
-		Response:           bits&dnsFlagResponse != 0,
-		Opcode:             int(bits & dnsFlagOpcode >> 11),
-		Authoritative:      bits&dnsFlagAA != 0,
-		Truncated:          bits&dnsFlagTC != 0,
-		RecursionDesired:   bits&dnsFlagRD != 0,
-		RecursionAvailable: bits&dnsFlagRA != 0,
-		Zero:               bits&dnsFlagZero != 0,
-		AuthenticatedData:  bits&dnsFlagAD != 0,
-		CheckingDisabled:   bits&dnsFlagCD != 0,
-		Rcode:              int(bits & dnsFlagRcode),
-	}
-
 	question, off, ok := matchUDPReplyQuestion(wire, query)
 	if !ok {
 		return nil, false
 	}
-	slab.question[0] = question
-	slab.msg.Question = slab.question[:1:1]
 
 	if wire[7] == 2 {
+		slab := &cnameUDPReplySlab{udpReplyBase: newUDPReplyBase(binary.BigEndian.Uint16(wire), bits)}
+		slab.setQuestion(question)
 		return unpackCNAMEUDPReply(slab, wire, off, query)
 	}
 	if wire[7] > 2 {
-		return unpackMultiUDPReply(slab, wire, off, query)
+		base := newUDPReplyBase(binary.BigEndian.Uint16(wire), bits)
+		base.setQuestion(question)
+		return unpackMultiUDPReply(&base, wire, off, query)
 	}
+	return unpackDirectUDPReply(wire, off, query, bits)
+}
 
-	answerName, off, ok := unpackUDPReplyName(wire, off, question.Name, query, "", 0)
-	if !ok || off+10 > len(wire) {
+func unpackDirectUDPReply(wire []byte, off int, query D.Question, bits uint16) (*D.Msg, bool) {
+	nameEnd, ok := skipUDPReplyName(wire, off)
+	if !ok || nameEnd+10 > len(wire) {
 		return nil, false
 	}
-	rrtype := binary.BigEndian.Uint16(wire[off:])
-	rrclass := binary.BigEndian.Uint16(wire[off+2:])
-	ttl := binary.BigEndian.Uint32(wire[off+4:])
-	rdlength := int(binary.BigEndian.Uint16(wire[off+8:]))
-	off += 10
-	end := off + rdlength
-	if rrtype != D.TypeA && rrtype != D.TypeAAAA || end > len(wire) {
+	rrtype := binary.BigEndian.Uint16(wire[nameEnd:])
+	rrclass := binary.BigEndian.Uint16(wire[nameEnd+2:])
+	ttl := binary.BigEndian.Uint32(wire[nameEnd+4:])
+	rdlength := int(binary.BigEndian.Uint16(wire[nameEnd+8:]))
+	dataOff := nameEnd + 10
+	end := dataOff + rdlength
+	if (rrtype != D.TypeA && rrtype != D.TypeAAAA) || rrclass != D.ClassINET || end > len(wire) {
 		return nil, false
 	}
 
+	answerName, off, ok := unpackUDPReplyName(wire, off, query.Name, query, "", 0)
+	if !ok {
+		return nil, false
+	}
 	header := D.RR_Header{
-		Name:     answerName,
-		Rrtype:   rrtype,
-		Class:    rrclass,
-		Ttl:      ttl,
-		Rdlength: uint16(rdlength),
+		Name: answerName, Rrtype: rrtype, Class: rrclass, Ttl: ttl, Rdlength: uint16(rdlength),
 	}
+
 	switch rrtype {
 	case D.TypeA:
-		if rdlength != len(slab.aData) {
+		if rdlength != 4 {
 			return nil, false
 		}
-		copy(slab.aData[:], wire[off:end])
-		slab.aRecord = D.A{Hdr: header, A: slab.aData[:]}
-		slab.answer[0] = &slab.aRecord
+		slab := &directAUDPReplySlab{udpReplyBase: newUDPReplyBase(binary.BigEndian.Uint16(wire), bits)}
+		slab.setQuestion(query)
+		copy(slab.data[:], wire[dataOff:end])
+		slab.record = D.A{Hdr: header, A: slab.data[:]}
+		slab.answer[0] = &slab.record
+		slab.msg.Answer = slab.answer[:1:1]
+		if !slab.setEmptyEDNS(wire, end) {
+			return nil, false
+		}
+		return &slab.msg, true
 	case D.TypeAAAA:
-		if rdlength != len(slab.aaaaData) {
+		if rdlength != 16 {
 			return nil, false
 		}
-		copy(slab.aaaaData[:], wire[off:end])
-		slab.aaaaRecord = D.AAAA{Hdr: header, AAAA: slab.aaaaData[:]}
-		slab.answer[0] = &slab.aaaaRecord
+		slab := &directAAAAUDPReplySlab{udpReplyBase: newUDPReplyBase(binary.BigEndian.Uint16(wire), bits)}
+		slab.setQuestion(query)
+		copy(slab.data[:], wire[dataOff:end])
+		slab.record = D.AAAA{Hdr: header, AAAA: slab.data[:]}
+		slab.answer[0] = &slab.record
+		slab.msg.Answer = slab.answer[:1:1]
+		if !slab.setEmptyEDNS(wire, end) {
+			return nil, false
+		}
+		return &slab.msg, true
 	default:
 		return nil, false
 	}
-	slab.msg.Answer = slab.answer[:1:1]
-	if !slab.setEmptyEDNS(wire, end) {
-		return nil, false
-	}
-	return &slab.msg, true
 }
 
 // cnameUDPReplySlab owns the two answer slots and the decoded CNAME record. The
 // target string is the one unavoidable variable-length allocation; a fixed
 // 255-byte buffer would enlarge every direct answer instead.
 type cnameUDPReplySlab struct {
-	record  D.CNAME
-	answers [2]D.RR
+	udpReplyBase
+	record     D.CNAME
+	answers    [2]D.RR
+	aRecord    D.A
+	aaaaRecord D.AAAA
+	aData      [4]byte
+	aaaaData   [16]byte
 }
 
-func unpackCNAMEUDPReply(slab *udpReplySlab, wire []byte, off int, query D.Question) (*D.Msg, bool) {
-	cnameSlab := &cnameUDPReplySlab{}
+func unpackCNAMEUDPReply(slab *cnameUDPReplySlab, wire []byte, off int, query D.Question) (*D.Msg, bool) {
 	firstName, off, ok := unpackUDPReplyName(wire, off, query.Name, query, "", 0)
 	if !ok || off+10 > len(wire) {
 		return nil, false
@@ -158,13 +208,13 @@ func unpackCNAMEUDPReply(slab *udpReplySlab, wire []byte, off int, query D.Quest
 	if err != nil || next != end || target == "" {
 		return nil, false
 	}
-	cnameSlab.record = D.CNAME{
+	slab.record = D.CNAME{
 		Hdr: D.RR_Header{
 			Name: firstName, Rrtype: D.TypeCNAME, Class: class, Ttl: ttl, Rdlength: uint16(rdlength),
 		},
 		Target: target,
 	}
-	cnameSlab.answers[0] = &cnameSlab.record
+	slab.answers[0] = &slab.record
 
 	secondName, off, ok := unpackUDPReplyName(wire, end, query.Name, query, target, off)
 	if !ok || off+10 > len(wire) {
@@ -190,18 +240,18 @@ func unpackCNAMEUDPReply(slab *udpReplySlab, wire []byte, off int, query D.Quest
 		}
 		copy(slab.aData[:], wire[off:end])
 		slab.aRecord = D.A{Hdr: header, A: slab.aData[:]}
-		cnameSlab.answers[1] = &slab.aRecord
+		slab.answers[1] = &slab.aRecord
 	case D.TypeAAAA:
 		if rdlength != len(slab.aaaaData) {
 			return nil, false
 		}
 		copy(slab.aaaaData[:], wire[off:end])
 		slab.aaaaRecord = D.AAAA{Hdr: header, AAAA: slab.aaaaData[:]}
-		cnameSlab.answers[1] = &slab.aaaaRecord
+		slab.answers[1] = &slab.aaaaRecord
 	default:
 		return nil, false
 	}
-	slab.msg.Answer = cnameSlab.answers[:2:2]
+	slab.msg.Answer = slab.answers[:2:2]
 	if !slab.setEmptyEDNS(wire, end) {
 		return nil, false
 	}
@@ -219,7 +269,7 @@ type multiUDPReplySlab struct {
 	data       []byte
 }
 
-func unpackMultiUDPReply(slab *udpReplySlab, wire []byte, off int, query D.Question) (*D.Msg, bool) {
+func unpackMultiUDPReply(slab *udpReplyBase, wire []byte, off int, query D.Question) (*D.Msg, bool) {
 	count := int(wire[7])
 	if query.Qtype != D.TypeA && query.Qtype != D.TypeAAAA {
 		return nil, false
@@ -323,20 +373,6 @@ func unpackMultiUDPReply(slab *udpReplySlab, wire []byte, off int, query D.Quest
 		return nil, false
 	}
 	return &slab.msg, true
-}
-
-func (slab *udpReplySlab) setEmptyEDNS(wire []byte, end int) bool {
-	if wire[11] == 0 {
-		return end == len(wire)
-	}
-	opt, ok := unpackUDPOPT(wire, end)
-	if !ok {
-		return false
-	}
-	slab.optRecord = opt
-	slab.optRR[0] = &slab.optRecord
-	slab.msg.Extra = slab.optRR[:1:1]
-	return true
 }
 
 // matchUDPReplyQuestion avoids allocating a domain string for the common reply:
