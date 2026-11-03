@@ -1,0 +1,40 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/common/jsonutil
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkStringLenSafeASCII32-16     	 1000000	        53.65 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStringLenSafeASCII32-16     	 1000000	        57.78 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStringLenSafeASCII32-16     	 1000000	        52.40 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStringLenSafeASCII32-16     	 1000000	        51.85 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStringLenSafeASCII32-16     	 1000000	        54.32 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStringLenSafeASCII32-16     	 1000000	        58.27 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStringLenSafeASCII32-16     	 1000000	        55.56 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStringLenSafeASCII32-16     	 1000000	        54.93 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStringLenSafeASCII32-16     	 1000000	        52.32 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStringLenSafeASCII32-16     	 1000000	        51.94 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStringLenSafeASCII256-16    	 1000000	       384.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStringLenSafeASCII256-16    	 1000000	       387.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStringLenSafeASCII256-16    	 1000000	       381.3 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStringLenSafeASCII256-16    	 1000000	       378.3 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStringLenSafeASCII256-16    	 1000000	       396.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStringLenSafeASCII256-16    	 1000000	       370.4 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStringLenSafeASCII256-16    	 1000000	       373.7 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStringLenSafeASCII256-16    	 1000000	       373.1 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStringLenSafeASCII256-16    	 1000000	       491.1 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStringLenSafeASCII256-16    	 1000000	       417.5 ns/op	       0 B/op	       0 allocs/op
+--- FAIL: BenchmarkStringLenEscaped32
+    length_bench_test.go:32: unexpected escaped string size
+BenchmarkStringLenUnicode32-16       	 1000000	       125.7 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStringLenUnicode32-16       	 1000000	       137.7 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStringLenUnicode32-16       	 1000000	       128.1 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStringLenUnicode32-16       	 1000000	       124.7 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStringLenUnicode32-16       	 1000000	       130.6 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStringLenUnicode32-16       	 1000000	       142.0 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStringLenUnicode32-16       	 1000000	       125.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStringLenUnicode32-16       	 1000000	       127.1 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStringLenUnicode32-16       	 1000000	       126.0 ns/op	       0 B/op	       0 allocs/op
+BenchmarkStringLenUnicode32-16       	 1000000	       126.5 ns/op	       0 B/op	       0 allocs/op
+FAIL
+exit status 1
+FAIL	github.com/metacubex/mihomo/common/jsonutil	6.421s
+FAIL
