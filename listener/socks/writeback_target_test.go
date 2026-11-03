@@ -44,6 +44,21 @@ func (c *writeBackRecordingConn) SetWriteDeadline(time.Time) error {
 // reply can be written back to that client, and the sender drops that packet
 // as soon as it processed it. Recycling the wrapper must not move the flow's
 // write-back target onto whichever datagram claims the wrapper next.
+func TestSocksPacketIsNativePacketAdapter(t *testing.T) {
+	source := netip.MustParseAddrPort("192.168.1.2:54321")
+	metadata := &C.Metadata{SrcIP: source.Addr(), SrcPort: source.Port()}
+	packet := newSocksPacket(&writeBackRecordingConn{}, net.UDPAddrFromAddrPort(source), source, []byte("ping"), []byte("ping"), metadata)
+
+	adapter, ok := any(packet).(C.PacketAdapter)
+	require.True(t, ok)
+	require.Same(t, metadata, adapter.Metadata())
+	require.Equal(t, source, adapter.FlowKey())
+	require.EqualValues(t, 0, testing.AllocsPerRun(100, func() {
+		adapter := any(packet).(C.PacketAdapter)
+		adapter.Drop()
+	}))
+}
+
 func TestFlowWriteBackKeepsItsClientAfterThePacketIsDropped(t *testing.T) {
 	clientA := &writeBackRecordingConn{}
 	clientB := &writeBackRecordingConn{}
@@ -52,7 +67,7 @@ func TestFlowWriteBackKeepsItsClientAfterThePacketIsDropped(t *testing.T) {
 	replyTarget := netip.MustParseAddrPort("1.2.3.4:53")
 
 	for round := 0; round < 100; round++ {
-		packet := newSocksPacket(clientA, addrA, []byte("request"), []byte("request"))
+		packet := newSocksPacket(clientA, addrA, netip.MustParseAddrPort("192.168.1.2:1111"), []byte("request"), []byte("request"), nil)
 		adapter := C.NewPacketAdapter(packet, &C.Metadata{})
 		proxy := nat.NewWriteBackProxy(adapter)
 		// packetSender.processPacket stores the adapter in the flow's write-back
@@ -60,7 +75,7 @@ func TestFlowWriteBackKeepsItsClientAfterThePacketIsDropped(t *testing.T) {
 		adapter.Drop()
 
 		// the next datagram on this listener gets its own wrapper
-		_ = newSocksPacket(clientB, addrB, []byte("other"), []byte("other"))
+		_ = newSocksPacket(clientB, addrB, netip.MustParseAddrPort("192.168.1.3:2222"), []byte("other"), []byte("other"), nil)
 
 		_, err := proxy.WriteBack([]byte("reply"), replyTarget)
 		require.NoError(t, err)
@@ -69,4 +84,27 @@ func TestFlowWriteBackKeepsItsClientAfterThePacketIsDropped(t *testing.T) {
 				round, clientA.writes, clientB.writes)
 		}
 	}
+}
+
+func BenchmarkSocksPacketAdapter(b *testing.B) {
+	source := netip.MustParseAddrPort("192.168.1.2:54321")
+	metadata := &C.Metadata{SrcIP: source.Addr(), SrcPort: source.Port()}
+	packet := newSocksPacket(&writeBackRecordingConn{}, net.UDPAddrFromAddrPort(source), source, []byte("ping"), []byte("ping"), metadata)
+
+	b.Run("wrapped", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			C.NewPacketAdapter(packet, metadata).Drop()
+		}
+	})
+	b.Run("native", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			adapter, ok := any(packet).(C.PacketAdapter)
+			if !ok {
+				b.Fatal("socks packet is not a native adapter")
+			}
+			adapter.Drop()
+		}
+	})
 }
