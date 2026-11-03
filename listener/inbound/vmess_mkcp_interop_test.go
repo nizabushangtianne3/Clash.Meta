@@ -18,7 +18,10 @@ func TestInboundVMess_MKCP_V2RayInterop(t *testing.T) {
 	v2rayBin := vmessInteropV2RayBinary(t)
 	mkcpInteropTestCase(t, v2rayBin, "default", "", "")
 	mkcpInteropTestCase(t, v2rayBin, "seed", "mihomo-mkcp-interop", "")
-	mkcpInteropTestCase(t, v2rayBin, "header srtp", "", "srtp")
+	for _, header := range []string{"srtp", "utp", "wechat-video", "dtls", "wireguard"} {
+		mkcpInteropTestCase(t, v2rayBin, "header "+header, "", header)
+		mkcpInteropTestCase(t, v2rayBin, "seed "+header, "mihomo-mkcp-interop", header)
+	}
 }
 
 func mkcpInteropTestCase(t *testing.T, v2rayBin, name, seed, header string) {
