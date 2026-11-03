@@ -37,7 +37,7 @@ func TestConvertsV2Ray_normal(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, expected, proxies)
 
-	_, err = adapter.ParseProxy(proxies[0])
+	_, err = adapter.ParseProxy(proxies[0], nil)
 	assert.NoError(t, err)
 }
 
@@ -49,7 +49,7 @@ func TestConvertsV2Ray_hysteria2PortHopping(t *testing.T) {
 	assert.Equal(t, "443", proxies[0]["port"])
 	assert.Equal(t, "443,5000-6000", proxies[0]["ports"])
 
-	_, err = adapter.ParseProxy(proxies[0])
+	_, err = adapter.ParseProxy(proxies[0], nil)
 	assert.NoError(t, err)
 }
 
@@ -68,7 +68,7 @@ func TestConvertsV2Ray_hysteria2RealmScheme(t *testing.T) {
 		"stun-servers": []string{"stun1:3478", "stun2:3478"},
 	}, p["realm-opts"])
 
-	_, err = adapter.ParseProxy(p)
+	_, err = adapter.ParseProxy(p, nil)
 	assert.NoError(t, err)
 }
 
@@ -135,7 +135,7 @@ func TestConvertsV2RayMieru(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, expected, proxies)
 
-	_, err = adapter.ParseProxy(proxies[0])
+	_, err = adapter.ParseProxy(proxies[0], nil)
 	assert.NoError(t, err)
 }
 
@@ -160,7 +160,7 @@ func TestConvertsV2RayMieruMinimal(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, expected, proxies)
 
-	_, err = adapter.ParseProxy(proxies[0])
+	_, err = adapter.ParseProxy(proxies[0], nil)
 	assert.NoError(t, err)
 }
 
@@ -173,7 +173,7 @@ func TestConvertsV2RayMieruFragment(t *testing.T) {
 	assert.Len(t, proxies, 1)
 	assert.Equal(t, "myproxy:443/TCP", proxies[0]["name"])
 
-	_, err = adapter.ParseProxy(proxies[0])
+	_, err = adapter.ParseProxy(proxies[0], nil)
 	assert.NoError(t, err)
 }
 
@@ -191,7 +191,7 @@ func TestConvertsV2RayVlessRealityVisionTCPWithoutHeaderType(t *testing.T) {
 	assert.NotContains(t, proxies[0], "http-opts")
 	assert.NotContains(t, proxies[0], "h2-opts")
 
-	_, err = adapter.ParseProxy(proxies[0])
+	_, err = adapter.ParseProxy(proxies[0], nil)
 	assert.NoError(t, err)
 }
 
@@ -232,7 +232,7 @@ func TestConvertsV2RayRealityMLKEM768(t *testing.T) {
 						}
 						assert.Equal(t, expected, proxies[0]["reality-opts"])
 					}
-					_, err = adapter.ParseProxy(proxies[0])
+					_, err = adapter.ParseProxy(proxies[0], nil)
 					assert.NoError(t, err)
 				}
 			})
@@ -257,7 +257,7 @@ func TestConvertsV2RayVlessTCPHTTPHeaderType(t *testing.T) {
 	}, proxies[0]["http-opts"])
 	assert.NotContains(t, proxies[0], "h2-opts")
 
-	_, err = adapter.ParseProxy(proxies[0])
+	_, err = adapter.ParseProxy(proxies[0], nil)
 	assert.NoError(t, err)
 }
 
@@ -275,7 +275,7 @@ func TestConvertsV2RayVlessHTTPTransportUsesH2Opts(t *testing.T) {
 	}, proxies[0]["h2-opts"])
 	assert.NotContains(t, proxies[0], "http-opts")
 
-	_, err = adapter.ParseProxy(proxies[0])
+	_, err = adapter.ParseProxy(proxies[0], nil)
 	assert.NoError(t, err)
 }
 
@@ -300,7 +300,7 @@ func TestConvertsV2RayVmessBase64H2Transport(t *testing.T) {
 	}, proxies[0]["h2-opts"])
 	assert.NotContains(t, proxies[0], "http-opts")
 
-	_, err = adapter.ParseProxy(proxies[0])
+	_, err = adapter.ParseProxy(proxies[0], nil)
 	assert.NoError(t, err)
 }
 
@@ -326,7 +326,7 @@ func TestConvertsV2RayVmessBase64HTTPRemappedToH2Transport(t *testing.T) {
 	}, proxies[0]["h2-opts"])
 	assert.NotContains(t, proxies[0], "http-opts")
 
-	_, err = adapter.ParseProxy(proxies[0])
+	_, err = adapter.ParseProxy(proxies[0], nil)
 	assert.NoError(t, err)
 }
 

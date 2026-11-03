@@ -17,17 +17,19 @@ var proxyDecoder = structure.NewDecoder(structure.Option{
 	KeyReplacer:      structure.DefaultKeyReplacer,
 })
 
-func ParseProxy(mapping map[string]any, options ...ProxyOption) (C.Proxy, error) {
+func ParseProxy(mapping map[string]any, options *ProxyOptions) (C.Proxy, error) {
 	proxyType, existType := mapping["type"].(string)
 	if !existType {
 		return nil, fmt.Errorf("missing type")
 	}
 
-	opt := applyProxyOptions(options...)
-	basicOption := outbound.BasicOption{
-		DialerForAPI: opt.DialerForAPI,
-		TunnelForAPI: opt.TunnelForAPI,
-		ProviderName: opt.ProviderName,
+	var basicOption outbound.BasicOption
+	if options != nil {
+		basicOption = outbound.BasicOption{
+			DialerForAPI: options.DialerForAPI,
+			TunnelForAPI: options.TunnelForAPI,
+			ProviderName: options.ProviderName,
+		}
 	}
 
 	var (
@@ -257,36 +259,8 @@ func ParseProxy(mapping map[string]any, options ...ProxyOption) (C.Proxy, error)
 	return NewProxy(proxy), nil
 }
 
-type proxyOption struct {
+type ProxyOptions struct {
 	DialerForAPI C.Dialer
 	TunnelForAPI C.Tunnel
 	ProviderName string
-}
-
-func applyProxyOptions(options ...ProxyOption) proxyOption {
-	opt := proxyOption{}
-	for _, o := range options {
-		o(&opt)
-	}
-	return opt
-}
-
-type ProxyOption func(opt *proxyOption)
-
-func WithDialerForAPI(dialer C.Dialer) ProxyOption {
-	return func(opt *proxyOption) {
-		opt.DialerForAPI = dialer
-	}
-}
-
-func WithTunnelForAPI(tunnel C.Tunnel) ProxyOption {
-	return func(opt *proxyOption) {
-		opt.TunnelForAPI = tunnel
-	}
-}
-
-func WithProviderName(name string) ProxyOption {
-	return func(opt *proxyOption) {
-		opt.ProviderName = name
-	}
 }

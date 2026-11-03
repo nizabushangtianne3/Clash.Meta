@@ -28,7 +28,7 @@ func TestParseProxySharesDecoderAcrossGoroutines(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for range parses {
-				proxy, err := ParseProxy(mapping)
+				proxy, err := ParseProxy(mapping, nil)
 				if err == nil {
 					if name := proxy.Name(); name != "node" {
 						err = assert.AnError
