@@ -551,3 +551,23 @@ func BenchmarkNewPacketSender(b *testing.B) {
 		sender.Close()
 	}
 }
+
+type benchmarkFlowWriteBack struct{}
+
+func (benchmarkFlowWriteBack) WriteBack([]byte, netip.AddrPort) (int, error) { return 0, nil }
+
+func BenchmarkNewUDPFlowSenderAndWriteBack(b *testing.B) {
+	var target C.WriteBack = benchmarkFlowWriteBack{}
+	metadata := &C.Metadata{NetWork: C.UDP, DstIP: netip.MustParseAddr("203.0.113.20"), DstPort: 53}
+
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		flow, err := newUDPFlowMetadata(metadata)
+		if err != nil {
+			b.Fatal(err)
+		}
+		sender := newPacketSender().(*packetSender)
+		flow.writeBack.UpdateWriteBack(target)
+		sender.Close()
+	}
+}

@@ -345,6 +345,8 @@ func processUDP(queue chan udpPacket) {
 type udpFlowMetadata struct {
 	origin C.Metadata
 	dial   C.Metadata
+	// writeBack is owned by the dial flow and avoids a separate proxy allocation.
+	writeBack nat.WriteBackProxy
 }
 
 // newUDPFlowMetadata clones the packet metadata once for the whole flow: the
@@ -406,7 +408,7 @@ func handleUDPConn(item udpPacket) {
 // Kept as functions taking parameters rather than closures: a closure capturing
 // the per-packet metadata variable forces it onto the heap on every packet.
 func startUDPSender(flow *udpFlowMetadata, packet C.PacketAdapter, sender C.PacketSender, key netip.AddrPort) {
-	pc, writeBackProxy, err := dialUDPSender(&flow.origin, &flow.dial, packet, sender, key)
+	pc, writeBackProxy, err := dialUDPSender(flow, packet, sender, key)
 	if err != nil {
 		sender.Close()
 		natTable.DeleteForFlow(key)
@@ -418,7 +420,9 @@ func startUDPSender(flow *udpFlowMetadata, packet C.PacketAdapter, sender C.Pack
 // dialUDPSender receives the flow's prechecked metadata clone plus the origin
 // snapshot taken before preHandleMetadata rewrote it: neither is shared with
 // later datagrams.
-func dialUDPSender(originMetadata *C.Metadata, metadata *C.Metadata, packet C.PacketAdapter, sender C.PacketSender, key netip.AddrPort) (C.PacketConn, C.WriteBackProxy, error) {
+func dialUDPSender(flow *udpFlowMetadata, packet C.PacketAdapter, sender C.PacketSender, key netip.AddrPort) (C.PacketConn, C.WriteBackProxy, error) {
+	originMetadata := &flow.origin
+	metadata := &flow.dial
 	if err := sender.DoSniff(metadata); err != nil {
 		log.Warnln("[UDP] DoSniff error: %s", err.Error())
 		return nil, nil, err
@@ -447,7 +451,8 @@ func dialUDPSender(originMetadata *C.Metadata, metadata *C.Metadata, packet C.Pa
 
 	sender.AddMapping(originMetadata, dialMetadata)
 	oAddrPort := dialMetadata.AddrPort()
-	writeBackProxy := nat.NewWriteBackProxy(packet)
+	flow.writeBack.UpdateWriteBack(packet)
+	writeBackProxy := &flow.writeBack
 
 	go handleUDPToLocal(writeBackProxy, pc, sender, key, oAddrPort)
 	return pc, writeBackProxy, nil
