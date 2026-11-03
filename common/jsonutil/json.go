@@ -9,6 +9,17 @@ import (
 
 const hexDigits = "0123456789abcdef"
 
+var jsonUnsafeASCII = func() [utf8.RuneSelf]bool {
+	var table [utf8.RuneSelf]bool
+	for i := range 0x20 {
+		table[i] = true
+	}
+	for _, b := range []byte(`"\<>&`) {
+		table[b] = true
+	}
+	return table
+}()
+
 // StringLen reports the byte count AppendString adds for s, so a caller can
 // size a buffer that never grows while the strings of one document are
 // appended. A wrong count only costs a reallocation.
@@ -49,6 +60,9 @@ func StringLen(s string) int {
 // AppendString quotes a string with encoding/json HTML escaping enabled.
 func AppendString(dst []byte, s string) []byte {
 	dst = append(dst, '"')
+	if isJSONSafeASCII(s) {
+		return append(append(dst, s...), '"')
+	}
 	start := 0
 	for i := 0; i < len(s); {
 		if b := s[i]; b < utf8.RuneSelf {
@@ -97,6 +111,17 @@ func AppendString(dst []byte, s string) []byte {
 	}
 	dst = append(dst, s[start:]...)
 	return append(dst, '"')
+}
+
+// isJSONSafeASCII accepts only plain ASCII bytes that encoding/json writes
+// unchanged. High bytes fall back to rune validation and invalid-byte repair.
+func isJSONSafeASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= utf8.RuneSelf || jsonUnsafeASCII[s[i]] {
+			return false
+		}
+	}
+	return true
 }
 
 // AppendUUID writes the canonical lower-case UUID form inside JSON quotes.

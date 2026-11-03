@@ -11,6 +11,8 @@ func TestAppendStringMatchesEncodingJSON(t *testing.T) {
 	values := []string{
 		"",
 		`quote"slash\\html<&>line\n`,
+		"plain ascii 0123456789",
+		"DEL \u007f remains plain",
 		"unicode\u2028\u2029\ufffd",
 		"invalid\xffutf8",
 	}
