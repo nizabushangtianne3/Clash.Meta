@@ -40,6 +40,13 @@ func vmessInteropSkip(t *testing.T) {
 
 func vmessInteropV2RayBinary(t *testing.T) string {
 	t.Helper()
+	// Interop binaries are expensive to rebuild and may need direct network access;
+	// allow a prepared versioned binary to be reused across local and CI runs.
+	if custom := os.Getenv("MIHOMO_V2RAY_INTEROP_BIN"); custom != "" {
+		if _, err := os.Stat(custom); err == nil {
+			return custom
+		}
+	}
 	goBin, err := exec.LookPath("go")
 	if err != nil {
 		t.Skip("go toolchain not found, skip real v2ray interop test")
