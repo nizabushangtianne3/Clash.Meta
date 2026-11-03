@@ -196,13 +196,11 @@ func (h *ListenerHandler) NewPacketConnection(ctx context.Context, conn network.
 			}
 			return err
 		}
-		cPacket := newSingPacket(state, metadata.Source.AddrPort(), inAddr, buff)
-		if metadataTemplate != nil && dest == templateDest {
-			h.Tunnel.HandleUDPPacket(cPacket, metadataTemplate)
-			continue
+		if metadataTemplate == nil || dest != templateDest {
+			metadataTemplate = h.buildPacketMetadata(ctx, inAddr, metadata.Source, dest)
+			templateDest = dest
 		}
-		metadataTemplate = h.buildPacketMetadata(ctx, cPacket, metadata.Source, dest)
-		templateDest = dest
+		cPacket := newSingPacket(state, metadataTemplate, metadata.Source.AddrPort(), inAddr, buff)
 		h.Tunnel.HandleUDPPacket(cPacket, metadataTemplate)
 	}
 	return nil
@@ -217,24 +215,21 @@ func (h *ListenerHandler) NewPacket(ctx context.Context, key netip.AddrPort, buf
 	if conn, ok := common.Cast[localAddr](cPacket.state.writer); ok { // tun does not have real inAddr
 		cPacket.lAddr = conn.LocalAddr()
 	}
-	h.handlePacket(ctx, cPacket, metadata.Source, metadata.Destination)
+	cPacket.metadata = h.buildPacketMetadata(ctx, cPacket.lAddr, metadata.Source, metadata.Destination)
+	h.Tunnel.HandleUDPPacket(cPacket, cPacket.metadata)
 }
 
-func (h *ListenerHandler) handlePacket(ctx context.Context, cPacket *packet, source M.Socksaddr, destination M.Socksaddr) {
-	h.Tunnel.HandleUDPPacket(cPacket, h.buildPacketMetadata(ctx, cPacket, source, destination))
-}
-
-func (h *ListenerHandler) buildPacketMetadata(ctx context.Context, cPacket *packet, source M.Socksaddr, destination M.Socksaddr) *C.Metadata {
-	cPacket.metadata = C.Metadata{
+func (h *ListenerHandler) buildPacketMetadata(ctx context.Context, inAddr net.Addr, source M.Socksaddr, destination M.Socksaddr) *C.Metadata {
+	metadata := &C.Metadata{
 		NetWork: C.UDP,
 		Type:    h.Type,
 	}
-	_ = inbound.SetDstSocksaddr(&cPacket.metadata, destination)
-	inbound.SetSrcSocksaddr(&cPacket.metadata, source)
-	inbound.SetInAddr(&cPacket.metadata, cPacket.InAddr())
-	inbound.ApplyAdditions(&cPacket.metadata, h.Additions...)
-	inbound.ApplyAdditions(&cPacket.metadata, getAdditions(ctx)...)
-	return &cPacket.metadata
+	_ = inbound.SetDstSocksaddr(metadata, destination)
+	inbound.SetSrcSocksaddr(metadata, source)
+	inbound.SetInAddr(metadata, inAddr)
+	inbound.ApplyAdditions(metadata, h.Additions...)
+	inbound.ApplyAdditions(metadata, getAdditions(ctx)...)
+	return metadata
 }
 
 func (h *ListenerHandler) NewError(ctx context.Context, err error) {
@@ -321,12 +316,13 @@ func (s *packetWriterState) writeBack(b []byte, addr netip.AddrPort) (n int, err
 // last handed the sender so replies can be written back through it, and Drop
 // runs long before that flow ends. Recycling the object here would let the next
 // datagram claim it and move those replies onto another client's socket.
-func newSingPacket(state *packetWriterState, source netip.AddrPort, lAddr net.Addr, buff *buf.Buffer) *packet {
+func newSingPacket(state *packetWriterState, metadata *C.Metadata, source netip.AddrPort, lAddr net.Addr, buff *buf.Buffer) *packet {
 	return &packet{
-		state:  state,
-		source: source,
-		lAddr:  lAddr,
-		buff:   buff,
+		state:    state,
+		metadata: metadata,
+		source:   source,
+		lAddr:    lAddr,
+		buff:     buff,
 	}
 }
 
@@ -373,7 +369,7 @@ func newSingBuffer(rwOptions network.ReadWaitOptions) *buf.Buffer {
 
 type packet struct {
 	state    *packetWriterState
-	metadata C.Metadata
+	metadata *C.Metadata
 	source   netip.AddrPort
 	lAddr    net.Addr
 	buff     *buf.Buffer
@@ -391,7 +387,7 @@ func (c *packet) FlowKey() netip.AddrPort {
 // Metadata makes sing packets native PacketAdapters so the tunnel can preserve
 // the already-owned metadata pointer instead of wrapping every datagram.
 func (c *packet) Metadata() *C.Metadata {
-	return &c.metadata
+	return c.metadata
 }
 
 // WriteBack wirtes UDP packet with source(ip, port) = `addr`

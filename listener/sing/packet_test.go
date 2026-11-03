@@ -43,8 +43,7 @@ func TestSingPacketIsNativePacketAdapter(t *testing.T) {
 	source := netip.MustParseAddrPort("192.168.1.2:54321")
 	metadata := &C.Metadata{SrcIP: source.Addr(), SrcPort: source.Port()}
 	state := newSingPacketState(fakePacketWriter{})
-	pkt := newSingPacket(&state, source, nil, nil)
-	pkt.metadata = *metadata
+	pkt := newSingPacket(&state, metadata, source, nil, nil)
 
 	adapter, ok := any(pkt).(C.PacketAdapter)
 	require.True(t, ok)
