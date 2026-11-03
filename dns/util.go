@@ -17,7 +17,6 @@ import (
 	"slices"
 
 	D "github.com/miekg/dns"
-	"github.com/samber/lo"
 )
 
 const (
@@ -27,22 +26,44 @@ const (
 const serverFailureCacheTTL uint32 = 5
 
 func minimalTTL(records []D.RR) uint32 {
-	rr := lo.MinBy(records, func(r1 D.RR, r2 D.RR) bool {
-		return r1.Header().Ttl < r2.Header().Ttl
-	})
-	if rr == nil {
+	if len(records) == 0 {
 		return 0
 	}
-	return rr.Header().Ttl
+	minimum := records[0].Header().Ttl
+	for _, record := range records[1:] {
+		if ttl := record.Header().Ttl; ttl < minimum {
+			minimum = ttl
+		}
+	}
+	return minimum
+}
+
+func minimalTTLSections(answer, ns, extra []D.RR) uint32 {
+	minimum := minimalTTL(answer)
+	for _, records := range [][]D.RR{ns, extra} {
+		if ttl := minimalTTL(records); ttl > 0 && (minimum == 0 || ttl < minimum) {
+			minimum = ttl
+		}
+	}
+	return minimum
 }
 
 func updateTTL(records []D.RR, ttl uint32) {
 	if len(records) == 0 {
 		return
 	}
-	delta := minimalTTL(records) - ttl
+	minimum := minimalTTL(records)
+	var increase uint32
+	if minimum > ttl {
+		increase = minimum - ttl
+	}
 	for i := range records {
-		records[i].Header().Ttl = lo.Clamp(records[i].Header().Ttl-delta, 1, records[i].Header().Ttl)
+		current := records[i].Header().Ttl
+		if current > increase {
+			records[i].Header().Ttl = current - increase
+		} else {
+			records[i].Header().Ttl = 1
+		}
 	}
 }
 
@@ -137,9 +158,15 @@ func putMsgToCache(c dnsCache, key dnsCacheKey, msg *D.Msg) {
 	msg = msg.Copy() // never modify the original msg
 
 	// OPT RRs MUST NOT be cached, forwarded, or stored in or loaded from master files.
-	msg.Extra = lo.Filter(msg.Extra, func(rr D.RR, index int) bool {
-		return rr.Header().Rrtype != D.TypeOPT
-	})
+	kept := 0
+	for _, rr := range msg.Extra {
+		if rr.Header().Rrtype == D.TypeOPT {
+			continue
+		}
+		msg.Extra[kept] = rr
+		kept++
+	}
+	msg.Extra = msg.Extra[:kept]
 
 	var ttl uint32
 	if msg.Rcode == D.RcodeServerFailure {
@@ -147,7 +174,7 @@ func putMsgToCache(c dnsCache, key dnsCacheKey, msg *D.Msg) {
 		// If it does so it MUST NOT cache it for longer than five (5) minutes [...]
 		ttl = serverFailureCacheTTL
 	} else {
-		ttl = minimalTTL(lo.Concat(msg.Answer, msg.Ns, msg.Extra))
+		ttl = minimalTTLSections(msg.Answer, msg.Ns, msg.Extra)
 	}
 	if ttl == 0 {
 		return

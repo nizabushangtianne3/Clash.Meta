@@ -6,8 +6,6 @@ import (
 	"slices"
 	"time"
 
-	"github.com/samber/lo"
-
 	"github.com/metacubex/mihomo/component/resolver"
 	D "github.com/miekg/dns"
 )
@@ -85,7 +83,7 @@ func (r *Resolver) cacheLookupIP(host string, qtype uint16, msg *D.Msg, ips []ne
 		return
 	}
 
-	ttl := minimalTTL(lo.Concat(msg.Answer, msg.Ns, msg.Extra))
+	ttl := minimalTTLSections(msg.Answer, msg.Ns, msg.Extra)
 	if ttl == 0 {
 		return
 	}
