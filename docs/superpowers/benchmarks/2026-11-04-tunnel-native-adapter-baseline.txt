@@ -1,0 +1,26 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/listener/tunnel
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkTunnelUDPPacketAdapter/wrapped         	41624030	        27.11 ns/op	      64 B/op	       1 allocs/op
+BenchmarkTunnelUDPPacketAdapter/wrapped         	47612056	        25.52 ns/op	      64 B/op	       1 allocs/op
+BenchmarkTunnelUDPPacketAdapter/wrapped         	48870082	        25.57 ns/op	      64 B/op	       1 allocs/op
+BenchmarkTunnelUDPPacketAdapter/wrapped         	51760726	        23.81 ns/op	      64 B/op	       1 allocs/op
+BenchmarkTunnelUDPPacketAdapter/wrapped         	50312144	        24.91 ns/op	      64 B/op	       1 allocs/op
+BenchmarkTunnelUDPPacketAdapter/wrapped         	50257358	        24.31 ns/op	      64 B/op	       1 allocs/op
+BenchmarkTunnelUDPPacketAdapter/wrapped         	49046655	        23.54 ns/op	      64 B/op	       1 allocs/op
+BenchmarkTunnelUDPPacketAdapter/wrapped         	50783628	        23.22 ns/op	      64 B/op	       1 allocs/op
+BenchmarkTunnelUDPPacketAdapter/wrapped         	49557288	        23.17 ns/op	      64 B/op	       1 allocs/op
+BenchmarkTunnelUDPPacketAdapter/wrapped         	51746442	        24.08 ns/op	      64 B/op	       1 allocs/op
+BenchmarkTunnelUDPPacketAdapter/native          	936999290	         1.289 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTunnelUDPPacketAdapter/native          	930958561	         1.288 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTunnelUDPPacketAdapter/native          	918904389	         1.287 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTunnelUDPPacketAdapter/native          	923297092	         1.310 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTunnelUDPPacketAdapter/native          	934523396	         1.283 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTunnelUDPPacketAdapter/native          	894141806	         1.293 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTunnelUDPPacketAdapter/native          	935784880	         1.282 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTunnelUDPPacketAdapter/native          	940093335	         1.306 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTunnelUDPPacketAdapter/native          	929404018	         1.286 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTunnelUDPPacketAdapter/native          	938762929	         1.284 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/listener/tunnel	27.199s

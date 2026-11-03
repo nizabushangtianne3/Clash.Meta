@@ -104,23 +104,25 @@ func (l *PacketConn) serveUDP(conn N.EnhancePacketConn, tunnel C.Tunnel, additio
 func (l *PacketConn) handleUDP(pc net.PacketConn, tunnel C.Tunnel, buf []byte, source netip.AddrPort, additions ...inbound.Addition) {
 	flow, hit := l.flowCache.Get(source)
 	if !hit {
-		cPacket := newTunnelUDPPacket(pc, source, buf)
+		cPacket := newTunnelUDPPacket(pc, source, buf, nil)
 		_, metadata := inbound.NewPacket(l.target, cPacket, C.TUNNEL, additions...)
+		cPacket.metadata = metadata
 		l.flowCache.Set(source, &tunUDPFlow{metadata: metadata})
 		tunnel.HandleUDPPacket(cPacket, metadata)
 		return
 	}
-	tunnel.HandleUDPPacket(newTunnelUDPPacket(pc, source, buf), flow.metadata)
+	tunnel.HandleUDPPacket(newTunnelUDPPacket(pc, source, buf, flow.metadata), flow.metadata)
 }
 
 type tunnelUDPPacket struct {
-	pc      net.PacketConn
-	source  netip.AddrPort
-	payload []byte
+	pc       net.PacketConn
+	source   netip.AddrPort
+	payload  []byte
+	metadata *C.Metadata
 }
 
-func newTunnelUDPPacket(pc net.PacketConn, source netip.AddrPort, payload []byte) *tunnelUDPPacket {
-	return &tunnelUDPPacket{pc: pc, source: source, payload: payload}
+func newTunnelUDPPacket(pc net.PacketConn, source netip.AddrPort, payload []byte, metadata *C.Metadata) *tunnelUDPPacket {
+	return &tunnelUDPPacket{pc: pc, source: source, payload: payload, metadata: metadata}
 }
 
 func (c *tunnelUDPPacket) Data() []byte {
@@ -130,6 +132,12 @@ func (c *tunnelUDPPacket) Data() []byte {
 // FlowKey keeps the packet adapter on the zero-materialisation source path.
 func (c *tunnelUDPPacket) FlowKey() netip.AddrPort {
 	return c.source
+}
+
+// Metadata makes tunnel packets native PacketAdapters so the tunnel can preserve
+// the cached metadata pointer instead of wrapping every datagram.
+func (c *tunnelUDPPacket) Metadata() *C.Metadata {
+	return c.metadata
 }
 
 func (c *tunnelUDPPacket) WriteBack(b []byte, _ netip.AddrPort) (n int, err error) {
