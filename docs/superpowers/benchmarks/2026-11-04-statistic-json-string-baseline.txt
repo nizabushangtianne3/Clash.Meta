@@ -1,0 +1,36 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/tunnel/statistic
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkAppendConnectionJSONStringSafeASCII256-16    	 1000000	       290.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendConnectionJSONStringSafeASCII256-16    	 1000000	       304.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendConnectionJSONStringSafeASCII256-16    	 1000000	       304.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendConnectionJSONStringSafeASCII256-16    	 1000000	       306.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendConnectionJSONStringSafeASCII256-16    	 1000000	       310.8 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendConnectionJSONStringSafeASCII256-16    	 1000000	       298.7 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendConnectionJSONStringSafeASCII256-16    	 1000000	       304.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendConnectionJSONStringSafeASCII256-16    	 1000000	       292.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendConnectionJSONStringSafeASCII256-16    	 1000000	       290.1 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendConnectionJSONStringSafeASCII256-16    	 1000000	       285.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendConnectionJSONStringEscaped32-16       	 1000000	        72.10 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendConnectionJSONStringEscaped32-16       	 1000000	        72.40 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendConnectionJSONStringEscaped32-16       	 1000000	        72.66 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendConnectionJSONStringEscaped32-16       	 1000000	        73.33 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendConnectionJSONStringEscaped32-16       	 1000000	        71.84 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendConnectionJSONStringEscaped32-16       	 1000000	        85.26 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendConnectionJSONStringEscaped32-16       	 1000000	        78.33 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendConnectionJSONStringEscaped32-16       	 1000000	        83.09 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendConnectionJSONStringEscaped32-16       	 1000000	        73.85 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendConnectionJSONStringEscaped32-16       	 1000000	        72.38 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendConnectionJSONStringUnicode32-16       	 1000000	       147.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendConnectionJSONStringUnicode32-16       	 1000000	       145.7 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendConnectionJSONStringUnicode32-16       	 1000000	       151.6 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendConnectionJSONStringUnicode32-16       	 1000000	       154.7 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendConnectionJSONStringUnicode32-16       	 1000000	       150.3 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendConnectionJSONStringUnicode32-16       	 1000000	       144.7 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendConnectionJSONStringUnicode32-16       	 1000000	       145.0 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendConnectionJSONStringUnicode32-16       	 1000000	       146.0 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendConnectionJSONStringUnicode32-16       	 1000000	       157.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAppendConnectionJSONStringUnicode32-16       	 1000000	       184.7 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/tunnel/statistic	6.003s
