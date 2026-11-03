@@ -1,0 +1,16 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/dns
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkUnpackSimpleUDPReplyCNAMEFourA 	 1948620	       619.4 ns/op	     912 B/op	       6 allocs/op
+BenchmarkUnpackSimpleUDPReplyCNAMEFourA 	 1922688	       620.9 ns/op	     912 B/op	       6 allocs/op
+BenchmarkUnpackSimpleUDPReplyCNAMEFourA 	 2059598	       589.8 ns/op	     912 B/op	       6 allocs/op
+BenchmarkUnpackSimpleUDPReplyCNAMEFourA 	 2025298	       583.1 ns/op	     912 B/op	       6 allocs/op
+BenchmarkUnpackSimpleUDPReplyCNAMEFourA 	 2034430	       621.7 ns/op	     912 B/op	       6 allocs/op
+BenchmarkUnpackSimpleUDPReplyCNAMEFourA 	 1970850	       596.0 ns/op	     912 B/op	       6 allocs/op
+BenchmarkUnpackSimpleUDPReplyCNAMEFourA 	 2013589	       589.5 ns/op	     912 B/op	       6 allocs/op
+BenchmarkUnpackSimpleUDPReplyCNAMEFourA 	 1965922	       622.0 ns/op	     912 B/op	       6 allocs/op
+BenchmarkUnpackSimpleUDPReplyCNAMEFourA 	 1939215	       609.3 ns/op	     912 B/op	       6 allocs/op
+BenchmarkUnpackSimpleUDPReplyCNAMEFourA 	 2003799	       596.7 ns/op	     912 B/op	       6 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/dns	18.290s

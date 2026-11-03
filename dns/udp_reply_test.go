@@ -250,3 +250,85 @@ func BenchmarkUnpackSimpleUDPReplyCNAMEA(b *testing.B) {
 		}
 	}
 }
+
+func TestUnpackSimpleUDPReplyParsesMultipleAddresses(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		cname bool
+		count int
+	}{{"direct", false, 4}, {"chain", true, 4}} {
+		t.Run(tc.name, func(t *testing.T) {
+			query := &D.Msg{}
+			query.SetQuestion("multi."+tc.name+".example.com.", D.TypeA)
+			reply := D.Msg{Compress: true}
+			reply.SetReply(query)
+			reply.RecursionAvailable = true
+			if tc.cname {
+				reply.Answer = append(reply.Answer, &D.CNAME{
+					Hdr:    D.RR_Header{Name: query.Question[0].Name, Rrtype: D.TypeCNAME, Class: D.ClassINET, Ttl: 60},
+					Target: "multi.target.example.com.",
+				})
+			}
+			for i := range tc.count {
+				reply.Answer = append(reply.Answer, &D.A{
+					Hdr: D.RR_Header{Name: "multi.target.example.com.", Rrtype: D.TypeA, Class: D.ClassINET, Ttl: 60},
+					A:   net.IPv4(192, 0, 2, 20+byte(i)),
+				})
+			}
+			wire, err := reply.Pack()
+			require.NoError(t, err)
+
+			generic := genericUnpack(t, wire)
+			fast, ok := unpackSimpleUDPReply(wire, query.Question[0])
+			require.True(t, ok)
+			require.Equal(t, generic, fast)
+			require.Len(t, fast.Answer, len(generic.Answer))
+		})
+	}
+}
+
+func TestUnpackSimpleUDPReplyFallsBackBeyondMultiAnswers(t *testing.T) {
+	query := &D.Msg{}
+	query.SetQuestion("nine.a.example.com.", D.TypeA)
+	reply := D.Msg{}
+	reply.SetReply(query)
+	reply.RecursionAvailable = true
+	for i := range 9 {
+		reply.Answer = append(reply.Answer, &D.A{
+			Hdr: D.RR_Header{Name: query.Question[0].Name, Rrtype: D.TypeA, Class: D.ClassINET, Ttl: 60},
+			A:   net.IPv4(192, 0, 2, 20+byte(i)),
+		})
+	}
+	wire, err := reply.Pack()
+	require.NoError(t, err)
+	_, ok := unpackSimpleUDPReply(wire, query.Question[0])
+	require.False(t, ok)
+}
+
+func BenchmarkUnpackSimpleUDPReplyCNAMEFourA(b *testing.B) {
+	query := &D.Msg{}
+	query.SetQuestion("multi.cname.example.com.", D.TypeA)
+	reply := D.Msg{Compress: true}
+	reply.SetReply(query)
+	reply.RecursionAvailable = true
+	reply.Answer = append(reply.Answer, &D.CNAME{
+		Hdr:    D.RR_Header{Name: query.Question[0].Name, Rrtype: D.TypeCNAME, Class: D.ClassINET, Ttl: 60},
+		Target: "multi.target.example.com.",
+	})
+	for i := range 4 {
+		reply.Answer = append(reply.Answer, &D.A{
+			Hdr: D.RR_Header{Name: "multi.target.example.com.", Rrtype: D.TypeA, Class: D.ClassINET, Ttl: 60},
+			A:   net.IPv4(192, 0, 2, 20+byte(i)),
+		})
+	}
+	wire, err := reply.Pack()
+	require.NoError(b, err)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, ok := unpackSimpleUDPReply(wire, query.Question[0]); !ok {
+			b.Fatal("multi-answer reply was rejected")
+		}
+	}
+}

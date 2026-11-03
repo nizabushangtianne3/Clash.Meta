@@ -22,6 +22,10 @@ const (
 	dnsFlagRcode    uint16 = 0xf
 )
 
+// maxUDPFastAnswers bounds the multi-answer slab. Larger legitimate answers use
+// the full parser rather than reserving an unbounded response-shaped slab.
+const maxUDPFastAnswers = 8
+
 // udpReplySlab keeps the returned message and its fixed-shape records together.
 // The returned *D.Msg points into this slab, so the slab lives exactly as long
 // as the caller-owned reply.
@@ -37,16 +41,17 @@ type udpReplySlab struct {
 	aaaaData   [16]byte
 }
 
-// unpackSimpleUDPReply decodes the common UDP shapes: one direct A/AAAA answer
-// or one CNAME followed by the requested address, with no authority records. An
-// additional record is accepted only when it is an empty EDNS OPT; anything
-// else, including TSIG, returns false for the complete miekg parser.
+// unpackSimpleUDPReply decodes the common UDP shapes: direct A/AAAA addresses
+// or one CNAME followed by the requested address family, with no authority
+// records. An additional record is accepted only when it is an empty EDNS OPT;
+// anything else, including TSIG, returns false for the complete miekg parser.
 func unpackSimpleUDPReply(wire []byte, query D.Question) (*D.Msg, bool) {
 	if len(wire) < 12 ||
-		wire[4] != 0 || wire[5] != 1 || // one question
-		wire[6] != 0 || wire[7] < 1 || wire[7] > 2 || // one answer or CNAME+address
-		wire[8] != 0 || wire[9] != 0 || // no authority
-		wire[10] != 0 || wire[11] > 1 { // at most one additional/TSIG
+		wire[4] != 0 || wire[5] != 1 ||
+		wire[6] != 0 || wire[7] < 1 ||
+		wire[8] != 0 || wire[9] != 0 ||
+		wire[10] != 0 || wire[11] > 1 ||
+		wire[7] > maxUDPFastAnswers {
 		return nil, false
 	}
 
@@ -75,6 +80,9 @@ func unpackSimpleUDPReply(wire []byte, query D.Question) (*D.Msg, bool) {
 
 	if wire[7] == 2 {
 		return unpackCNAMEUDPReply(slab, wire, off, query)
+	}
+	if wire[7] > 2 {
+		return unpackMultiUDPReply(slab, wire, off, query)
 	}
 
 	answerName, off, ok := unpackUDPReplyName(wire, off, question.Name, query, "", 0)
@@ -200,6 +208,123 @@ func unpackCNAMEUDPReply(slab *udpReplySlab, wire []byte, off int, query D.Quest
 	return &slab.msg, true
 }
 
+// multiUDPReplySlab owns exact-size storage for a direct address set or a
+// CNAME followed by every address. Variable slices avoid enlarging the common
+// one- and two-answer paths.
+type multiUDPReplySlab struct {
+	cname      D.CNAME
+	answers    []D.RR
+	addresses  []D.A
+	addresses6 []D.AAAA
+	data       []byte
+}
+
+func unpackMultiUDPReply(slab *udpReplySlab, wire []byte, off int, query D.Question) (*D.Msg, bool) {
+	count := int(wire[7])
+	if query.Qtype != D.TypeA && query.Qtype != D.TypeAAAA {
+		return nil, false
+	}
+	nameEnd, ok := skipUDPReplyName(wire, off)
+	if !ok || nameEnd+10 > len(wire) {
+		return nil, false
+	}
+	firstType := binary.BigEndian.Uint16(wire[nameEnd:])
+	if firstType != D.TypeCNAME && firstType != query.Qtype {
+		return nil, false
+	}
+	cname := firstType == D.TypeCNAME
+	addressCount := count
+	if cname {
+		addressCount--
+		if addressCount == 0 {
+			return nil, false
+		}
+	}
+	addressSize := 4
+	if query.Qtype == D.TypeAAAA {
+		addressSize = 16
+	}
+	multi := &multiUDPReplySlab{
+		answers: make([]D.RR, count),
+		data:    make([]byte, 0, addressSize*addressCount),
+	}
+	if query.Qtype == D.TypeA {
+		multi.addresses = make([]D.A, addressCount)
+	} else {
+		multi.addresses6 = make([]D.AAAA, addressCount)
+	}
+
+	aliasName := ""
+	aliasOff := 0
+	answer := 0
+	address := 0
+	for i := range count {
+		name, recordOff, ok := unpackUDPReplyName(wire, off, query.Name, query, aliasName, aliasOff)
+		if !ok || recordOff+10 > len(wire) {
+			return nil, false
+		}
+		rrtype := binary.BigEndian.Uint16(wire[recordOff:])
+		class := binary.BigEndian.Uint16(wire[recordOff+2:])
+		ttl := binary.BigEndian.Uint32(wire[recordOff+4:])
+		rdlength := int(binary.BigEndian.Uint16(wire[recordOff+8:]))
+		dataOff := recordOff + 10
+		end := dataOff + rdlength
+		if class != D.ClassINET || end > len(wire) {
+			return nil, false
+		}
+
+		if i == 0 && rrtype == D.TypeCNAME {
+			target, next, err := D.UnpackDomainName(wire, dataOff)
+			if err != nil || next != end || target == "" {
+				return nil, false
+			}
+			multi.cname = D.CNAME{
+				Hdr: D.RR_Header{
+					Name: name, Rrtype: rrtype, Class: class, Ttl: ttl, Rdlength: uint16(rdlength),
+				},
+				Target: target,
+			}
+			multi.answers[0] = &multi.cname
+			answer = 1
+			aliasName, aliasOff = target, dataOff
+			off = end
+			continue
+		}
+		if rrtype != query.Qtype || rdlength != addressSize || address == addressCount {
+			return nil, false
+		}
+		start := len(multi.data)
+		multi.data = append(multi.data, wire[dataOff:end]...)
+		header := D.RR_Header{
+			Name: name, Rrtype: rrtype, Class: class, Ttl: ttl, Rdlength: uint16(rdlength),
+		}
+		if query.Qtype == D.TypeA {
+			multi.addresses[address] = D.A{
+				Hdr: header,
+				A:   multi.data[start:len(multi.data):len(multi.data)],
+			}
+			multi.answers[answer] = &multi.addresses[address]
+		} else {
+			multi.addresses6[address] = D.AAAA{
+				Hdr:  header,
+				AAAA: multi.data[start:len(multi.data):len(multi.data)],
+			}
+			multi.answers[answer] = &multi.addresses6[address]
+		}
+		address++
+		answer++
+		off = end
+	}
+	if address != addressCount {
+		return nil, false
+	}
+	slab.msg.Answer = multi.answers[:count:count]
+	if !slab.setEmptyEDNS(wire, off) {
+		return nil, false
+	}
+	return &slab.msg, true
+}
+
 func (slab *udpReplySlab) setEmptyEDNS(wire []byte, end int) bool {
 	if wire[11] == 0 {
 		return end == len(wire)
@@ -230,6 +355,31 @@ func matchUDPReplyQuestion(wire []byte, query D.Question) (D.Question, int, bool
 		return D.Question{}, 0, false
 	}
 	return question, end + 4, true
+}
+
+func skipUDPReplyName(wire []byte, off int) (int, bool) {
+	for range 128 {
+		if off >= len(wire) {
+			return 0, false
+		}
+		length := int(wire[off])
+		switch length & 0xc0 {
+		case 0:
+			if length == 0 {
+				return off + 1, true
+			}
+			off++
+			if off+length > len(wire) {
+				return 0, false
+			}
+			off += length
+		case 0xc0:
+			return off + 2, true
+		default:
+			return 0, false
+		}
+	}
+	return 0, false
 }
 
 func asciiEqualFold(a []byte, b string) bool {
