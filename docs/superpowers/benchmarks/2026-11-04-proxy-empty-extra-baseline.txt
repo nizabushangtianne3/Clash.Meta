@@ -1,0 +1,16 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/adapter
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkProxyAppendJSONEmptyExtra-16    	  100000	       139.6 ns/op	       0 B/op	       0 allocs/op
+BenchmarkProxyAppendJSONEmptyExtra-16    	  100000	       145.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkProxyAppendJSONEmptyExtra-16    	  100000	       138.7 ns/op	       0 B/op	       0 allocs/op
+BenchmarkProxyAppendJSONEmptyExtra-16    	  100000	       143.4 ns/op	       0 B/op	       0 allocs/op
+BenchmarkProxyAppendJSONEmptyExtra-16    	  100000	       146.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkProxyAppendJSONEmptyExtra-16    	  100000	       144.7 ns/op	       0 B/op	       0 allocs/op
+BenchmarkProxyAppendJSONEmptyExtra-16    	  100000	       144.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkProxyAppendJSONEmptyExtra-16    	  100000	       144.6 ns/op	       0 B/op	       0 allocs/op
+BenchmarkProxyAppendJSONEmptyExtra-16    	  100000	       145.7 ns/op	       0 B/op	       0 allocs/op
+BenchmarkProxyAppendJSONEmptyExtra-16    	  100000	       152.8 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/adapter	0.312s

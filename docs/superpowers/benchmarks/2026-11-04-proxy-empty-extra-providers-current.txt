@@ -1,0 +1,16 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/hub/route
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkGetProvidersResponse-16    	     200	    107194 ns/op	  156534 B/op	      26 allocs/op
+BenchmarkGetProvidersResponse-16    	     200	    109243 ns/op	  163352 B/op	      26 allocs/op
+BenchmarkGetProvidersResponse-16    	     200	    100979 ns/op	  156438 B/op	      26 allocs/op
+BenchmarkGetProvidersResponse-16    	     200	    122106 ns/op	  156497 B/op	      26 allocs/op
+BenchmarkGetProvidersResponse-16    	     200	    102631 ns/op	  163290 B/op	      26 allocs/op
+BenchmarkGetProvidersResponse-16    	     200	    102832 ns/op	  156454 B/op	      26 allocs/op
+BenchmarkGetProvidersResponse-16    	     200	    103168 ns/op	  156457 B/op	      26 allocs/op
+BenchmarkGetProvidersResponse-16    	     200	    101856 ns/op	  156422 B/op	      26 allocs/op
+BenchmarkGetProvidersResponse-16    	     200	    104419 ns/op	  163299 B/op	      26 allocs/op
+BenchmarkGetProvidersResponse-16    	     200	    113118 ns/op	  163302 B/op	      26 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/hub/route	0.417s
