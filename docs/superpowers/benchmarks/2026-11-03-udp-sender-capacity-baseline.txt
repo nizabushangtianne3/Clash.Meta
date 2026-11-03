@@ -1,0 +1,16 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/tunnel
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkNewPacketSender 	 3177022	       385.8 ns/op	    2528 B/op	       3 allocs/op
+BenchmarkNewPacketSender 	 3194805	       381.0 ns/op	    2528 B/op	       3 allocs/op
+BenchmarkNewPacketSender 	 3293582	       370.0 ns/op	    2528 B/op	       3 allocs/op
+BenchmarkNewPacketSender 	 3232712	       377.0 ns/op	    2528 B/op	       3 allocs/op
+BenchmarkNewPacketSender 	 3210709	       374.1 ns/op	    2528 B/op	       3 allocs/op
+BenchmarkNewPacketSender 	 2842270	       378.9 ns/op	    2528 B/op	       3 allocs/op
+BenchmarkNewPacketSender 	 3280958	       368.1 ns/op	    2528 B/op	       3 allocs/op
+BenchmarkNewPacketSender 	 3111776	       377.8 ns/op	    2528 B/op	       3 allocs/op
+BenchmarkNewPacketSender 	 2898747	       386.5 ns/op	    2528 B/op	       3 allocs/op
+BenchmarkNewPacketSender 	 3193923	       379.8 ns/op	    2528 B/op	       3 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/tunnel	16.592s

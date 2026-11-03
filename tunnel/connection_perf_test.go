@@ -543,3 +543,11 @@ func TestHandleTCPConnEntryAllocatesNothing(t *testing.T) {
 	})
 	require.Zero(t, allocations)
 }
+
+func BenchmarkNewPacketSender(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		sender := newPacketSender().(*packetSender)
+		sender.Close()
+	}
+}

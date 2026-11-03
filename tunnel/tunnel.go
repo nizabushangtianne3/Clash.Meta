@@ -31,8 +31,8 @@ import (
 )
 
 const (
-	queueCapacity  = 64  // chan capacity of the UDP worker queues
-	senderCapacity = 128 // chan capacity of PacketSender
+	queueCapacity  = 64 // chan capacity of the UDP worker queues
+	senderCapacity = 16 // bounded per-flow queue; overflow drops and stays cheap
 )
 
 var (
