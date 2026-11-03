@@ -110,6 +110,30 @@ func TestFeedReplacesPartialMessageWhenTotalChanges(t *testing.T) {
 	pool.Put(assembled.DATA)
 }
 
+func TestFeedAssemblesFiveFragments(t *testing.T) {
+	var d deFragger
+	var assembled Packet
+	for id := range 4 {
+		data := pool.Get(2)
+		copy(data, []byte{byte('a' + id), byte('A' + id)})
+		packet := fragmentPacket(uint8(id), 5, 2, data[:2])
+		packet.PKT_ID = 7
+		completed, ok := d.Feed(&packet)
+		require.False(t, ok)
+		require.Nil(t, completed.DATA)
+	}
+
+	finalData := pool.Get(2)
+	copy(finalData, []byte{'e', 'E'})
+	final := fragmentPacket(4, 5, 2, finalData[:2])
+	final.PKT_ID = 7
+	assembled, ok := d.Feed(&final)
+	require.True(t, ok)
+	require.Equal(t, []byte("aAbBcCdDeE"), assembled.DATA)
+	pool.Put(assembled.DATA)
+	require.Empty(t, d.bags)
+}
+
 func BenchmarkFeedFragmentedReceive(b *testing.B) {
 	payload := make([]byte, 4096)
 	fragSize := 1024

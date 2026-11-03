@@ -57,12 +57,15 @@ type deFragger struct {
 const maxPartialMessages = 64
 
 type packetBag struct {
-	first    Packet
-	frags    [][]byte
-	filled   [4]uint64
-	count    uint8
-	lastSeen uint64
-	mutex    sync.Mutex
+	first Packet
+	// Most fragmented datagrams fit four entries; frags points either into
+	// inlineFrags or at an overflow slice, so callers keep one slice shape.
+	inlineFrags [4][]byte
+	frags       [][]byte
+	filled      [4]uint64
+	count       uint8
+	lastSeen    uint64
+	mutex       sync.Mutex
 }
 
 func newPacketBag() *packetBag { return new(packetBag) }
@@ -71,6 +74,7 @@ func (b *packetBag) reset() {
 	for _, data := range b.frags {
 		_ = pool.Put(data)
 	}
+	b.inlineFrags = [4][]byte{}
 	clear(b.frags)
 	b.first = Packet{}
 	b.filled = [4]uint64{}
@@ -78,7 +82,10 @@ func (b *packetBag) reset() {
 }
 
 func (b *packetBag) reserve(size uint8) {
-	clear(b.frags)
+	if int(size) <= len(b.inlineFrags) {
+		b.frags = b.inlineFrags[:size]
+		return
+	}
 	if cap(b.frags) < int(size) {
 		b.frags = make([][]byte, size)
 		return
