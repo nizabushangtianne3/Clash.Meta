@@ -2,10 +2,12 @@ package mkcp
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/netip"
 	"sync"
+	"time"
 )
 
 type listenerCore struct {
@@ -132,14 +134,29 @@ func ListenUDP(ctx context.Context, udp *net.UDPConn, cfg Config) (*UDPListener,
 
 func (l *UDPListener) readLoop() {
 	readSize := receiveSize(l.cfg, l.reader.security)
+	failures := 0
 	for {
 		buffer := l.reader.newReceiveBuffer(readSize)
 		n, addr, err := l.udp.ReadFromUDPAddrPort(buffer.data)
 		if err != nil {
 			buffer.release()
-			_ = l.Close()
-			return
+			if errors.Is(err, net.ErrClosed) {
+				return
+			}
+			select {
+			case <-l.closed:
+				return
+			default:
+			}
+			failures++
+			if failures >= maxConsecutiveReadErrors {
+				_ = l.Close()
+				return
+			}
+			time.Sleep(readRetryDelay)
+			continue
 		}
+		failures = 0
 		buffer.data = buffer.data[:n]
 		select {
 		case l.packets <- udpPacket{payload: buffer, addr: addr}:
@@ -279,14 +296,29 @@ func ListenVirtual(ctx context.Context, pc net.PacketConn, cfg Config) (*Virtual
 
 func (l *VirtualListener) readLoop() {
 	readSize := receiveSize(l.cfg, l.reader.security)
+	failures := 0
 	for {
 		buffer := l.reader.newReceiveBuffer(readSize)
 		n, addr, err := l.pc.ReadFrom(buffer.data)
 		if err != nil {
 			buffer.release()
-			_ = l.Close()
-			return
+			if errors.Is(err, net.ErrClosed) {
+				return
+			}
+			select {
+			case <-l.closed:
+				return
+			default:
+			}
+			failures++
+			if failures >= maxConsecutiveReadErrors {
+				_ = l.Close()
+				return
+			}
+			time.Sleep(readRetryDelay)
+			continue
 		}
+		failures = 0
 		buffer.data = buffer.data[:n]
 		select {
 		case l.packets <- virtualPacket{payload: buffer, addr: addr}:

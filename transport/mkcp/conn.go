@@ -2,6 +2,7 @@ package mkcp
 
 import (
 	"context"
+	"errors"
 	"io"
 	"math"
 	"math/rand"
@@ -21,6 +22,14 @@ var segmentPool = sync.Pool{
 }
 
 const maxWaitDuration = time.Duration(math.MaxInt64)
+
+// Windows UDP sockets can surface an ICMP reset on the next read while the
+// transport remains usable. Retry transient reads briefly; a permanently closed
+// socket reports net.ErrClosed and exits immediately.
+const (
+	maxConsecutiveReadErrors = 64
+	readRetryDelay           = time.Millisecond
+)
 
 type waitSignal struct {
 	mu       *sync.Mutex
@@ -150,13 +159,24 @@ func Dial(ctx context.Context, raw net.Conn, cfg Config) (*Conn, error) {
 		cache := make(chan *receiveBuffer, 1024)
 		go func() {
 			defer close(cache)
+			failures := 0
 			for {
 				buffer := reader.newReceiveBuffer(readSize)
 				n, err := raw.Read(buffer.data)
 				if err != nil {
 					buffer.release()
-					return
+					if errors.Is(err, net.ErrClosed) {
+						return
+					}
+					failures++
+					if failures >= maxConsecutiveReadErrors {
+						conn.terminate()
+						return
+					}
+					time.Sleep(readRetryDelay)
+					continue
 				}
+				failures = 0
 				buffer.data = buffer.data[:n]
 				select {
 				case cache <- buffer:
@@ -385,7 +405,6 @@ func (c *Conn) Input(segments []segment) {
 		}
 		switch s := seg.(type) {
 		case *dataSegment:
-			c.handleOptionLocked(s.option)
 			c.processSendingNextLocked(s.sendingNext)
 			idx := s.number - c.recvNext
 			if idx < c.cfg.receivingInFlightSize() {
@@ -397,33 +416,36 @@ func (c *Conn) Input(segments []segment) {
 				}
 			}
 			c.deliverLocked()
+			c.handleOptionLocked(s.option)
 			wakeFlush = true
 		case *ackSegment:
-			c.handleOptionLocked(s.option)
 			if s.receivingWindow > c.remoteRecvWin {
 				c.remoteRecvWin = s.receivingWindow
 			}
 			c.processReceivingNextLocked(s.receivingNext)
-			if len(s.numberList) == 0 {
-				break
-			}
-			var maxack uint32
-			maxackRemoved := false
-			for _, number := range s.numberList {
-				removed := c.processAckLocked(number)
-				if maxack < number {
-					maxack = number
-					maxackRemoved = removed
+			if len(s.numberList) != 0 {
+				var maxack uint32
+				maxackRemoved := false
+				for _, number := range s.numberList {
+					removed := c.processAckLocked(number)
+					if maxack < number {
+						maxack = number
+						maxackRemoved = removed
+					}
+				}
+				if maxackRemoved {
+					c.handleFastAckLocked(maxack)
+					if current-s.timestamp < 10000 {
+						c.updateRTTLocked(current-s.timestamp, current)
+					}
 				}
 			}
-			if maxackRemoved {
-				c.handleFastAckLocked(maxack)
-				if current-s.timestamp < 10000 {
-					c.updateRTTLocked(current-s.timestamp, current)
-				}
-			}
+			c.handleOptionLocked(s.option)
 			wakeFlush = true
 		case *cmdOnlySegment:
+			c.processReceivingNextLocked(s.receivingNext)
+			c.processSendingNextLocked(s.sendingNext)
+			c.updatePeerRTOLocked(s.peerRTO, current)
 			c.handleOptionLocked(s.option)
 			if s.cmd == commandTerminate {
 				switch c.state {
@@ -436,9 +458,6 @@ func (c *Conn) Input(segments []segment) {
 					terminate = true
 				}
 			}
-			c.processReceivingNextLocked(s.receivingNext)
-			c.processSendingNextLocked(s.sendingNext)
-			c.updatePeerRTOLocked(s.peerRTO, current)
 			if s.option == segmentOptionClose || s.cmd == commandTerminate {
 				c.signalReadLocked()
 				c.signalWriteLocked()
@@ -816,6 +835,7 @@ func (c *Conn) writeSegments(segments []segment) error {
 func (c *Conn) newAckSegmentLocked() *ackSegment {
 	ack := sendAckSegmentPool.Get().(*ackSegment)
 	ack.conv = c.conv
+	ack.option = 0
 	ack.receivingNext = c.recvNext
 	ack.receivingWindow = c.recvNext + c.cfg.receivingInFlightSize()
 	ack.numberList = ack.numberList[:0]
@@ -829,6 +849,7 @@ func (c *Conn) pingSegmentLocked(cmd command, current uint32) *cmdOnlySegment {
 	seg := sendCmdSegmentPool.Get().(*cmdOnlySegment)
 	seg.conv = c.conv
 	seg.cmd = cmd
+	seg.option = 0
 	seg.receivingNext = c.recvNext
 	seg.sendingNext = c.firstUnacked
 	seg.peerRTO = c.rto
@@ -858,8 +879,9 @@ func (c *Conn) setStateLocked(state connState) {
 		c.signalReadLocked()
 		c.signalWriteLocked()
 	case statePeerTerminating:
+		// The peer's terminate acknowledges its send side, but cached
+		// out-of-order records still belong to this side's pending reads.
 		c.clearSendWindowLocked()
-		c.clearRecvCacheLocked()
 		c.signalReadLocked()
 		c.signalWriteLocked()
 	case stateTerminated:
