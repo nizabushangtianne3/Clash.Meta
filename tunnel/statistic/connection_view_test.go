@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gofrs/uuid/v5"
+	"github.com/metacubex/mihomo/common/jsonutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -106,7 +107,7 @@ func TestAppendJSONStringMatchesEncodingJSON(t *testing.T) {
 	for _, value := range values {
 		expected, err := json.Marshal(value)
 		require.NoError(t, err)
-		assert.Equal(t, string(expected), string(appendJSONString(nil, value)), value)
+		assert.Equal(t, string(expected), string(jsonutil.AppendString(nil, value)), value)
 	}
 }
 

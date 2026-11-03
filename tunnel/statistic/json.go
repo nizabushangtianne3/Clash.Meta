@@ -4,9 +4,9 @@ import (
 	"net/netip"
 	"strconv"
 	"time"
-	"unicode/utf8"
 
 	"github.com/gofrs/uuid/v5"
+	"github.com/metacubex/mihomo/common/jsonutil"
 
 	C "github.com/metacubex/mihomo/constant"
 )
@@ -79,9 +79,9 @@ func (i *TrackerInfo) appendSuffixJSON(dst []byte) []byte {
 		buf = append(buf, `,"providerChains":`...)
 		buf = appendJSONStringSlice(buf, i.ProviderChain)
 		buf = append(buf, `,"rule":`...)
-		buf = appendJSONString(buf, i.Rule)
+		buf = jsonutil.AppendString(buf, i.Rule)
 		buf = append(buf, `,"rulePayload":`...)
-		buf = appendJSONString(buf, i.RulePayload)
+		buf = jsonutil.AppendString(buf, i.RulePayload)
 		buf = append(buf, '}')
 		i.suffixJSON = buf
 	})
@@ -90,9 +90,9 @@ func (i *TrackerInfo) appendSuffixJSON(dst []byte) []byte {
 
 func appendMetadataJSON(dst []byte, md *C.Metadata) []byte {
 	dst = append(dst, `"network":`...)
-	dst = appendJSONString(dst, md.NetWork.String())
+	dst = jsonutil.AppendString(dst, md.NetWork.String())
 	dst = append(dst, `,"type":`...)
-	dst = appendJSONString(dst, md.Type.String())
+	dst = jsonutil.AppendString(dst, md.Type.String())
 	dst = append(dst, `,"sourceIP":`...)
 	dst = appendJSONAddr(dst, md.SrcIP)
 	dst = append(dst, `,"destinationIP":`...)
@@ -102,9 +102,9 @@ func appendMetadataJSON(dst []byte, md *C.Metadata) []byte {
 	dst = append(dst, `,"destinationGeoIP":`...)
 	dst = appendJSONStringSlice(dst, md.DstGeoIP)
 	dst = append(dst, `,"sourceIPASN":`...)
-	dst = appendJSONString(dst, md.SrcIPASN)
+	dst = jsonutil.AppendString(dst, md.SrcIPASN)
 	dst = append(dst, `,"destinationIPASN":`...)
-	dst = appendJSONString(dst, md.DstIPASN)
+	dst = jsonutil.AppendString(dst, md.DstIPASN)
 	dst = append(dst, `,"sourcePort":`...)
 	dst = appendJSONQuotedUint(dst, uint64(md.SrcPort))
 	dst = append(dst, `,"destinationPort":`...)
@@ -114,31 +114,31 @@ func appendMetadataJSON(dst []byte, md *C.Metadata) []byte {
 	dst = append(dst, `,"inboundPort":`...)
 	dst = appendJSONQuotedUint(dst, uint64(md.InPort))
 	dst = append(dst, `,"inboundName":`...)
-	dst = appendJSONString(dst, md.InName)
+	dst = jsonutil.AppendString(dst, md.InName)
 	dst = append(dst, `,"inboundUser":`...)
-	dst = appendJSONString(dst, md.InUser)
+	dst = jsonutil.AppendString(dst, md.InUser)
 	dst = append(dst, `,"rematchName":`...)
-	dst = appendJSONString(dst, md.RematchName)
+	dst = jsonutil.AppendString(dst, md.RematchName)
 	dst = append(dst, `,"host":`...)
-	dst = appendJSONString(dst, md.Host)
+	dst = jsonutil.AppendString(dst, md.Host)
 	dst = append(dst, `,"dnsMode":`...)
-	dst = appendJSONString(dst, md.DNSMode.String())
+	dst = jsonutil.AppendString(dst, md.DNSMode.String())
 	dst = append(dst, `,"uid":`...)
 	dst = strconv.AppendUint(dst, uint64(md.Uid), 10)
 	dst = append(dst, `,"process":`...)
-	dst = appendJSONString(dst, md.Process)
+	dst = jsonutil.AppendString(dst, md.Process)
 	dst = append(dst, `,"processPath":`...)
-	dst = appendJSONString(dst, md.ProcessPath)
+	dst = jsonutil.AppendString(dst, md.ProcessPath)
 	dst = append(dst, `,"specialProxy":`...)
-	dst = appendJSONString(dst, md.SpecialProxy)
+	dst = jsonutil.AppendString(dst, md.SpecialProxy)
 	dst = append(dst, `,"specialRules":`...)
-	dst = appendJSONString(dst, md.SpecialRules)
+	dst = jsonutil.AppendString(dst, md.SpecialRules)
 	dst = append(dst, `,"remoteDestination":`...)
-	dst = appendJSONString(dst, md.RemoteDst)
+	dst = jsonutil.AppendString(dst, md.RemoteDst)
 	dst = append(dst, `,"dscp":`...)
 	dst = strconv.AppendUint(dst, uint64(md.DSCP), 10)
 	dst = append(dst, `,"sniffHost":`...)
-	return appendJSONString(dst, md.SniffHost)
+	return jsonutil.AppendString(dst, md.SniffHost)
 }
 
 // appendUUID writes the canonical form the uuid marshaler produced.
@@ -182,66 +182,7 @@ func appendJSONStringSlice(dst []byte, values []string) []byte {
 		if i > 0 {
 			dst = append(dst, ',')
 		}
-		dst = appendJSONString(dst, value)
+		dst = jsonutil.AppendString(dst, value)
 	}
 	return append(dst, ']')
-}
-
-// appendJSONString quotes and escapes the way encoding/json does with HTML
-// escaping on, which is what both the reflection writer and the websocket
-// writer in hub/route apply.
-func appendJSONString(dst []byte, s string) []byte {
-	if s == "" {
-		return append(dst, '"', '"')
-	}
-	dst = append(dst, '"')
-	start := 0
-	for i := 0; i < len(s); {
-		if b := s[i]; b < utf8.RuneSelf {
-			if b >= 0x20 && b != '"' && b != '\\' && b != '<' && b != '>' && b != '&' {
-				i++
-				continue
-			}
-			dst = append(dst, s[start:i]...)
-			switch b {
-			case '\\', '"':
-				dst = append(dst, '\\', b)
-			case '\b':
-				dst = append(dst, '\\', 'b')
-			case '\f':
-				dst = append(dst, '\\', 'f')
-			case '\n':
-				dst = append(dst, '\\', 'n')
-			case '\r':
-				dst = append(dst, '\\', 'r')
-			case '\t':
-				dst = append(dst, '\\', 't')
-			default:
-				dst = append(dst, '\\', 'u', '0', '0', jsonHexDigits[b>>4], jsonHexDigits[b&0x0f])
-			}
-			i++
-			start = i
-			continue
-		}
-		r, size := utf8.DecodeRuneInString(s[i:])
-		if r == utf8.RuneError && size == 1 {
-			dst = append(dst, s[start:i]...)
-			dst = utf8.AppendRune(dst, utf8.RuneError)
-			i += size
-			start = i
-			continue
-		}
-		// json escapes the two unicode separators because they break some
-		// hosts that read the document as javascript.
-		if r == '\u2028' || r == '\u2029' {
-			dst = append(dst, s[start:i]...)
-			dst = append(dst, '\\', 'u', '2', '0', '2', jsonHexDigits[r&0x0f])
-			i += size
-			start = i
-			continue
-		}
-		i += size
-	}
-	dst = append(dst, s[start:]...)
-	return append(dst, '"')
 }
