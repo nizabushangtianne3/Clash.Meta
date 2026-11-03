@@ -4,9 +4,9 @@ import (
 	"sync"
 )
 
-// Queue is a bounded-on-demand FIFO. Once it reaches steady state, Pops reuse
-// slots freed by earlier Puts instead of advancing a slice and copying the
-// remaining history on later growth.
+// Queue is a bounded-on-demand FIFO. Once it reaches steady state, inserts
+// reuse slots freed by earlier bounded inserts instead of advancing a slice
+// and copying the remaining history on later growth.
 type Queue[T any] struct {
 	entries []T
 	head    int
@@ -14,21 +14,23 @@ type Queue[T any] struct {
 	// ring is the capacity the backing array takes when it first grows, so a
 	// queue that never receives an item allocates no array.
 	ring int
-	lock    sync.RWMutex
+	lock sync.RWMutex
 }
 
-// Put add the item to the queue.
-func (q *Queue[T]) Put(items ...T) {
-	if len(items) == 0 {
+// PutBounded inserts one item and drops the oldest entries until the queue
+// holds no more than limit.
+func (q *Queue[T]) PutBounded(limit int, item T) {
+	if limit <= 0 {
 		return
 	}
 
 	q.lock.Lock()
-	q.reserve(len(items))
-	for _, item := range items {
-		q.entries[(q.head+q.count)%cap(q.entries)] = item
-		q.count++
+	for q.count >= limit {
+		q.popLocked()
 	}
+	q.reserve(1)
+	q.entries[(q.head+q.count)%cap(q.entries)] = item
+	q.count++
 	q.lock.Unlock()
 }
 
@@ -36,16 +38,7 @@ func (q *Queue[T]) Put(items ...T) {
 func (q *Queue[T]) Pop() (head T) {
 	q.lock.Lock()
 	defer q.lock.Unlock()
-	if q.count == 0 {
-		return head
-	}
-
-	head = q.entries[q.head]
-	var zero T
-	q.entries[q.head] = zero
-	q.head = (q.head + 1) % cap(q.entries)
-	q.count--
-	return head
+	return q.popLocked()
 }
 
 // Last returns the last of item.
@@ -102,6 +95,20 @@ func NewWithCapacity[T any](hint int64) *Queue[T] {
 	return &Queue[T]{
 		ring: int(hint),
 	}
+}
+
+// popLocked returns the head and must be called while the write lock is held.
+func (q *Queue[T]) popLocked() (head T) {
+	if q.count == 0 {
+		return head
+	}
+
+	head = q.entries[q.head]
+	var zero T
+	q.entries[q.head] = zero
+	q.head = (q.head + 1) % cap(q.entries)
+	q.count--
+	return head
 }
 
 // reserve must be called while the write lock is held.

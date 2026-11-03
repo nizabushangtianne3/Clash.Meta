@@ -13,7 +13,7 @@ func BenchmarkProxyExtraDelayHistories(b *testing.B) {
 	proxy.SetAliveForTestUrl(url, true)
 	for range 10 {
 		state, _ := proxy.extra.Load(url)
-		state.history.Put(C.DelayHistory{Time: time.Now(), Delay: 100})
+		state.history.PutBounded(defaultHistoriesNum, C.DelayHistory{Time: time.Now(), Delay: 100})
 	}
 
 	b.ReportAllocs()

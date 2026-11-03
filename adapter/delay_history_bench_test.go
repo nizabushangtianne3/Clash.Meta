@@ -10,7 +10,7 @@ import (
 func BenchmarkProxyDelayHistory(b *testing.B) {
 	proxy := testProxy()
 	for range 10 {
-		proxy.history.Put(C.DelayHistory{Time: time.Now(), Delay: 100})
+		proxy.history.PutBounded(10, C.DelayHistory{Time: time.Now(), Delay: 100})
 	}
 
 	b.ReportAllocs()

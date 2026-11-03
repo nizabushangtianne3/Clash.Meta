@@ -342,7 +342,7 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 			p.alive.Store(alive)
 		}
 
-		p.history.Put(record)
+		p.history.PutBounded(defaultHistoriesNum, record)
 		if p.history.Len() > defaultHistoriesNum {
 			p.history.Pop()
 		}
@@ -355,7 +355,7 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 		}
 
 		state.alive.Store(alive)
-		state.history.Put(record)
+		state.history.PutBounded(defaultHistoriesNum, record)
 		if state.history.Len() > defaultHistoriesNum {
 			state.history.Pop()
 		}
