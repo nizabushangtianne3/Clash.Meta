@@ -57,6 +57,46 @@ const (
 	GostRelay
 )
 
+var adapterTypeNames = [...]string{
+	Direct:       "Direct",
+	Reject:       "Reject",
+	RejectDrop:   "RejectDrop",
+	Compatible:   "Compatible",
+	Pass:         "Pass",
+	PassRule:     "PassRule",
+	Rematch:      "Rematch",
+	Dns:          "Dns",
+	Relay:        "Relay",
+	Selector:     "Selector",
+	Fallback:     "Fallback",
+	URLTest:      "URLTest",
+	LoadBalance:  "LoadBalance",
+	Shadowsocks:  "Shadowsocks",
+	ShadowsocksR: "ShadowsocksR",
+	Snell:        "Snell",
+	Socks5:       "Socks5",
+	Http:         "Http",
+	Vmess:        "Vmess",
+	Vless:        "Vless",
+	Trojan:       "Trojan",
+	Hysteria:     "Hysteria",
+	Hysteria2:    "Hysteria2",
+	WireGuard:    "WireGuard",
+	Tuic:         "Tuic",
+	Ssh:          "Ssh",
+	Mieru:        "Mieru",
+	AnyTLS:       "AnyTLS",
+	Sudoku:       "Sudoku",
+	Masque:       "Masque",
+	TrustTunnel:  "TrustTunnel",
+	ShadowQuic:   "ShadowQuic",
+	OpenVPN:      "OpenVPN",
+	Tailscale:    "Tailscale",
+	ZeroTier:     "ZeroTier",
+	EasyTier:     "EasyTier",
+	GostRelay:    "GostRelay",
+}
+
 const (
 	DefaultTCPTimeout = dialer.DefaultTCPTimeout
 	DefaultUDPTimeout = dialer.DefaultUDPTimeout
@@ -179,84 +219,12 @@ type Proxy interface {
 type AdapterType int
 
 func (at AdapterType) String() string {
-	switch at {
-	case Direct:
-		return "Direct"
-	case Reject:
-		return "Reject"
-	case RejectDrop:
-		return "RejectDrop"
-	case Compatible:
-		return "Compatible"
-	case Pass:
-		return "Pass"
-	case PassRule:
-		return "PassRule"
-	case Rematch:
-		return "Rematch"
-	case Dns:
-		return "Dns"
-	case Shadowsocks:
-		return "Shadowsocks"
-	case ShadowsocksR:
-		return "ShadowsocksR"
-	case Snell:
-		return "Snell"
-	case Socks5:
-		return "Socks5"
-	case Http:
-		return "Http"
-	case Vmess:
-		return "Vmess"
-	case Vless:
-		return "Vless"
-	case Trojan:
-		return "Trojan"
-	case Hysteria:
-		return "Hysteria"
-	case Hysteria2:
-		return "Hysteria2"
-	case WireGuard:
-		return "WireGuard"
-	case Tuic:
-		return "Tuic"
-	case Ssh:
-		return "Ssh"
-	case Mieru:
-		return "Mieru"
-	case AnyTLS:
-		return "AnyTLS"
-	case Sudoku:
-		return "Sudoku"
-	case Masque:
-		return "Masque"
-	case TrustTunnel:
-		return "TrustTunnel"
-	case ShadowQuic:
-		return "ShadowQuic"
-	case OpenVPN:
-		return "OpenVPN"
-	case Tailscale:
-		return "Tailscale"
-	case ZeroTier:
-		return "ZeroTier"
-	case EasyTier:
-		return "EasyTier"
-	case GostRelay:
-		return "GostRelay"
-	case Relay:
-		return "Relay"
-	case Selector:
-		return "Selector"
-	case Fallback:
-		return "Fallback"
-	case URLTest:
-		return "URLTest"
-	case LoadBalance:
-		return "LoadBalance"
-	default:
-		return "Unknown"
+	if at >= Direct && int(at) < len(adapterTypeNames) {
+		if name := adapterTypeNames[at]; name != "" {
+			return name
+		}
 	}
+	return "Unknown"
 }
 
 // UDPPacket contains the data of UDP packet, and offers control/info of UDP packet's source
