@@ -113,7 +113,7 @@ func TestCopyCachedMsgCopiesMixedAnswerPayloads(t *testing.T) {
 		&D.AAAA{Hdr: D.RR_Header{Name: "example.org.", Rrtype: D.TypeAAAA}, AAAA: net.ParseIP("2001:db8::1").To16()},
 	}}
 
-	copied := copyCachedMsg(source)
+	copied := copyCachedMsg(source, false)
 	copied.Answer[0].(*D.A).A[0] = 127
 	copied.Answer[1].(*D.AAAA).AAAA[0] = 0x20
 

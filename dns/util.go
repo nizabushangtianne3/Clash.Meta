@@ -72,7 +72,7 @@ func updateTTL(records []D.RR, ttl uint32) {
 func getMsgFromCache(c dnsCache, q D.Question) (*D.Msg, time.Time, bool) {
 	msg, expireTime, hit := c.GetWithExpire(questionKey(q))
 	if msg != nil {
-		msg = copyCachedMsg(msg)
+		msg = copyCachedMsg(msg, false)
 	}
 	return msg, expireTime, hit
 }
@@ -90,13 +90,21 @@ type cacheAAAA struct {
 	data   [16]byte
 }
 
-// copyCachedMsg returns an independently mutable copy of a cached message.
-// Question remains shared because dns.Msg treats it as immutable.
-func copyCachedMsg(src *D.Msg) *D.Msg {
+// copyCachedMsg returns a message whose RR payloads are independent of src.
+// Question remains shared because dns.Msg treats it as immutable. Cache writes
+// also discard OPT before cloning, so that RFC-forbidden record never pays for
+// an allocation.
+func copyCachedMsg(src *D.Msg, discardOPT bool) *D.Msg {
 	dst := &D.Msg{}
 	dst.MsgHdr = src.MsgHdr
 	dst.Compress = src.Compress
-	dst.Question = src.Question
+	if discardOPT {
+		question := make([]D.Question, len(src.Question))
+		copy(question, src.Question)
+		dst.Question = question
+	} else {
+		dst.Question = src.Question
+	}
 
 	aCount, aaaaCount := 0, 0
 	for _, rr := range src.Answer {
@@ -111,10 +119,20 @@ func copyCachedMsg(src *D.Msg) *D.Msg {
 	aaaaRecords := make([]cacheAAAA, aaaaCount)
 	aIndex, aaaaIndex := 0, 0
 
-	rrArr := make([]D.RR, len(src.Answer)+len(src.Ns)+len(src.Extra))
+	keptExtra := len(src.Extra)
+	if discardOPT {
+		keptExtra = 0
+		for _, rr := range src.Extra {
+			if rr.Header().Rrtype != D.TypeOPT {
+				keptExtra++
+			}
+		}
+	}
+
+	rrArr := make([]D.RR, len(src.Answer)+len(src.Ns)+keptExtra)
 	dst.Answer, rrArr = rrArr[:0:len(src.Answer)], rrArr[len(src.Answer):]
 	dst.Ns, rrArr = rrArr[:0:len(src.Ns)], rrArr[len(src.Ns):]
-	dst.Extra = rrArr[:0:len(src.Extra)]
+	dst.Extra = rrArr[:0:keptExtra]
 
 	for _, rr := range src.Answer {
 		switch value := rr.(type) {
@@ -140,6 +158,9 @@ func copyCachedMsg(src *D.Msg) *D.Msg {
 		dst.Ns = append(dst.Ns, D.Copy(rr))
 	}
 	for _, rr := range src.Extra {
+		if discardOPT && rr.Header().Rrtype == D.TypeOPT {
+			continue
+		}
 		dst.Extra = append(dst.Extra, D.Copy(rr))
 	}
 
@@ -147,7 +168,8 @@ func copyCachedMsg(src *D.Msg) *D.Msg {
 }
 
 // putMsgToCache puts a dns message into the cache.
-// the msg is copied before being stored in the cache, so it can be modified without affecting the original msg.
+// RR payloads and Question are cloned so later callers cannot corrupt cached
+// records.
 func putMsgToCache(c dnsCache, key dnsCacheKey, msg *D.Msg) {
 	// skip dns cache for acme challenge
 	if key.qtype == D.TypeTXT && strings.HasPrefix(key.name, "_acme-challenge.") {
@@ -155,18 +177,7 @@ func putMsgToCache(c dnsCache, key dnsCacheKey, msg *D.Msg) {
 		return
 	}
 
-	msg = msg.Copy() // never modify the original msg
-
-	// OPT RRs MUST NOT be cached, forwarded, or stored in or loaded from master files.
-	kept := 0
-	for _, rr := range msg.Extra {
-		if rr.Header().Rrtype == D.TypeOPT {
-			continue
-		}
-		msg.Extra[kept] = rr
-		kept++
-	}
-	msg.Extra = msg.Extra[:kept]
+	msg = copyCachedMsg(msg, true)
 
 	var ttl uint32
 	if msg.Rcode == D.RcodeServerFailure {
