@@ -22,13 +22,13 @@ const (
 	dnsFlagRcode    uint16 = 0xf
 )
 
-// udpReplySlab keeps the returned message and every object its slices point to
-// in one allocation. The returned *D.Msg points into this slab, so the slab
-// lives exactly as long as the caller-owned reply.
+// udpReplySlab keeps the returned message and its fixed-shape records together.
+// The returned *D.Msg points into this slab, so the slab lives exactly as long
+// as the caller-owned reply.
 type udpReplySlab struct {
 	msg        D.Msg
 	question   [1]D.Question
-	answer     [1]D.RR
+	answers    [2]D.RR
 	optRecord  D.OPT
 	optRR      [1]D.RR
 	aRecord    D.A
@@ -37,14 +37,14 @@ type udpReplySlab struct {
 	aaaaData   [16]byte
 }
 
-// unpackSimpleUDPReply decodes the common UDP shape: one question and one
-// direct A/AAAA answer with no authority records. An additional record is
-// accepted only when it is an empty EDNS OPT; anything else, including TSIG,
-// returns false for the complete miekg parser.
+// unpackSimpleUDPReply decodes the common UDP shapes: one direct A/AAAA answer
+// or one CNAME followed by the requested address, with no authority records. An
+// additional record is accepted only when it is an empty EDNS OPT; anything
+// else, including TSIG, returns false for the complete miekg parser.
 func unpackSimpleUDPReply(wire []byte, query D.Question) (*D.Msg, bool) {
 	if len(wire) < 12 ||
 		wire[4] != 0 || wire[5] != 1 || // one question
-		wire[6] != 0 || wire[7] != 1 || // one answer
+		wire[6] != 0 || wire[7] < 1 || wire[7] > 2 || // one answer or CNAME+address
 		wire[8] != 0 || wire[9] != 0 || // no authority
 		wire[10] != 0 || wire[11] > 1 { // at most one additional/TSIG
 		return nil, false
@@ -73,7 +73,11 @@ func unpackSimpleUDPReply(wire []byte, query D.Question) (*D.Msg, bool) {
 	slab.question[0] = question
 	slab.msg.Question = slab.question[:1:1]
 
-	answerName, off, ok := unpackUDPReplyName(wire, off, question.Name, query)
+	if wire[7] == 2 {
+		return unpackCNAMEUDPReply(slab, wire, off, query)
+	}
+
+	answerName, off, ok := unpackUDPReplyName(wire, off, question.Name, query, "", 0)
 	if !ok || off+10 > len(wire) {
 		return nil, false
 	}
@@ -101,32 +105,113 @@ func unpackSimpleUDPReply(wire []byte, query D.Question) (*D.Msg, bool) {
 		}
 		copy(slab.aData[:], wire[off:end])
 		slab.aRecord = D.A{Hdr: header, A: slab.aData[:]}
-		slab.answer[0] = &slab.aRecord
+		slab.answers[0] = &slab.aRecord
 	case D.TypeAAAA:
 		if rdlength != len(slab.aaaaData) {
 			return nil, false
 		}
 		copy(slab.aaaaData[:], wire[off:end])
 		slab.aaaaRecord = D.AAAA{Hdr: header, AAAA: slab.aaaaData[:]}
-		slab.answer[0] = &slab.aaaaRecord
+		slab.answers[0] = &slab.aaaaRecord
 	default:
 		return nil, false
 	}
-	slab.msg.Answer = slab.answer[:1:1]
-	if wire[11] == 0 {
-		if end != len(wire) {
+	slab.msg.Answer = slab.answers[:1:1]
+	if !slab.setEmptyEDNS(wire, end) {
+		return nil, false
+	}
+	return &slab.msg, true
+}
+
+// cnameUDPReplySlab owns the two answer slots and the decoded CNAME record. The
+// target string is the one unavoidable variable-length allocation; a fixed
+// 255-byte buffer would enlarge every direct answer instead.
+type cnameUDPReplySlab struct {
+	record  D.CNAME
+	answers [2]D.RR
+}
+
+func unpackCNAMEUDPReply(slab *udpReplySlab, wire []byte, off int, query D.Question) (*D.Msg, bool) {
+	cnameSlab := &cnameUDPReplySlab{}
+	firstName, off, ok := unpackUDPReplyName(wire, off, query.Name, query, "", 0)
+	if !ok || off+10 > len(wire) {
+		return nil, false
+	}
+	class := binary.BigEndian.Uint16(wire[off+2:])
+	ttl := binary.BigEndian.Uint32(wire[off+4:])
+	rdlength := int(binary.BigEndian.Uint16(wire[off+8:]))
+	off += 10
+	end := off + rdlength
+	if binary.BigEndian.Uint16(wire[off-10:]) != D.TypeCNAME ||
+		class != D.ClassINET || end > len(wire) {
+		return nil, false
+	}
+	target, next, err := D.UnpackDomainName(wire, off)
+	if err != nil || next != end || target == "" {
+		return nil, false
+	}
+	cnameSlab.record = D.CNAME{
+		Hdr: D.RR_Header{
+			Name: firstName, Rrtype: D.TypeCNAME, Class: class, Ttl: ttl, Rdlength: uint16(rdlength),
+		},
+		Target: target,
+	}
+	cnameSlab.answers[0] = &cnameSlab.record
+
+	secondName, off, ok := unpackUDPReplyName(wire, end, query.Name, query, target, off)
+	if !ok || off+10 > len(wire) {
+		return nil, false
+	}
+	rrtype := binary.BigEndian.Uint16(wire[off:])
+	class = binary.BigEndian.Uint16(wire[off+2:])
+	ttl = binary.BigEndian.Uint32(wire[off+4:])
+	rdlength = int(binary.BigEndian.Uint16(wire[off+8:]))
+	off += 10
+	end = off + rdlength
+	if (rrtype != D.TypeA && rrtype != D.TypeAAAA) || rrtype != query.Qtype ||
+		class != D.ClassINET || end > len(wire) {
+		return nil, false
+	}
+	header := D.RR_Header{
+		Name: secondName, Rrtype: rrtype, Class: class, Ttl: ttl, Rdlength: uint16(rdlength),
+	}
+	switch rrtype {
+	case D.TypeA:
+		if rdlength != len(slab.aData) {
 			return nil, false
 		}
-		return &slab.msg, true
+		copy(slab.aData[:], wire[off:end])
+		slab.aRecord = D.A{Hdr: header, A: slab.aData[:]}
+		cnameSlab.answers[1] = &slab.aRecord
+	case D.TypeAAAA:
+		if rdlength != len(slab.aaaaData) {
+			return nil, false
+		}
+		copy(slab.aaaaData[:], wire[off:end])
+		slab.aaaaRecord = D.AAAA{Hdr: header, AAAA: slab.aaaaData[:]}
+		cnameSlab.answers[1] = &slab.aaaaRecord
+	default:
+		return nil, false
+	}
+	slab.msg.Answer = cnameSlab.answers[:2:2]
+	if !slab.setEmptyEDNS(wire, end) {
+		return nil, false
+	}
+	return &slab.msg, true
+}
+
+func (slab *udpReplySlab) setEmptyEDNS(wire []byte, end int) bool {
+	if wire[11] == 0 {
+		return end == len(wire)
 	}
 	opt, ok := unpackUDPOPT(wire, end)
 	if !ok {
-		return nil, false
+		return false
 	}
 	slab.optRecord = opt
 	slab.optRR[0] = &slab.optRecord
 	slab.msg.Extra = slab.optRR[:1:1]
-	return &slab.msg, true
+	return true
 }
 
 // matchUDPReplyQuestion avoids allocating a domain string for the common reply:
@@ -203,15 +288,23 @@ func matchUDPReplyName(wire []byte, off int, name string) (int, bool) {
 
 // unpackUDPReplyName reuses the request name when the answer owner is either
 // compressed back to offset 12 or written uncompressed in place.
-func unpackUDPReplyName(wire []byte, off int, owner string, query D.Question) (string, int, bool) {
+func unpackUDPReplyName(wire []byte, off int, owner string, query D.Question, aliasName string, aliasOff int) (string, int, bool) {
 	if off+2 <= len(wire) && wire[off]&0xc0 == 0xc0 {
 		pointer := binary.BigEndian.Uint16(wire[off:]) & 0x3fff
 		if pointer == 12 {
 			return owner, off + 2, true
 		}
+		if aliasName != "" && pointer == uint16(aliasOff) {
+			return aliasName, off + 2, true
+		}
 	}
 	if end, ok := matchUDPReplyName(wire, off, query.Name); ok {
 		return owner, end, true
+	}
+	if aliasName != "" {
+		if end, ok := matchUDPReplyName(wire, off, aliasName); ok {
+			return aliasName, end, true
+		}
 	}
 	name, next, err := D.UnpackDomainName(wire, off)
 	if err != nil {

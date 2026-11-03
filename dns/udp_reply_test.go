@@ -66,6 +66,34 @@ func TestUnpackSimpleUDPReplyParsesUncompressedAAAA(t *testing.T) {
 	require.EqualValues(t, 16, answer.Hdr.Rdlength)
 }
 
+func TestUnpackSimpleUDPReplyParsesCNAMEA(t *testing.T) {
+	query := &D.Msg{}
+	query.SetQuestion("www.cname.example.com.", D.TypeA)
+	reply := D.Msg{Compress: true}
+	reply.SetReply(query)
+	reply.RecursionAvailable = true
+	reply.Answer = append(reply.Answer,
+		&D.CNAME{
+			Hdr:    D.RR_Header{Name: query.Question[0].Name, Rrtype: D.TypeCNAME, Class: D.ClassINET, Ttl: 60},
+			Target: "target.cname.example.com.",
+		},
+		&D.A{
+			Hdr: D.RR_Header{Name: "target.cname.example.com.", Rrtype: D.TypeA, Class: D.ClassINET, Ttl: 60},
+			A:   net.IPv4(192, 0, 2, 20),
+		},
+	)
+	wire, err := reply.Pack()
+	require.NoError(t, err)
+
+	generic := genericUnpack(t, wire)
+	fast, ok := unpackSimpleUDPReply(wire, query.Question[0])
+	require.True(t, ok)
+	require.Equal(t, generic, fast)
+	require.Len(t, fast.Answer, 2)
+	require.Equal(t, "target.cname.example.com.", fast.Answer[0].(*D.CNAME).Target)
+	require.Equal(t, "target.cname.example.com.", fast.Answer[1].(*D.A).Hdr.Name)
+}
+
 func TestUnpackSimpleUDPReplyFallbacksToGeneric(t *testing.T) {
 	query := &D.Msg{}
 	query.SetQuestion("simple.example.com.", D.TypeA)
@@ -191,6 +219,34 @@ func BenchmarkUnpackSimpleUDPReplyOneAEDNS(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		if _, ok := unpackSimpleUDPReply(wire, query.Question[0]); !ok {
 			b.Fatal("EDNS reply was rejected")
+		}
+	}
+}
+
+func BenchmarkUnpackSimpleUDPReplyCNAMEA(b *testing.B) {
+	query := &D.Msg{}
+	query.SetQuestion("www.cname.example.com.", D.TypeA)
+	reply := D.Msg{Compress: true}
+	reply.SetReply(query)
+	reply.RecursionAvailable = true
+	reply.Answer = append(reply.Answer,
+		&D.CNAME{
+			Hdr:    D.RR_Header{Name: query.Question[0].Name, Rrtype: D.TypeCNAME, Class: D.ClassINET, Ttl: 60},
+			Target: "target.cname.example.com.",
+		},
+		&D.A{
+			Hdr: D.RR_Header{Name: "target.cname.example.com.", Rrtype: D.TypeA, Class: D.ClassINET, Ttl: 60},
+			A:   net.IPv4(192, 0, 2, 20),
+		},
+	)
+	wire, err := reply.Pack()
+	require.NoError(b, err)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, ok := unpackSimpleUDPReply(wire, query.Question[0]); !ok {
+			b.Fatal("CNAME reply was rejected")
 		}
 	}
 }
