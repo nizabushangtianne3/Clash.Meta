@@ -144,13 +144,17 @@ func Dial(ctx context.Context, raw net.Conn, cfg Config) (*Conn, error) {
 	if err != nil {
 		return nil, err
 	}
+	header, err := cfg.packetHeader()
+	if err != nil {
+		return nil, err
+	}
 	conv := uint16(atomic.AddUint32(&globalConv, 1))
-	conn := newConn(raw.LocalAddr(), raw.RemoteAddr(), conv, packetWriter{security: security, header: cfg.packetHeader(), writer: raw}, raw, cfg)
+	conn := newConn(raw.LocalAddr(), raw.RemoteAddr(), conv, packetWriter{security: security, header: header, writer: raw}, raw, cfg)
 	dataPool := &sync.Pool{New: func() any { return new(dataSegment) }}
 	bufferPool := &sync.Pool{New: func() any { return new(receiveBuffer) }}
 	reader := packetReader{
 		security:   security,
-		header:     cfg.packetHeader(),
+		header:     header,
 		dataPool:   dataPool,
 		bufferPool: bufferPool,
 	}

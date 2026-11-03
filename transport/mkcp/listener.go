@@ -31,18 +31,22 @@ func newListenerCore(cfg Config, localAddr net.Addr, closer io.Closer) (listener
 	if err != nil {
 		return listenerCore{}, err
 	}
+	header, err := cfg.packetHeader()
+	if err != nil {
+		return listenerCore{}, err
+	}
 	dataPool := &sync.Pool{New: func() any { return new(dataSegment) }}
 	bufferPool := &sync.Pool{New: func() any { return new(receiveBuffer) }}
 	return listenerCore{
 		cfg: cfg,
 		reader: packetReader{
 			security:   security,
-			header:     cfg.packetHeader(),
+			header:     header,
 			dataPool:   dataPool,
 			bufferPool: bufferPool,
 		},
 		securityWriter: func(w ioWriter) packetWriter {
-			return packetWriter{security: security, header: cfg.packetHeader(), writer: w}
+			return packetWriter{security: security, header: header, writer: w}
 		},
 		localAddr: localAddr,
 		closer:    closer,

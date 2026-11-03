@@ -85,6 +85,6 @@ func (c Config) security() (cipher.AEAD, error) {
 	return cipher.NewGCM(block)
 }
 
-func (c Config) packetHeader() packetHeader {
+func (c Config) packetHeader() (packetHeader, error) {
 	return newPacketHeader(c.Header)
 }

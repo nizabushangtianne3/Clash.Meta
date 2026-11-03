@@ -2,6 +2,7 @@ package mkcp
 
 import (
 	"encoding/binary"
+	"fmt"
 	"math/rand"
 	"strings"
 )
@@ -15,22 +16,22 @@ type noopHeader struct{}
 
 func (noopHeader) size() int        { return 0 }
 func (noopHeader) serialize([]byte) {}
-func newPacketHeader(name string) packetHeader {
+func newPacketHeader(name string) (packetHeader, error) {
 	switch strings.ToLower(name) {
 	case "", "none", "noop":
-		return noopHeader{}
+		return noopHeader{}, nil
 	case "srtp":
-		return &srtpHeader{header: 0xb5e8, number: uint16(rand.Int63() >> 47)}
+		return &srtpHeader{header: 0xb5e8, number: uint16(rand.Int63() >> 47)}, nil
 	case "utp":
-		return &utpHeader{header: 1, connectionID: uint16(rand.Int63() >> 47)}
+		return &utpHeader{header: 1, connectionID: uint16(rand.Int63() >> 47)}, nil
 	case "wechat-video", "wechat":
-		return &wechatVideoHeader{sn: uint32(uint16(rand.Int63() >> 47))}
+		return &wechatVideoHeader{sn: uint32(uint16(rand.Int63() >> 47))}, nil
 	case "dtls":
-		return &dtlsHeader{epoch: uint16(rand.Int63() >> 47), length: 17}
+		return &dtlsHeader{epoch: uint16(rand.Int63() >> 47), length: 17}, nil
 	case "wireguard":
-		return wireguardHeader{}
+		return wireguardHeader{}, nil
 	default:
-		return noopHeader{}
+		return nil, fmt.Errorf("mkcp: unsupported header %q", name)
 	}
 }
 
