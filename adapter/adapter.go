@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/metacubex/mihomo/common/atomic"
@@ -248,9 +249,35 @@ func (p *Proxy) MarshalJSON() ([]byte, error) {
 }
 
 type urlTestExchange struct {
-	conn   net.Conn
+	conn    net.Conn
+	buffers *urlTestBufio
+}
+
+type urlTestBufio struct {
 	writer *bufio.Writer
 	reader *bufio.Reader
+}
+
+var urlTestBufioPool = sync.Pool{
+	New: func() any {
+		return &urlTestBufio{
+			writer: bufio.NewWriterSize(nil, 512),
+			reader: bufio.NewReaderSize(nil, 4096),
+		}
+	},
+}
+
+func acquireURLTestBufio(conn net.Conn) *urlTestBufio {
+	buffers := urlTestBufioPool.Get().(*urlTestBufio)
+	buffers.writer.Reset(conn)
+	buffers.reader.Reset(conn)
+	return buffers
+}
+
+func (b *urlTestBufio) release() {
+	b.writer.Reset(nil)
+	b.reader.Reset(nil)
+	urlTestBufioPool.Put(b)
 }
 
 func newURLTestExchange(ctx context.Context, conn net.Conn, serverName string, secure bool, tlsConfig *tls.Config) (*urlTestExchange, error) {
@@ -267,24 +294,29 @@ func newURLTestExchange(ctx context.Context, conn net.Conn, serverName string, s
 		}
 		conn = tlsConn
 	}
-	return &urlTestExchange{
-		conn:   conn,
-		writer: bufio.NewWriterSize(conn, 512),
-		reader: bufio.NewReaderSize(conn, 4096),
-	}, nil
+	return &urlTestExchange{conn: conn, buffers: acquireURLTestBufio(conn)}, nil
+}
+
+func (e *urlTestExchange) release() {
+	e.buffers.release()
+	e.conn = nil
 }
 
 func (e *urlTestExchange) Do(req *http.Request) (*http.Response, error) {
 	if err := setURLTestDeadline(req.Context(), e.conn); err != nil {
 		return nil, err
 	}
-	if err := req.Write(e.writer); err != nil {
+	if err := req.Write(e.buffers.writer); err != nil {
 		return nil, err
 	}
-	if err := e.writer.Flush(); err != nil {
+	if err := e.buffers.writer.Flush(); err != nil {
 		return nil, err
 	}
-	return http.ReadResponse(e.reader, req)
+	response, err := http.ReadResponse(e.buffers.reader, req)
+	if err != nil && response != nil {
+		_ = response.Body.Close()
+	}
+	return response, err
 }
 
 func setURLTestDeadline(ctx context.Context, conn net.Conn) error {
@@ -368,6 +400,7 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 	if err != nil {
 		return
 	}
+	defer exchange.release()
 	resp, err := exchange.Do(req)
 
 	if err != nil {
