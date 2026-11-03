@@ -66,8 +66,7 @@ func appendProxyProvidersDocument(dst []byte, providers map[string]P.ProxyProvid
 func getProviders(w http.ResponseWriter, r *http.Request) {
 	bodyPtr := responseBodyPool.Get().(*[]byte)
 	body := appendProxyProvidersDocument((*bodyPtr)[:0], tunnel.Providers())
-	writeJSONDocument(w, r, body)
-	*bodyPtr = body
+	*bodyPtr = writeJSONDocument(w, r, body)
 	responseBodyPool.Put(bodyPtr)
 }
 
@@ -75,8 +74,7 @@ func getProvider(w http.ResponseWriter, r *http.Request) {
 	provider := r.Context().Value(CtxKeyProvider).(P.ProxyProvider)
 	bodyPtr := responseBodyPool.Get().(*[]byte)
 	body := provider.AppendJSON((*bodyPtr)[:0])
-	writeJSONDocument(w, r, body)
-	*bodyPtr = body
+	*bodyPtr = writeJSONDocument(w, r, body)
 	responseBodyPool.Put(bodyPtr)
 }
 
@@ -178,8 +176,7 @@ func appendRuleProvidersDocument(dst []byte, providers map[string]P.RuleProvider
 func getRuleProviders(w http.ResponseWriter, r *http.Request) {
 	bodyPtr := responseBodyPool.Get().(*[]byte)
 	body := appendRuleProvidersDocument((*bodyPtr)[:0], tunnel.RuleProviders())
-	writeJSONDocument(w, r, body)
-	*bodyPtr = body
+	*bodyPtr = writeJSONDocument(w, r, body)
 	responseBodyPool.Put(bodyPtr)
 }
 

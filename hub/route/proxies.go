@@ -27,12 +27,14 @@ var (
 	proxyNamesPool   = sync.Pool{New: func() any { return new([]string) }}
 )
 
-func writeJSONDocument(w http.ResponseWriter, r *http.Request, document []byte) {
+func writeJSONDocument(w http.ResponseWriter, r *http.Request, document []byte) []byte {
 	w.Header().Set("Content-Type", "application/json")
 	if status, ok := r.Context().Value(render.StatusCtxKey).(int); ok {
 		w.WriteHeader(status)
 	}
-	_, _ = w.Write(append(document, '\n'))
+	document = append(document, '\n')
+	_, _ = w.Write(document)
+	return document
 }
 
 func appendProxyDocument(dst []byte, proxies map[string]C.Proxy) []byte {
@@ -124,8 +126,7 @@ func findProxyByName(next http.Handler) http.Handler {
 func getProxies(w http.ResponseWriter, r *http.Request) {
 	bodyPtr := responseBodyPool.Get().(*[]byte)
 	body := appendProxyDocument((*bodyPtr)[:0], tunnel.Proxies())
-	writeJSONDocument(w, r, body)
-	*bodyPtr = body
+	*bodyPtr = writeJSONDocument(w, r, body)
 	responseBodyPool.Put(bodyPtr)
 }
 
@@ -133,8 +134,7 @@ func getProxy(w http.ResponseWriter, r *http.Request) {
 	proxy := r.Context().Value(CtxKeyProxy).(C.Proxy)
 	bodyPtr := responseBodyPool.Get().(*[]byte)
 	body := proxy.AppendJSON((*bodyPtr)[:0])
-	writeJSONDocument(w, r, body)
-	*bodyPtr = body
+	*bodyPtr = writeJSONDocument(w, r, body)
 	responseBodyPool.Put(bodyPtr)
 }
 

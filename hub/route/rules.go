@@ -65,8 +65,7 @@ func appendRulesDocument(dst []byte, rawRules []constant.Rule) []byte {
 func getRules(w http.ResponseWriter, r *http.Request) {
 	bodyPtr := responseBodyPool.Get().(*[]byte)
 	body := appendRulesDocument((*bodyPtr)[:0], tunnel.Rules())
-	writeJSONDocument(w, r, body)
-	*bodyPtr = body
+	*bodyPtr = writeJSONDocument(w, r, body)
 	responseBodyPool.Put(bodyPtr)
 }
 

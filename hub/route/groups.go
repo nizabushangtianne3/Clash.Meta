@@ -31,8 +31,7 @@ func groupRouter() http.Handler {
 func getGroups(w http.ResponseWriter, r *http.Request) {
 	bodyPtr := responseBodyPool.Get().(*[]byte)
 	body := appendGroupDocument((*bodyPtr)[:0], tunnel.Proxies())
-	writeJSONDocument(w, r, body)
-	*bodyPtr = body
+	*bodyPtr = writeJSONDocument(w, r, body)
 	responseBodyPool.Put(bodyPtr)
 }
 
@@ -45,8 +44,7 @@ func getGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	bodyPtr := responseBodyPool.Get().(*[]byte)
 	body := proxy.AppendJSON((*bodyPtr)[:0])
-	writeJSONDocument(w, r, body)
-	*bodyPtr = body
+	*bodyPtr = writeJSONDocument(w, r, body)
 	responseBodyPool.Put(bodyPtr)
 }
 
