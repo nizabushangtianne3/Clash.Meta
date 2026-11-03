@@ -52,13 +52,18 @@ func (q *Queue[T]) Last() (last T) {
 }
 
 // Copy get the copy of queue.
-func (q *Queue[T]) Copy() (items []T) {
+func (q *Queue[T]) Copy() []T {
 	q.lock.RLock()
-	items = make([]T, q.count)
-	for i := range items {
-		items[i] = q.entries[(q.head+i)%cap(q.entries)]
+	defer q.lock.RUnlock()
+
+	items := make([]T, q.count)
+	head := q.head
+	if head+q.count <= cap(q.entries) {
+		copy(items, q.entries[head:head+q.count])
+	} else {
+		first := copy(items, q.entries[head:])
+		copy(items[first:], q.entries[:q.count-first])
 	}
-	q.lock.RUnlock()
 	return items
 }
 
