@@ -152,7 +152,7 @@ func TestTrackerClonesMetadataIntoCreationSnapshot(t *testing.T) {
 	assert.Empty(t, snapshot.Metadata.SpecialRules)
 
 	var output []byte
-	output = snapshot.appendJSON(output)
+	output = snapshot.AppendJSON(output)
 	assert.Contains(t, string(output), `"host":"original.example"`)
 	assert.NotContains(t, string(output), `"host":"mutated.example"`)
 }

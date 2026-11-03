@@ -35,14 +35,17 @@ func (s *Snapshot) AppendJSON(dst []byte) []byte {
 			dst = append(dst, 'n', 'u', 'l', 'l')
 			continue
 		}
-		dst = info.appendJSON(dst)
+		dst = info.AppendJSON(dst)
 	}
 	dst = append(dst, `],"memory":`...)
 	dst = strconv.AppendUint(dst, s.Memory, 10)
 	return append(dst, '}')
 }
 
-func (i *TrackerInfo) appendJSON(dst []byte) []byte {
+// AppendJSON appends one connection row to dst. The host's own encoder for a
+// whole table calls it per row, and a wrapper that answers one table entry
+// calls it on its own.
+func (i *TrackerInfo) AppendJSON(dst []byte) []byte {
 	dst = i.appendPrefixJSON(dst)
 	dst = append(dst, `,"upload":`...)
 	dst = strconv.AppendInt(dst, i.UploadTotal.Load(), 10)

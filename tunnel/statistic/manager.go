@@ -229,7 +229,7 @@ func (m *Manager) AppendJSON(dst []byte) []byte {
 		}
 		first = false
 		if info := c.Info(); info != nil {
-			dst = info.appendJSON(dst)
+			dst = info.AppendJSON(dst)
 		} else {
 			dst = append(dst, 'n', 'u', 'l', 'l')
 		}
