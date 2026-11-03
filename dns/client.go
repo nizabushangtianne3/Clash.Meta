@@ -29,6 +29,12 @@ type client struct {
 
 var _ dnsClient = (*client)(nil)
 
+// An exchange owns its conn wrapper from dial to reply, so the wrapper itself
+// is reusable; the wrapper it holds is not, and a pooled one is emptied.
+var dnsConnPool = sync.Pool{
+	New: func() any { return &D.Conn{} },
+}
+
 // An exchange owns its conn exclusively, so a pooled conn never carries two
 // in-flight queries; concurrent queries that find the pool empty simply dial.
 const maxIdleDNSConns = 4
@@ -103,14 +109,23 @@ func (c *client) keepConn(network string, conn net.Conn) {
 }
 
 func exchangeWithConn(ctx context.Context, dClient *D.Client, m *D.Msg, conn net.Conn) (*D.Msg, error) {
-	dConn := &D.Conn{
-		Conn:    conn,
-		UDPSize: dClient.UDPSize,
+	dConn := dnsConnPool.Get().(*D.Conn)
+	dConn.Conn = conn
+	dConn.UDPSize = dClient.UDPSize
+	defer func() {
+		dConn.Conn = nil
+		dnsConnPool.Put(dConn)
+	}()
+
+	// A context with no done channel can never fire, so the stop callback it
+	// would register is pure cost; one that can is registered below.
+	var stop func() bool
+	if ctx.Done() != nil {
+		stop = context.AfterFunc(ctx, func() {
+			_ = conn.Close()
+		})
+		defer stop()
 	}
-	stop := context.AfterFunc(ctx, func() {
-		_ = conn.Close()
-	})
-	defer stop()
 
 	msg, _, err := dClient.ExchangeWithConnContext(ctx, m, dConn)
 	if err != nil {
