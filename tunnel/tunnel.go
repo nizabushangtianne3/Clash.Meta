@@ -340,19 +340,24 @@ func processUDP(queue chan udpPacket) {
 	}
 }
 
+// udpFlowMetadata keeps the origin snapshot and the mutable dial metadata in
+// one flow-owned allocation.
+type udpFlowMetadata struct {
+	origin C.Metadata
+	dial   C.Metadata
+}
+
 // newUDPFlowMetadata clones the packet metadata once for the whole flow: the
-// origin snapshot is taken before preHandleMetadata rewrites the clone, and
-// the same clone then carries the prechecked state into the dial goroutine.
+// origin snapshot is taken before preHandleMetadata rewrites the dial copy, and
+// the same copy then carries the prechecked state into the dial goroutine.
 // Later datagrams of the same flow may reuse the packet metadata in place, so
 // nothing downstream reads it again once the dial goes async.
-func newUDPFlowMetadata(metadata *C.Metadata) (*C.Metadata, *C.Metadata, error) {
-	dial := metadata.Clone()
-	origin := &C.Metadata{
-		Host:    dial.Host,
-		DstIP:   dial.DstIP,
-		DstPort: dial.DstPort,
-	}
-	return dial, origin, preHandleMetadata(dial)
+func newUDPFlowMetadata(metadata *C.Metadata) (*udpFlowMetadata, error) {
+	flow := &udpFlowMetadata{dial: *metadata}
+	flow.origin.Host = flow.dial.Host
+	flow.origin.DstIP = flow.dial.DstIP
+	flow.origin.DstPort = flow.dial.DstPort
+	return flow, preHandleMetadata(&flow.dial)
 }
 
 func handleUDPConn(item udpPacket) {
@@ -378,7 +383,7 @@ func handleUDPConn(item udpPacket) {
 	runtimeState := loadRuntime()
 	fixMetadata(metadata) // fix some metadata not set via metadata.SetRemoteAddr or metadata.SetRemoteAddress
 
-	dialMetadata, originMetadata, err := newUDPFlowMetadata(metadata)
+	flow, err := newUDPFlowMetadata(metadata)
 	if err != nil { // precheck without modifying the packet metadata
 		packet.Drop()
 		log.Debugln("[Metadata PreHandle] error: %s", err)
@@ -393,15 +398,15 @@ func handleUDPConn(item udpPacket) {
 		return sender
 	})
 	if !loaded {
-		go startUDPSender(originMetadata, dialMetadata, packet, sender, item.key)
+		go startUDPSender(flow, packet, sender, item.key)
 	}
 	sender.Send(packet) // nonblocking
 }
 
 // Kept as functions taking parameters rather than closures: a closure capturing
 // the per-packet metadata variable forces it onto the heap on every packet.
-func startUDPSender(originMetadata *C.Metadata, dialMetadata *C.Metadata, packet C.PacketAdapter, sender C.PacketSender, key netip.AddrPort) {
-	pc, writeBackProxy, err := dialUDPSender(originMetadata, dialMetadata, packet, sender, key)
+func startUDPSender(flow *udpFlowMetadata, packet C.PacketAdapter, sender C.PacketSender, key netip.AddrPort) {
+	pc, writeBackProxy, err := dialUDPSender(&flow.origin, &flow.dial, packet, sender, key)
 	if err != nil {
 		sender.Close()
 		natTable.DeleteForFlow(key)

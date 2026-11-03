@@ -31,3 +31,25 @@ func BenchmarkPreHandleMetadataEmptyHost(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkNewUDPFlowMetadata(b *testing.B) {
+	metadata := &C.Metadata{
+		NetWork: C.UDP,
+		Type:    C.SOCKS5,
+		SrcIP:   netip.MustParseAddr("192.168.1.2"),
+		DstIP:   netip.MustParseAddr("203.0.113.20"),
+		DstPort: 443,
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		flow, err := newUDPFlowMetadata(metadata)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if !flow.origin.DstIP.IsValid() || !flow.dial.DstIP.IsValid() {
+			b.Fatal("invalid flow metadata")
+		}
+	}
+}

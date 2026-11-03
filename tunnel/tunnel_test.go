@@ -103,7 +103,9 @@ func TestNewUDPFlowMetadataSharesOneClone(t *testing.T) {
 		DstPort: 443,
 	}
 
-	dial, origin, err := newUDPFlowMetadata(metadata)
+	flow, err := newUDPFlowMetadata(metadata)
+	dial := &flow.dial
+	origin := &flow.origin
 	require.NoError(t, err)
 	require.NotSame(t, metadata, dial)
 	require.Equal(t, "udp.example.com", dial.Host)
