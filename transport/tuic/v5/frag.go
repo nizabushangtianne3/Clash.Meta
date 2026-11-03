@@ -3,6 +3,7 @@ package v5
 import (
 	"bytes"
 	"sync"
+	"sync/atomic"
 
 	"github.com/metacubex/mihomo/common/pool"
 
@@ -65,10 +66,22 @@ type packetBag struct {
 	filled      [4]uint64
 	count       uint8
 	lastSeen    uint64
+	generation  atomic.Uint64
 	mutex       sync.Mutex
 }
 
-func newPacketBag() *packetBag { return new(packetBag) }
+// packetBagPool reuses bags only after reset bumps generation; a caller that
+// captured a stale generation aborts without touching the bag.
+var packetBagPool = sync.Pool{New: func() any { return new(packetBag) }}
+
+func (b *packetBag) claim(generation uint64) bool {
+	b.mutex.Lock()
+	if b.generation.Load() == generation {
+		return true
+	}
+	b.mutex.Unlock()
+	return false
+}
 
 func (b *packetBag) reset() {
 	for _, data := range b.frags {
@@ -79,6 +92,7 @@ func (b *packetBag) reset() {
 	b.first = Packet{}
 	b.filled = [4]uint64{}
 	b.count = 0
+	b.generation.Add(1)
 }
 
 func (b *packetBag) reserve(size uint8) {
@@ -113,7 +127,7 @@ func (b *packetBag) assemble() Packet {
 	return packet
 }
 
-func (d *deFragger) bagFor(m *Packet) *packetBag {
+func (d *deFragger) bagFor(m *Packet) (*packetBag, uint64) {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 	if d.bags == nil {
@@ -121,17 +135,18 @@ func (d *deFragger) bagFor(m *Packet) *packetBag {
 	}
 	bag, ok := d.bags[m.PKT_ID]
 	if ok {
+		generation := bag.generation.Load()
 		d.touch(bag)
-		return bag
+		return bag, generation
 	}
 	if len(d.bags) >= maxPartialMessages {
 		d.evictOldest()
 	}
-	bag = newPacketBag()
+	bag = packetBagPool.Get().(*packetBag)
 	bag.lastSeen = d.next
 	d.next++
 	d.bags[m.PKT_ID] = bag
-	return bag
+	return bag, bag.generation.Load()
 }
 
 func (d *deFragger) touch(bag *packetBag) {
@@ -154,6 +169,7 @@ func (d *deFragger) evictOldest() {
 	oldest.reset()
 	oldest.mutex.Unlock()
 	delete(d.bags, oldestKey)
+	packetBagPool.Put(oldest)
 }
 
 func (d *deFragger) Feed(m *Packet) (Packet, bool) {
@@ -161,8 +177,12 @@ func (d *deFragger) Feed(m *Packet) (Packet, bool) {
 		return *m, true
 	}
 
-	bag := d.bagFor(m)
-	bag.mutex.Lock()
+	bag, generation := d.bagFor(m)
+	if !bag.claim(generation) {
+		_ = pool.Put(m.DATA)
+		m.DATA = nil
+		return Packet{}, false
+	}
 	packet, ok := d.feedLocked(m, bag)
 	bag.mutex.Unlock()
 	if ok {
@@ -173,7 +193,8 @@ func (d *deFragger) Feed(m *Packet) (Packet, bool) {
 
 func (d *deFragger) removeCompleted(id uint16, completed *packetBag) {
 	d.mutex.Lock()
-	if d.bags[id] == completed {
+	owned := d.bags[id] == completed
+	if owned {
 		delete(d.bags, id)
 	}
 	d.mutex.Unlock()
@@ -181,6 +202,9 @@ func (d *deFragger) removeCompleted(id uint16, completed *packetBag) {
 	completed.mutex.Lock()
 	completed.reset()
 	completed.mutex.Unlock()
+	if owned {
+		packetBagPool.Put(completed)
+	}
 }
 
 func (d *deFragger) feedLocked(m *Packet, bag *packetBag) (packet Packet, ok bool) {

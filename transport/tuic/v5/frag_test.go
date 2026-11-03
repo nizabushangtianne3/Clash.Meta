@@ -215,6 +215,30 @@ func TestFeedCompletedBagStaysSafeForConcurrentDuplicate(t *testing.T) {
 	}
 }
 
+func TestStaleBagGenerationCannotTouchPooledBag(t *testing.T) {
+	var d deFragger
+	data := pool.Get(2)
+	first := fragmentPacket(0, 2, 2, data[:2])
+	_, ok := d.Feed(&first)
+	require.False(t, ok)
+
+	bag, generation := d.bagFor(&first)
+	finalData := pool.Get(2)
+	final := fragmentPacket(1, 2, 2, finalData[:2])
+	assembled, ok := d.Feed(&final)
+	require.True(t, ok)
+	require.Len(t, assembled.DATA, 4)
+	pool.Put(assembled.DATA)
+
+	staleData := pool.Get(2)
+	stale := fragmentPacket(1, 2, 2, staleData[:2])
+	require.False(t, bag.claim(generation))
+	require.Zero(t, bag.count)
+	require.NotEqual(t, generation, bag.generation.Load())
+	require.Nil(t, bag.first.DATA)
+	pool.Put(stale.DATA)
+}
+
 func TestFeedSingleFragmentBypassesDeFragger(t *testing.T) {
 	data := pool.Get(7)
 	copy(data, "payload")
