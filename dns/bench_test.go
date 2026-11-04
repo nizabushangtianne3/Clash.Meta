@@ -109,3 +109,35 @@ func BenchmarkLookupIPCached(b *testing.B) {
 		}
 	}
 }
+
+// BenchmarkServeMsgCacheHitWithPack is one local DNS query the server answers
+// end to end: the wire bytes the client sent, the parse the server needs, the
+// cache-hit resolution through the handler chain, and the response pack the
+// writer performs.
+func BenchmarkServeMsgCacheHitWithPack(b *testing.B) {
+	resolver := seededBenchResolver()
+	service := NewService(resolver, NewEnhancer(EnhancerConfig{IPv6: true}))
+	query := seedAnswerMessage("server-cached.example.", 300)
+	putMsgToCache(resolver.cache, questionKey(query.Question[0]), query)
+	ctx := context.Background()
+	wire, err := query.Pack()
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		q := new(D.Msg)
+		if err := q.Unpack(wire); err != nil {
+			b.Fatal(err)
+		}
+		reply, err := service.ServeMsg(ctx, q)
+		if err != nil || reply == nil {
+			b.Fatal(err)
+		}
+		if _, err := reply.Pack(); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
