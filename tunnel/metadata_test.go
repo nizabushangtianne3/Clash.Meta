@@ -48,7 +48,7 @@ func BenchmarkNewUDPFlowMetadata(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		if !flow.origin.DstIP.IsValid() || !flow.dial.DstIP.IsValid() {
+		if !flow.originIP.IsValid() || !flow.dial.DstIP.IsValid() {
 			b.Fatal("invalid flow metadata")
 		}
 	}

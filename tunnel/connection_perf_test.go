@@ -16,21 +16,19 @@ import (
 )
 
 func TestPacketOriginKeyMatchesWithoutFormatting(t *testing.T) {
-	origin := &C.Metadata{DstIP: netip.MustParseAddr("192.168.1.2")}
-	resolved := &C.Metadata{
-		DstIP: netip.MustParseAddr("203.0.113.20"),
-	}
+	originIP := netip.MustParseAddr("192.168.1.2")
+	resolvedIP := netip.MustParseAddr("203.0.113.20")
 	sender := newPacketSender().(*packetSender)
 	defer sender.Close()
 
-	sender.AddMapping(origin, resolved)
-	target := sender.targetFor(packetOriginKey(origin))
+	sender.AddMapping("", originIP, &C.Metadata{DstIP: resolvedIP})
+	target := sender.targetFor(packetOriginKey("", originIP))
 	require.True(t, target.IsValid())
-	require.Equal(t, resolved.DstIP, target)
+	require.Equal(t, resolvedIP, target)
 
 	allocations := testing.AllocsPerRun(100, func() {
-		key := packetOriginKey(origin)
-		if key.host != "" || key.ip != origin.DstIP {
+		key := packetOriginKey("", originIP)
+		if key.host != "" || key.ip != originIP {
 			t.Fatal("invalid packet origin key")
 		}
 	})
@@ -38,22 +36,19 @@ func TestPacketOriginKeyMatchesWithoutFormatting(t *testing.T) {
 }
 
 func TestPacketOriginKeyPrefersHostOverResolvedIP(t *testing.T) {
-	origin := &C.Metadata{
-		Host:  "example.com",
-		DstIP: netip.MustParseAddr("192.0.2.1"),
-	}
-	resolved := &C.Metadata{DstIP: netip.MustParseAddr("203.0.113.20")}
+	originIP := netip.MustParseAddr("192.0.2.1")
+	resolvedIP := netip.MustParseAddr("203.0.113.20")
 	sender := newPacketSender().(*packetSender)
 	defer sender.Close()
 
-	sender.AddMapping(origin, resolved)
-	key := packetOriginKey(origin)
+	sender.AddMapping("example.com", originIP, &C.Metadata{DstIP: resolvedIP})
+	key := packetOriginKey("example.com", originIP)
 	target := sender.targetFor(key)
 
 	require.True(t, target.IsValid())
 	require.Equal(t, "example.com", key.host)
 	require.False(t, key.ip.IsValid())
-	require.Equal(t, resolved.DstIP, target)
+	require.Equal(t, resolvedIP, target)
 }
 
 // RestoreReadFrom is confined to the handleUDPToLocal read loop, so the cache
@@ -64,10 +59,7 @@ func TestPacketMappingRestoreCacheStaysInTheReadLoop(t *testing.T) {
 	unmapped := netip.MustParseAddr("203.0.113.99")
 	sender := newPacketSender().(*packetSender)
 	defer sender.Close()
-	sender.AddMapping(
-		&C.Metadata{DstIP: origin},
-		&C.Metadata{DstIP: target},
-	)
+	sender.AddMapping("", origin, &C.Metadata{DstIP: target})
 
 	if restored := sender.RestoreReadFrom(target); restored != origin {
 		t.Fatalf("restored = %v, want %v", restored, origin)
@@ -140,10 +132,10 @@ func TestPacketMappingKeepsFirstDestinationAndOrigin(t *testing.T) {
 	sender := newPacketSender().(*packetSender)
 	defer sender.Close()
 
-	sender.AddMapping(firstOrigin, &C.Metadata{DstIP: firstTarget})
-	sender.AddMapping(secondOrigin, &C.Metadata{DstIP: firstTarget})
-	sender.AddMapping(firstOrigin, &C.Metadata{DstIP: secondTarget})
-	first := sender.targetFor(packetOriginKey(firstOrigin))
+	sender.AddMapping(firstOrigin.Host, firstOrigin.DstIP, &C.Metadata{DstIP: firstTarget})
+	sender.AddMapping(secondOrigin.Host, secondOrigin.DstIP, &C.Metadata{DstIP: firstTarget})
+	sender.AddMapping(firstOrigin.Host, firstOrigin.DstIP, &C.Metadata{DstIP: secondTarget})
+	first := sender.targetFor(packetOriginKey(firstOrigin.Host, firstOrigin.DstIP))
 	firstOriginAddr := sender.RestoreReadFrom(firstTarget)
 	secondOriginAddr := sender.RestoreReadFrom(secondTarget)
 	require.Equal(t, firstTarget, first)
@@ -164,20 +156,20 @@ func TestPacketMappingFillKeepsEveryMapping(t *testing.T) {
 	sender := newPacketSender().(*packetSender)
 	defer sender.Close()
 	for index := range origins {
-		sender.AddMapping(&origins[index], &targets[index])
+		sender.AddMapping(origins[index].Host, origins[index].DstIP, &targets[index])
 	}
 
 	allocations := testing.AllocsPerRun(1, func() {
 		checkSender := newPacketSender().(*packetSender)
 		for index := range origins {
-			checkSender.AddMapping(&origins[index], &targets[index])
+			checkSender.AddMapping(origins[index].Host, origins[index].DstIP, &targets[index])
 		}
 		checkSender.Close()
 	})
 	require.Less(t, allocations, float64(2048))
 
 	for _, index := range []int{0, mappingCount / 2, mappingCount - 1} {
-		require.Equal(t, targets[index].DstIP, sender.targetFor(packetOriginKey(&origins[index])))
+		require.Equal(t, targets[index].DstIP, sender.targetFor(packetOriginKey(origins[index].Host, origins[index].DstIP)))
 		require.Equal(t, origins[index].DstIP, sender.RestoreReadFrom(targets[index].DstIP))
 	}
 }
@@ -187,10 +179,7 @@ func BenchmarkPacketMappingRestore(b *testing.B) {
 	origin := netip.MustParseAddr("192.168.1.2")
 	sender := newPacketSender().(*packetSender)
 	defer sender.Close()
-	sender.AddMapping(
-		&C.Metadata{DstIP: origin},
-		&C.Metadata{DstIP: target},
-	)
+	sender.AddMapping("", origin, &C.Metadata{DstIP: target})
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -209,7 +198,7 @@ func BenchmarkPacketMappingFirstAdd(b *testing.B) {
 	b.ResetTimer()
 	for index := 0; index < b.N; index++ {
 		sender := newPacketSender().(*packetSender)
-		sender.AddMapping(origin, target)
+		sender.AddMapping(origin.Host, origin.DstIP, target)
 		sender.Close()
 	}
 }
@@ -229,7 +218,7 @@ func BenchmarkPacketMappingFill(b *testing.B) {
 	for index := 0; index < b.N; index++ {
 		sender := newPacketSender().(*packetSender)
 		for mapping := range origins {
-			sender.AddMapping(&origins[mapping], &targets[mapping])
+			sender.AddMapping(origins[mapping].Host, origins[mapping].DstIP, &targets[mapping])
 		}
 		sender.Close()
 	}
@@ -240,12 +229,12 @@ func BenchmarkPacketOriginLookup(b *testing.B) {
 	target := netip.MustParseAddr("203.0.113.20")
 	sender := newPacketSender().(*packetSender)
 	defer sender.Close()
-	sender.AddMapping(origin, &C.Metadata{DstIP: target})
+	sender.AddMapping(origin.Host, origin.DstIP, &C.Metadata{DstIP: target})
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for index := 0; index < b.N; index++ {
-		if address := sender.targetFor(packetOriginKey(origin)); address != target {
+		if address := sender.targetFor(packetOriginKey(origin.Host, origin.DstIP)); address != target {
 			b.Fatal("packet origin mapping was not found")
 		}
 	}
@@ -308,7 +297,7 @@ func TestProcessPacketArmsDeadlineOncePerHalfTimeout(t *testing.T) {
 	t.Cleanup(sender.Close)
 
 	origin := &C.Metadata{NetWork: C.UDP, DstIP: netip.MustParseAddr("127.0.0.2"), DstPort: 5353}
-	sender.AddMapping(origin, &C.Metadata{NetWork: C.UDP, DstIP: netip.MustParseAddr("127.0.0.3"), DstPort: 5353})
+	sender.AddMapping(origin.Host, origin.DstIP, &C.Metadata{NetWork: C.UDP, DstIP: netip.MustParseAddr("127.0.0.3"), DstPort: 5353})
 
 	packet := C.NewPacketAdapter(
 		deadlineTestPacket{localAddr: net.UDPAddrFromAddrPort(netip.MustParseAddrPort("127.0.0.1:53535")), data: []byte("ping")},
@@ -460,7 +449,7 @@ func newDestinationTestFlow(t *testing.T, pc C.PacketConn) (*packetSender, *C.Me
 	t.Cleanup(sender.Close)
 
 	origin := &C.Metadata{NetWork: C.UDP, DstIP: netip.MustParseAddr("127.0.0.2"), DstPort: 5353}
-	sender.AddMapping(origin, &C.Metadata{NetWork: C.UDP, DstIP: netip.MustParseAddr("127.0.0.3"), DstPort: 5353})
+	sender.AddMapping(origin.Host, origin.DstIP, &C.Metadata{NetWork: C.UDP, DstIP: netip.MustParseAddr("127.0.0.3"), DstPort: 5353})
 
 	return sender, origin
 }
@@ -515,7 +504,7 @@ func BenchmarkProcessPacketHit(b *testing.B) {
 	sender := newPacketSender().(*packetSender)
 	b.Cleanup(sender.Close)
 	origin := &C.Metadata{NetWork: C.UDP, DstIP: netip.MustParseAddr("127.0.0.2"), DstPort: 5353}
-	sender.AddMapping(origin, &C.Metadata{NetWork: C.UDP, DstIP: netip.MustParseAddr("127.0.0.3"), DstPort: 5353})
+	sender.AddMapping(origin.Host, origin.DstIP, &C.Metadata{NetWork: C.UDP, DstIP: netip.MustParseAddr("127.0.0.3"), DstPort: 5353})
 
 	b.ReportAllocs()
 	b.ResetTimer()

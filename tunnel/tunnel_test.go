@@ -105,15 +105,14 @@ func TestNewUDPFlowMetadataSharesOneClone(t *testing.T) {
 
 	flow, err := newUDPFlowMetadata(metadata)
 	dial := &flow.dial
-	origin := &flow.origin
+	originIP := flow.originIP
 	require.NoError(t, err)
 	require.NotSame(t, metadata, dial)
 	require.Equal(t, "udp.example.com", dial.Host)
 	require.False(t, dial.DstIP.IsValid())
 	require.Equal(t, C.DNSFakeIP, dial.DNSMode)
-	require.Equal(t, netip.AddrFrom4([4]byte{198, 18, 0, 1}), origin.DstIP)
-	require.Empty(t, origin.Host)
-	require.EqualValues(t, 443, origin.DstPort)
+	require.Equal(t, netip.AddrFrom4([4]byte{198, 18, 0, 1}), originIP)
+	require.Empty(t, flow.originHost)
 	require.Empty(t, metadata.Host)
 	require.Equal(t, netip.AddrFrom4([4]byte{198, 18, 0, 1}), metadata.DstIP)
 }

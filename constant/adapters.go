@@ -364,7 +364,7 @@ type PacketSender interface {
 	// DoSniff will blocking after sniffer work done
 	DoSniff(*Metadata) error
 	// AddMapping add a destination NAT record
-	AddMapping(originMetadata *Metadata, metadata *Metadata)
+	AddMapping(originHost string, originIP netip.Addr, metadata *Metadata)
 	// RestoreReadFrom restore destination NAT for ReadFrom
 	// the implement must ensure returned netip.Add is valid (or just return input addr)
 	RestoreReadFrom(addr netip.Addr) netip.Addr

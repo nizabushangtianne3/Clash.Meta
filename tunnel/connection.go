@@ -57,11 +57,11 @@ type packetReadMapping struct {
 	valid  bool
 }
 
-func packetOriginKey(metadata *C.Metadata) packetOrigin {
-	if metadata.Host != "" {
-		return packetOrigin{host: metadata.Host}
+func packetOriginKey(originHost string, originIP netip.Addr) packetOrigin {
+	if originHost != "" {
+		return packetOrigin{host: originHost}
 	}
-	return packetOrigin{ip: metadata.DstIP}
+	return packetOrigin{ip: originIP}
 }
 
 // newPacketSender return a chan based C.PacketSender
@@ -72,9 +72,9 @@ func newPacketSender() C.PacketSender {
 	return &packetSender{done: done, ch: ch}
 }
 
-func (s *packetSender) AddMapping(originMetadata *C.Metadata, metadata *C.Metadata) {
-	originKey := packetOriginKey(originMetadata)
-	originAddr := originMetadata.DstIP
+func (s *packetSender) AddMapping(originHost string, originIP netip.Addr, metadata *C.Metadata) {
+	originKey := packetOriginKey(originHost, originIP)
+	originAddr := originIP
 	targetAddr := metadata.DstIP
 
 	s.mappingMutex.Lock()
@@ -170,7 +170,7 @@ func (s *packetSender) processPacket(pc C.PacketConn, packet C.PacketAdapter) {
 
 	var addr *net.UDPAddr
 
-	targetAddr := s.targetFor(packetOriginKey(metadata))
+	targetAddr := s.targetFor(packetOriginKey(metadata.Host, metadata.DstIP))
 
 	if targetAddr.IsValid() {
 		addr = s.destinationFor(targetAddr, metadata.DstPort)
@@ -195,7 +195,7 @@ func (s *packetSender) processPacket(pc C.PacketConn, packet C.PacketAdapter) {
 			log.Warnln("[UDP] Destination ip not valid: %#v", metadata)
 			return
 		}
-		s.AddMapping(originMetadata, metadata)
+		s.AddMapping(originMetadata.Host, originMetadata.DstIP, metadata)
 		addr = metadata.UDPAddr()
 	}
 	if err := handleUDPToRemote(packet, pc, addr); err != nil {

@@ -174,5 +174,5 @@ func (*noopPacketSender) Send(C.PacketAdapter)                       {}
 func (*noopPacketSender) Process(C.PacketConn, C.WriteBackProxy)     {}
 func (*noopPacketSender) Close()                                     {}
 func (*noopPacketSender) DoSniff(*C.Metadata) error                  { return nil }
-func (*noopPacketSender) AddMapping(*C.Metadata, *C.Metadata)        {}
+func (*noopPacketSender) AddMapping(string, netip.Addr, *C.Metadata) {}
 func (*noopPacketSender) RestoreReadFrom(addr netip.Addr) netip.Addr { return addr }

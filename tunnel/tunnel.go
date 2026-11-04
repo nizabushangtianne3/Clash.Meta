@@ -346,8 +346,9 @@ func processUDP(queue chan udpPacket) {
 // udpFlowMetadata keeps the origin snapshot and the mutable dial metadata in
 // one flow-owned allocation.
 type udpFlowMetadata struct {
-	origin C.Metadata
-	dial   C.Metadata
+	originHost string
+	originIP   netip.Addr
+	dial       C.Metadata
 	// writeBack is owned by the dial flow and avoids a separate proxy allocation.
 	writeBack nat.WriteBackProxy
 }
@@ -359,9 +360,8 @@ type udpFlowMetadata struct {
 // nothing downstream reads it again once the dial goes async.
 func newUDPFlowMetadata(metadata *C.Metadata) (*udpFlowMetadata, error) {
 	flow := &udpFlowMetadata{dial: *metadata}
-	flow.origin.Host = flow.dial.Host
-	flow.origin.DstIP = flow.dial.DstIP
-	flow.origin.DstPort = flow.dial.DstPort
+	flow.originHost = flow.dial.Host
+	flow.originIP = flow.dial.DstIP
 	return flow, preHandleMetadata(&flow.dial)
 }
 
@@ -424,7 +424,6 @@ func startUDPSender(flow *udpFlowMetadata, packet C.PacketAdapter, sender C.Pack
 // snapshot taken before preHandleMetadata rewrote it: neither is shared with
 // later datagrams.
 func dialUDPSender(flow *udpFlowMetadata, packet C.PacketAdapter, sender C.PacketSender, key netip.AddrPort) (C.PacketConn, C.WriteBackProxy, error) {
-	originMetadata := &flow.origin
 	metadata := &flow.dial
 	if err := sender.DoSniff(metadata); err != nil {
 		log.Warnln("[UDP] DoSniff error: %s", err.Error())
@@ -452,7 +451,7 @@ func dialUDPSender(flow *udpFlowMetadata, packet C.PacketAdapter, sender C.Packe
 
 	pc := statistic.NewUDPTracker(newIdlePacketConn(rawPc), statistic.DefaultManager, metadata, rule, 0, 0, true)
 
-	sender.AddMapping(originMetadata, dialMetadata)
+	sender.AddMapping(flow.originHost, flow.originIP, dialMetadata)
 	oAddrPort := dialMetadata.AddrPort()
 	flow.writeBack.UpdateWriteBack(packet)
 	writeBackProxy := &flow.writeBack

@@ -144,7 +144,7 @@ func BenchmarkHandleUDPConnExistingFlowAdapter(b *testing.B) {
 		sender.Close()
 		natTable.DeleteForFlow(key)
 	})
-	sender.AddMapping(&C.Metadata{DstIP: netip.MustParseAddr("192.168.1.2")}, &C.Metadata{DstIP: netip.MustParseAddr("203.0.113.3")})
+	sender.AddMapping("", netip.MustParseAddr("192.168.1.2"), &C.Metadata{DstIP: netip.MustParseAddr("203.0.113.3")})
 
 	b.Run("wrapped", func(b *testing.B) {
 		packet := deadlineTestPacket{localAddr: net.UDPAddrFromAddrPort(key), data: []byte("ping")}
