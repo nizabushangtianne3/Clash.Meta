@@ -11,6 +11,13 @@ import (
 )
 
 func startUDPDNSServer(tb testing.TB) (string, <-chan struct{}) {
+	return startShapedUDPDNSServer(tb, nil)
+}
+
+// startShapedUDPDNSServer answers every query with the positive A record the
+// tests expect, then hands the response to shape for negative or sectioned
+// variants (NXDOMAIN, NODATA with SOA, and so on) to mutate it.
+func startShapedUDPDNSServer(tb testing.TB, shape func(*D.Msg)) (string, <-chan struct{}) {
 	tb.Helper()
 
 	conn, err := net.ListenPacket("udp", "127.0.0.1:0")
@@ -47,6 +54,9 @@ func startUDPDNSServer(tb testing.TB) (string, <-chan struct{}) {
 					},
 					A: net.IPv4(192, 0, 2, 10),
 				})
+			}
+			if shape != nil {
+				shape(&response)
 			}
 			packed, err := response.Pack()
 			if err != nil {
@@ -260,7 +270,30 @@ func TestClientExchangeRetriesTruncatedUDPOverTCP(t *testing.T) {
 }
 
 func BenchmarkClientExchangeUDP(b *testing.B) {
-	port, _ := startUDPDNSServer(b)
+	benchmarkClientExchangeUDPShaped(b, nil)
+}
+
+// negativeReplyShape turns the positive reply into the NXDOMAIN or NODATA form
+// a dead domain gets: an error or empty answer with the SOA in the authority.
+func negativeReplyShape(rcode int) func(*D.Msg) {
+	return func(response *D.Msg) {
+		response.Rcode = rcode
+		response.Answer = nil
+		response.Ns = append(response.Ns, &D.SOA{
+			Hdr:     D.RR_Header{Name: response.Question[0].Name, Rrtype: D.TypeSOA, Class: D.ClassINET, Ttl: 300},
+			Ns:      "ns1.example.com.",
+			Mbox:    "hostmaster.example.com.",
+			Serial:  1,
+			Refresh: 2,
+			Retry:   3,
+			Expire:  4,
+			Minttl:  60,
+		})
+	}
+}
+
+func benchmarkClientExchangeUDPShaped(b *testing.B, shape func(*D.Msg)) {
+	port, _ := startShapedUDPDNSServer(b, shape)
 	dnsClient := newLocalUDPClient(port)
 	query := newClientTestQuery()
 	ctx := context.Background()
@@ -272,6 +305,14 @@ func BenchmarkClientExchangeUDP(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
+}
+
+func BenchmarkClientExchangeUDPNXDOMAIN(b *testing.B) {
+	benchmarkClientExchangeUDPShaped(b, negativeReplyShape(D.RcodeNameError))
+}
+
+func BenchmarkClientExchangeUDPNODATA(b *testing.B) {
+	benchmarkClientExchangeUDPShaped(b, negativeReplyShape(D.RcodeSuccess))
 }
 
 func BenchmarkDNSClientAddress(b *testing.B) {
