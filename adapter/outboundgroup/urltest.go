@@ -62,6 +62,12 @@ func (u *URLTest) selectedName() string {
 	return u.selected
 }
 
+// SelectedName exposes the pinned selection the group document reports as
+// fixed, so the host can cache the document on the values it would encode.
+func (u *URLTest) SelectedName() string {
+	return u.selectedName()
+}
+
 func (u *URLTest) setSelected(name string) {
 	u.selectedMu.Lock()
 	u.selected = name

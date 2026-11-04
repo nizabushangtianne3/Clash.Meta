@@ -57,6 +57,12 @@ func (f *Fallback) selectedName() string {
 	return f.selected
 }
 
+// SelectedName exposes the pinned selection the group document reports as
+// fixed, so the host can cache the document on the values it would encode.
+func (f *Fallback) SelectedName() string {
+	return f.selectedName()
+}
+
 func (f *Fallback) setSelected(name string) {
 	f.selectedMu.Lock()
 	f.selected = name
