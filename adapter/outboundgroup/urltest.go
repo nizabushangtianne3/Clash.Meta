@@ -3,6 +3,7 @@ package outboundgroup
 import (
 	"context"
 	"errors"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -14,6 +15,8 @@ import (
 	C "github.com/metacubex/mihomo/constant"
 	P "github.com/metacubex/mihomo/constant/provider"
 )
+
+const unmeasuredPickHold = time.Second
 
 type URLTestOption struct {
 	Tolerance uint16 `group:"tolerance,omitempty"`
@@ -185,6 +188,13 @@ func hasOtherAliveProxy(proxies []C.Proxy, selected C.Proxy, testURL string) boo
 
 func (u *URLTest) fast(touch bool) C.Proxy {
 	u.dropCacheForProviderSwap()
+	// A rebuilt group starts on its first member, which subscriptions often fill
+	// with a traffic notice; held for the whole cache window, that pick outlasts
+	// the first health check and fails every connection meanwhile. The hold keeps
+	// a group with no usable member from walking them all on every connection.
+	u.fastSingle.ForgetAfter(unmeasuredPickHold, func(pick C.Proxy) bool {
+		return pick.LastDelayForTestUrl(u.testUrl) == math.MaxUint16
+	})
 	if cached, _, ok := u.fastSingle.Cached(); ok {
 		if touch { // the same recency the cached Do result reports as shared
 			u.Touch()

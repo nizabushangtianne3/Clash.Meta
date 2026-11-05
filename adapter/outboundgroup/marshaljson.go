@@ -11,8 +11,8 @@ import (
 // written stay the ones the write helpers produce.
 
 const (
-	jsonLiteralNowField = len(`,"now":`)
-	jsonLiteralAllField = len(`,"all":`)
+	jsonLiteralNowField     = len(`,"now":`)
+	jsonLiteralAllField     = len(`,"all":`)
 	jsonLiteralEmptyTestURL = len(`,"testUrl":""`)
 )
 

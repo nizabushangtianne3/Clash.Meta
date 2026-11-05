@@ -35,11 +35,12 @@ type HealthCheck struct {
 	extra          map[string]*extraOption
 	mu             sync.RWMutex
 	proxies        []C.Proxy
+	version        atomic.Uint32
 	interval       time.Duration
 	lazy           bool
 	expectedStatus utils.IntRanges[uint16]
 	lastTouch      atomic.TypedValue[time.Time]
-	singleDo       *singledo.Single[struct{}]
+	singleDo       *singledo.Single[uint32]
 	timeout        time.Duration
 }
 
@@ -70,6 +71,7 @@ func (hc *HealthCheck) setProxies(proxies []C.Proxy) {
 	hc.mu.Lock()
 	defer hc.mu.Unlock()
 	hc.proxies = proxies
+	hc.version.Add(1)
 }
 
 func (hc *HealthCheck) registerHealthCheckTask(url string, expectedStatus utils.IntRanges[uint16], filter string, interval uint) {
@@ -146,7 +148,27 @@ func (hc *HealthCheck) touch() {
 }
 
 func (hc *HealthCheck) check() {
+	for {
+		hc.mu.RLock()
+		count := len(hc.proxies)
+		hc.mu.RUnlock()
+		if count == 0 {
+			return
+		}
+
+		// A round joined or cached from before the proxies were replaced tested
+		// proxies no group holds any more.
+		checked, _, _ := hc.singleDo.Do(hc.round)
+		if checked == hc.version.Load() {
+			return
+		}
+		hc.singleDo.Forget(func(checked uint32) bool { return checked != hc.version.Load() })
+	}
+}
+
+func (hc *HealthCheck) round() (uint32, error) {
 	hc.mu.RLock()
+	version := hc.version.Load()
 	proxies := append([]C.Proxy(nil), hc.proxies...)
 	extra := make(map[string]*extraOption, len(hc.extra))
 	for url, option := range hc.extra {
@@ -163,39 +185,27 @@ func (hc *HealthCheck) check() {
 	expectedStatus := hc.expectedStatus
 	hc.mu.RUnlock()
 
-	if len(proxies) == 0 {
-		return
-	}
+	id := utils.NewUUIDV4().String()
+	log.Debugln("Start New Health Checking {%s}", id)
+	b := new(errgroup.Group)
+	b.SetLimit(10)
 
-	_, _, _ = hc.singleDo.Do(func() (struct{}, error) {
-		id := utils.NewUUIDV4().String()
-		log.Debugln("Start New Health Checking {%s}", id)
-		b := new(errgroup.Group)
-		b.SetLimit(10)
+	// execute default health check
+	option := &extraOption{filters: nil, expectedStatus: expectedStatus}
+	hc.execute(b, proxies, version, url, id, option)
 
-		// execute default health check
-		option := &extraOption{filters: nil, expectedStatus: expectedStatus}
-		hc.execute(b, proxies, url, id, option)
-
-		// execute extra health check
-		if len(extra) != 0 {
-			for url, option := range extra {
-				hc.execute(b, proxies, url, id, option)
-			}
+	// execute extra health check
+	if len(extra) != 0 {
+		for url, option := range extra {
+			hc.execute(b, proxies, version, url, id, option)
 		}
-		_ = b.Wait()
-		log.Debugln("Finish A Health Checking {%s}", id)
-		return struct{}{}, nil
-	})
+	}
+	_ = b.Wait()
+	log.Debugln("Finish A Health Checking {%s}", id)
+	return version, nil
 }
 
-func (hc *HealthCheck) execute(
-	b *errgroup.Group,
-	proxies []C.Proxy,
-	url string,
-	uid string,
-	option *extraOption,
-) {
+func (hc *HealthCheck) execute(b *errgroup.Group, proxies []C.Proxy, version uint32, url, uid string, option *extraOption) {
 	url = strings.TrimSpace(url)
 	if len(url) == 0 {
 		log.Debugln("Health Check has been skipped due to testUrl is empty, {%s}", uid)
@@ -210,6 +220,9 @@ func (hc *HealthCheck) execute(
 	}
 
 	for _, proxy := range proxies {
+		if hc.version.Load() != version {
+			break
+		}
 		// skip proxies that do not require health check
 		if filter != nil {
 			if match, _ := filter.MatchString(proxy.Name()); !match {
@@ -219,7 +232,7 @@ func (hc *HealthCheck) execute(
 
 		p := proxy
 		b.Go(func() error {
-			ctx, cancel := context.WithTimeout(hc.ctx, hc.timeout)
+			ctx, cancel := context.WithTimeout(hc.ctx, hc.testTimeout())
 			defer cancel()
 			log.Debugln("Health Checking, proxy: %s, url: %s, id: {%s}", p.Name(), url, uid)
 			_, _ = p.URLTest(ctx, url, expectedStatus)
@@ -238,9 +251,6 @@ func NewHealthCheck(proxies []C.Proxy, url string, timeout uint, interval uint, 
 		expectedStatus = nil
 		interval = 0
 	}
-	if timeout == 0 {
-		timeout = 5000
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &HealthCheck{
@@ -253,6 +263,6 @@ func NewHealthCheck(proxies []C.Proxy, url string, timeout uint, interval uint, 
 		interval:       time.Duration(interval) * time.Second,
 		lazy:           lazy,
 		expectedStatus: expectedStatus,
-		singleDo:       singledo.NewSingle[struct{}](time.Second),
+		singleDo:       singledo.NewSingle[uint32](time.Second),
 	}
 }

@@ -149,12 +149,12 @@ func TestGroupMarshalJSONSizesItsBuffer(t *testing.T) {
 		groups[kind] = proxy
 	}
 
-for kind, proxy := range groups {
-	allocations := testing.AllocsPerRun(50, func() {
-		if _, err := proxy.Adapter().MarshalJSON(); err != nil {
-			t.Fatal(err)
-		}
-	})
+	for kind, proxy := range groups {
+		allocations := testing.AllocsPerRun(50, func() {
+			if _, err := proxy.Adapter().MarshalJSON(); err != nil {
+				t.Fatal(err)
+			}
+		})
 		require.LessOrEqual(t, allocations, float64(1), "%s marshal allocations: %v", kind, allocations)
 	}
 }
