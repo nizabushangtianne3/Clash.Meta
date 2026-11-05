@@ -69,6 +69,10 @@ type quicStreamPacketConn struct {
 	closeDeferFn    func()
 	writeClosed     *atomic.Bool
 
+	packetCh     chan Packet
+	nativeClosed chan struct{}
+	packetOnce   sync.Once
+
 	closeOnce sync.Once
 	closeErr  error
 	closed    atomic.Bool
@@ -77,9 +81,13 @@ type quicStreamPacketConn struct {
 }
 
 func (q *quicStreamPacketConn) Close() error {
+	if q.nativeClosed != nil {
+		q.packetOnce.Do(func() { close(q.nativeClosed) })
+	}
 	q.closeOnce.Do(func() {
 		q.closed.Store(true)
 		q.closeErr = q.close()
+		q.drainNative()
 	})
 	return q.closeErr
 }
@@ -95,26 +103,25 @@ func (q *quicStreamPacketConn) close() (err error) {
 	}
 	if q.inputConn != nil {
 		_ = q.inputConn.Close()
-
-		buf := pool.GetBuffer()
-		defer pool.PutBuffer(buf)
-		err = NewDissociate(q.connId).WriteTo(buf)
-		if err != nil {
-			return
-		}
-		var stream *quic.SendStream
-		stream, err = q.quicConn.OpenUniStream()
-		if err != nil {
-			return
-		}
-		_, err = buf.WriteTo(stream)
-		if err != nil {
-			return
-		}
-		err = stream.Close()
-		if err != nil {
-			return
-		}
+	}
+	buf := pool.GetBuffer()
+	defer pool.PutBuffer(buf)
+	err = NewDissociate(q.connId).WriteTo(buf)
+	if err != nil {
+		return
+	}
+	var stream *quic.SendStream
+	stream, err = q.quicConn.OpenUniStream()
+	if err != nil {
+		return
+	}
+	_, err = buf.WriteTo(stream)
+	if err != nil {
+		return
+	}
+	err = stream.Close()
+	if err != nil {
+		return
 	}
 	return
 }
@@ -140,6 +147,16 @@ func (q *quicStreamPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err err
 	if q.closed.Load() {
 		return 0, nil, net.ErrClosed
 	}
+	if q.packetCh != nil {
+		data, source, readErr := q.WaitReadFrom()
+		if readErr != nil {
+			return 0, nil, readErr
+		}
+		n = copy(p, data)
+		addr = net.UDPAddrFromAddrPort(source)
+		pool.Put(data)
+		return
+	}
 	if inputConn := q.inputConn; inputConn != nil { // copy inputConn avoid be nil in for loop
 		for {
 			var packet Packet
@@ -163,11 +180,61 @@ func (q *quicStreamPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err err
 	return
 }
 
+func (q *quicStreamPacketConn) receiveDatagram(message []byte) {
+	for len(message) != 0 {
+		packet, used, err := readPacketFromWire(message)
+		if err != nil {
+			return
+		}
+		message = message[used:]
+		q.deliverPacket(packet)
+	}
+}
+
+func (q *quicStreamPacketConn) deliverPacket(packet Packet) {
+	select {
+	case q.packetCh <- packet:
+	case <-q.nativeClosed:
+		pool.Put(packet.DATA)
+	}
+}
+
+func (q *quicStreamPacketConn) drainNative() {
+	if q.packetCh == nil {
+		return
+	}
+	for {
+		select {
+		case packet := <-q.packetCh:
+			pool.Put(packet.DATA)
+			continue
+		default:
+		}
+		break
+	}
+	q.deFragger.drop()
+}
+
 func (q *quicStreamPacketConn) WaitReadFrom() (data []byte, addr netip.AddrPort, err error) {
 	if q.closed.Load() {
 		return nil, netip.AddrPort{}, net.ErrClosed
 	}
-	if inputConn := q.inputConn; inputConn != nil { // copy inputConn avoid be nil in for loop
+	if q.packetCh != nil {
+		for {
+			select {
+			case packet := <-q.packetCh:
+				packet, ok := q.deFragger.Feed(&packet)
+				if ok {
+					data = packet.DATA
+					addr = packet.ADDR.AddrPort()
+					return
+				}
+			case <-q.nativeClosed:
+				return nil, netip.AddrPort{}, net.ErrClosed
+			}
+		}
+	}
+	if inputConn := q.inputConn; inputConn != nil {
 		for {
 			var packet Packet
 			packet, err = readPacketInto(inputConn)

@@ -41,7 +41,8 @@ type clientImpl struct {
 	openStreams atomic.Int64
 	closed      atomic.Bool
 
-	udpInputMap xsync.Map[uint16, net.Conn]
+	udpStreamMap xsync.Map[uint16, net.Conn]
+	udpPacketMap xsync.Map[uint16, *quicStreamPacketConn]
 
 	// only ready for PoolClient
 	lastVisited atomic2.TypedValue[time.Time]
@@ -171,12 +172,12 @@ func (t *clientImpl) routeUniPacket(stream *quic.ReceiveStream, header []byte) e
 		return nil
 	}
 
-	input, loaded := t.udpInputMap.Load(assocId)
+	input, loaded := t.udpStreamMap.Load(assocId)
 	if !loaded || input == nil {
 		return nil
 	}
 	if _, err := input.Write(header[:prefixLen]); err != nil {
-		t.closeUDPInput(assocId)
+		t.closeUDPStream(assocId)
 		return nil
 	}
 
@@ -187,7 +188,7 @@ func (t *clientImpl) routeUniPacket(stream *quic.ReceiveStream, header []byte) e
 	payload := pool.Get(bodyLen)
 	if _, err := io.ReadFull(stream, payload); err != nil {
 		pool.Put(payload)
-		t.closeUDPInput(assocId)
+		t.closeUDPStream(assocId)
 		if isShortStreamRead(err) {
 			return nil
 		}
@@ -196,7 +197,7 @@ func (t *clientImpl) routeUniPacket(stream *quic.ReceiveStream, header []byte) e
 	_, err := input.Write(payload)
 	pool.Put(payload)
 	if err != nil {
-		t.closeUDPInput(assocId)
+		t.closeUDPStream(assocId)
 		return nil
 	}
 	return nil
@@ -229,8 +230,8 @@ func (t *clientImpl) handleMessage(quicConn *quic.Conn) (err error) {
 				continue
 			}
 			if t.udp && t.UdpRelayMode == types.NATIVE {
-				if input, loaded := t.udpInputMap.Load(assocId); loaded && input != nil {
-					_, _ = input.Write(message)
+				if input, loaded := t.udpPacketMap.Load(assocId); loaded && input != nil {
+					input.receiveDatagram(message)
 				}
 			}
 		case HeartbeatType:
@@ -238,8 +239,8 @@ func (t *clientImpl) handleMessage(quicConn *quic.Conn) (err error) {
 	}
 }
 
-func (t *clientImpl) closeUDPInput(assocId uint16) {
-	if val, ok := t.udpInputMap.LoadAndDelete(assocId); ok && val != nil {
+func (t *clientImpl) closeUDPStream(assocId uint16) {
+	if val, ok := t.udpStreamMap.LoadAndDelete(assocId); ok && val != nil {
 		_ = val.Close()
 	}
 }
@@ -269,11 +270,17 @@ func (t *clientImpl) forceClose(quicConn *quic.Conn, err error) {
 	if quicConn != nil {
 		_ = quicConn.CloseWithError(ProtocolError, errStr)
 	}
-	udpInputMap := &t.udpInputMap
-	udpInputMap.Range(func(key uint16, value net.Conn) bool {
+	udpStreamMap := &t.udpStreamMap
+	udpStreamMap.Range(func(key uint16, value net.Conn) bool {
 		conn := value
 		_ = conn.Close()
-		udpInputMap.Delete(key)
+		udpStreamMap.Delete(key)
+		return true
+	})
+	udpPacketMap := &t.udpPacketMap
+	udpPacketMap.Range(func(key uint16, value *quicStreamPacketConn) bool {
+		_ = value.Close()
+		udpPacketMap.Delete(key)
 		return true
 	})
 }
@@ -349,31 +356,58 @@ func (t *clientImpl) ListenPacket(ctx context.Context, metadata *C.Metadata) (ne
 		return nil, types.ErrTooManyOpenStreams
 	}
 
-	pipe1, pipe2 := N.Pipe()
-	var connId uint16
-	for {
-		connId = uint16(randv2.IntN(0xFFFF))
-		_, loaded := t.udpInputMap.LoadOrStore(connId, pipe1)
-		if !loaded {
-			break
-		}
-	}
+	native := t.udp && t.UdpRelayMode == types.NATIVE
 	pc := &quicStreamPacketConn{
-		connId:                connId,
-		quicConn:              quicConn,
-		inputConn:             N.NewBufferedConn(pipe2),
 		udpRelayMode:          t.UdpRelayMode,
 		maxUdpRelayPacketSize: t.MaxUdpRelayPacketSize,
 		deferQuicConnFn:       t.deferQuicConn,
-		closeDeferFn: func() {
-			t.udpInputMap.Delete(connId)
+	}
+	pc.quicConn = quicConn
+	var pipe1, pipe2 net.Conn
+	if native {
+		pc.packetCh = make(chan Packet, 64)
+		pc.nativeClosed = make(chan struct{})
+	} else {
+		pipe1, pipe2 = N.Pipe()
+		pc.inputConn = N.NewBufferedConn(pipe2)
+	}
+
+	var connId uint16
+	for {
+		connId = uint16(randv2.IntN(0xFFFF))
+		pc.connId = connId
+		if native {
+			if _, loaded := t.udpPacketMap.LoadOrStore(connId, pc); !loaded {
+				break
+			}
+			continue
+		}
+		if _, loaded := t.udpStreamMap.LoadOrStore(connId, pipe1); !loaded {
+			break
+		}
+	}
+
+	if native {
+		pc.closeDeferFn = func() {
+			t.udpPacketMap.Delete(connId)
 			time.AfterFunc(C.DefaultUDPTimeout, func() {
 				openStreams := t.openStreams.Add(-1)
 				if openStreams == 0 && t.closed.Load() {
 					t.forceClose(quicConn, types.ErrClientClosed)
 				}
 			})
-		},
+		}
+		return pc, nil
+	}
+
+	pc.closeDeferFn = func() {
+		t.udpStreamMap.Delete(connId)
+		time.AfterFunc(C.DefaultUDPTimeout, func() {
+			openStreams := t.openStreams.Add(-1)
+			if openStreams == 0 && t.closed.Load() {
+				t.forceClose(quicConn, types.ErrClientClosed)
+			}
+		})
 	}
 	return pc, nil
 }

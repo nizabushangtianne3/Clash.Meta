@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -307,6 +308,96 @@ func readPacketWithHead(head CommandHead, reader BufferedReader) (c Packet, err 
 		return
 	}
 	return
+}
+
+var (
+	errShortPacketWire = errors.New("short packet datagram")
+	errBadPacketWire   = errors.New("invalid packet datagram header")
+)
+
+// readPacketFromWire parses the framed datagram in place. The pooled payload is
+// copied because quic-go owns the wire slice, while IP addresses stay in the
+// returned value without another allocation.
+func readPacketFromWire(message []byte) (Packet, int, error) {
+	if len(message) < packetFrameHeaderLen || message[0] != VER ||
+		CommandType(message[1]) != PacketType {
+		return Packet{}, 0, errBadPacketWire
+	}
+	frameLen, ok := rawPacketFrameLen(message[:min(len(message), packetFramePrefixCap)])
+	if !ok {
+		return Packet{}, 0, errBadPacketWire
+	}
+	if len(message) < frameLen {
+		return Packet{}, 0, errShortPacketWire
+	}
+
+	header := message[packetCommandHeadLen:packetFrameHeaderLen]
+	packet := Packet{
+		CommandHead: CommandHead{VER: message[0], TYPE: PacketType},
+		ASSOC_ID:    binary.BigEndian.Uint16(header[0:]),
+		PKT_ID:      binary.BigEndian.Uint16(header[2:]),
+		FRAG_TOTAL:  header[4],
+		FRAG_ID:     header[5],
+		SIZE:        binary.BigEndian.Uint16(header[6:]),
+	}
+	wire := message[packetFrameHeaderLen:]
+	addr, addrLen, err := readAddressFromWire(wire)
+	if err != nil {
+		return Packet{}, 0, err
+	}
+	packet.ADDR = addr
+	payloadLen := int(packet.SIZE)
+	if addrLen+payloadLen+packetFrameHeaderLen != frameLen {
+		return Packet{}, 0, errBadPacketWire
+	}
+	data := pool.Get(payloadLen)
+	copy(data, wire[addrLen:addrLen+payloadLen])
+	packet.DATA = data[:payloadLen]
+	return packet, frameLen, nil
+}
+
+func readAddressFromWire(input []byte) (Address, int, error) {
+	if len(input) == 0 {
+		return Address{}, 0, errShortPacketWire
+	}
+	addr := Address{typ: input[0]}
+	wire := input[1:]
+	switch addr.typ {
+	case AtypIPv4:
+		if len(wire) < net.IPv4len+2 {
+			return Address{}, 0, errShortPacketWire
+		}
+		addr.ip = netip.AddrFrom4([4]byte(wire[:4]))
+		wire = wire[net.IPv4len:]
+	case AtypIPv6:
+		if len(wire) < net.IPv6len+2 {
+			return Address{}, 0, errShortPacketWire
+		}
+		addr.ip = netip.AddrFrom16([16]byte(wire[:16]))
+		wire = wire[net.IPv6len:]
+	case AtypDomainName:
+		if len(wire) == 0 {
+			return Address{}, 0, errShortPacketWire
+		}
+		nameLen := int(wire[0])
+		if len(wire) < 1+nameLen+2 {
+			return Address{}, 0, errShortPacketWire
+		}
+		addr.domain = make([]byte, nameLen+1)
+		addr.domain[0] = wire[0]
+		copy(addr.domain[1:], wire[1:nameLen+1])
+		wire = wire[1+nameLen:]
+	case AtypNone:
+		return addr, len(input) - len(wire), nil
+	default:
+		return Address{}, 0, errBadPacketWire
+	}
+	if len(wire) < 2 {
+		return Address{}, 0, errShortPacketWire
+	}
+	addr.port = binary.BigEndian.Uint16(wire[:2])
+	wire = wire[2:]
+	return addr, len(input) - len(wire), nil
 }
 
 func ReadPacket(reader BufferedReader) (c Packet, err error) {

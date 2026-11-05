@@ -1,0 +1,13 @@
+goos: windows
+goarch: amd64
+pkg: github.com/metacubex/mihomo/transport/tuic/v5
+cpu: Intel(R) Core(TM) i9-9900 CPU @ 3.10GHz
+BenchmarkTUICNativeDatagramRoute 	  670009	      1716 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTUICNativeDatagramRoute 	  716940	      1705 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTUICNativeDatagramRoute 	  723632	      1637 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTUICNativeDatagramRoute 	  738506	      1631 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTUICNativeDatagramRoute 	  736399	      1634 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTUICNativeDatagramRoute 	  656986	      1637 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTUICNativeDatagramRoute 	  709416	      1628 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/metacubex/mihomo/transport/tuic/v5	8.965s

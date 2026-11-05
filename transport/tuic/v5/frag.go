@@ -207,6 +207,16 @@ func (d *deFragger) removeCompleted(id uint16, completed *packetBag) {
 	}
 }
 
+func (d *deFragger) drop() {
+	d.mutex.Lock()
+	for id, bag := range d.bags {
+		bag.reset()
+		delete(d.bags, id)
+		packetBagPool.Put(bag)
+	}
+	d.mutex.Unlock()
+}
+
 func (d *deFragger) feedLocked(m *Packet, bag *packetBag) (packet Packet, ok bool) {
 	if m.FRAG_ID >= m.FRAG_TOTAL {
 		_ = pool.Put(m.DATA)
