@@ -147,18 +147,20 @@ func (m *Manager) totalDownload() (total int64) {
 	return total
 }
 
-func (m *Manager) totalProxyUpload() (total int64) {
+// totalPair reads both counters in one stripe sweep: traffic polls never need
+// either total alone.
+func (m *Manager) totalPair(proxy bool) (up, down int64) {
 	for i := range m.stripes {
-		total += m.stripes[i].proxyUploadTotal.Load()
+		stripe := &m.stripes[i]
+		if proxy {
+			up += stripe.proxyUploadTotal.Load()
+			down += stripe.proxyDownloadTotal.Load()
+		} else {
+			up += stripe.uploadTotal.Load()
+			down += stripe.downloadTotal.Load()
+		}
 	}
-	return total
-}
-
-func (m *Manager) totalProxyDownload() (total int64) {
-	for i := range m.stripes {
-		total += m.stripes[i].proxyDownloadTotal.Load()
-	}
-	return total
+	return up, down
 }
 
 func (m *Manager) swapUploadTemp() (sum int64) {
@@ -198,7 +200,7 @@ func (m *Manager) Now() (up int64, down int64) {
 }
 
 func (m *Manager) Total() (up, down int64) {
-	return m.totalUpload(), m.totalDownload()
+	return m.totalPair(false)
 }
 
 func (m *Manager) Memory() uint64 {
