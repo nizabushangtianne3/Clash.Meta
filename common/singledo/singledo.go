@@ -12,6 +12,7 @@ type call[T any] struct {
 
 type Single[T any] struct {
 	mux        sync.Mutex
+	callMu     sync.Mutex
 	wait       time.Duration
 	call       call[T]
 	callCond   sync.Cond
@@ -39,8 +40,16 @@ func (s *Single[T]) Do(fn func() (T, error)) (v T, err error, shared bool) {
 	if s.loading {
 		generation := s.generation
 		s.callCond.Wait()
+		// Reset can retire this call while a newer fn writes s.call. A retired
+		// waiter must not read that mutable shared storage.
+		if generation != s.generation {
+			s.mux.Unlock()
+			return v, err, false
+		}
 		shared := generation == s.generation
+		s.callMu.Lock()
 		value, callErr := s.call.val, s.call.err
+		s.callMu.Unlock()
 		s.mux.Unlock()
 		return value, callErr, shared
 	}
@@ -49,7 +58,11 @@ func (s *Single[T]) Do(fn func() (T, error)) (v T, err error, shared bool) {
 	s.loading = true
 	s.mux.Unlock()
 
-	s.call.val, s.call.err = fn()
+	value, callErr := fn()
+
+	s.callMu.Lock()
+	s.call.val, s.call.err = value, callErr
+	s.callMu.Unlock()
 
 	s.mux.Lock()
 	if s.generation == startGeneration {
@@ -59,7 +72,7 @@ func (s *Single[T]) Do(fn func() (T, error)) (v T, err error, shared bool) {
 	s.loading = false
 	s.callCond.Broadcast()
 	s.mux.Unlock()
-	return s.call.val, s.call.err, false
+	return value, callErr, false
 }
 
 // Cached reports a Do result that has not expired yet, so a caller can answer
