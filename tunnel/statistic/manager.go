@@ -86,6 +86,11 @@ func (m *Manager) Range(f func(c Tracker) bool) {
 	})
 }
 
+// Size answers the dashboard count without snapshots or per-row Info calls.
+func (m *Manager) Size() int {
+	return m.connections.Size()
+}
+
 func (m *Manager) PushUploaded(direct bool, size int64) {
 	m.sharedStripe().pushUploaded(size, direct)
 }
