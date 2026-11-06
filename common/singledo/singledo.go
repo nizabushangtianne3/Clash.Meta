@@ -5,16 +5,9 @@ import (
 	"time"
 )
 
-type call[T any] struct {
-	val T
-	err error
-}
-
 type Single[T any] struct {
 	mux        sync.Mutex
-	callMu     sync.Mutex
 	wait       time.Duration
-	call       call[T]
 	callCond   sync.Cond
 	loading    bool
 	generation uint64
@@ -30,49 +23,45 @@ type Result[T any] struct {
 
 // Do single.Do likes sync.singleFlight
 func (s *Single[T]) Do(fn func() (T, error)) (v T, err error, shared bool) {
-	s.mux.Lock()
-	if s.hasResult && time.Since(s.result.Time) < s.wait {
-		s.mux.Unlock()
-		return s.result.Val, s.result.Err, true
-	}
-	s.hasResult = false // The result has expired, clear it
-
-	if s.loading {
-		generation := s.generation
-		s.callCond.Wait()
-		// Reset can retire this call while a newer fn writes s.call. A retired
-		// waiter must not read that mutable shared storage.
-		if generation != s.generation {
+	for {
+		s.mux.Lock()
+		if s.hasResult && time.Since(s.result.Time) < s.wait {
+			result := s.result
 			s.mux.Unlock()
-			return v, err, false
+			return result.Val, result.Err, true
 		}
-		shared := generation == s.generation
-		s.callMu.Lock()
-		value, callErr := s.call.val, s.call.err
-		s.callMu.Unlock()
+		s.hasResult = false // The result has expired, clear it
+
+		if s.loading {
+			generation := s.generation
+			for s.loading && generation == s.generation {
+				s.callCond.Wait()
+			}
+			if generation != s.generation {
+				s.mux.Unlock()
+				continue
+			}
+			result := s.result
+			s.mux.Unlock()
+			return result.Val, result.Err, true
+		}
+
+		startGeneration := s.generation
+		s.loading = true
 		s.mux.Unlock()
-		return value, callErr, shared
+
+		value, callErr := fn()
+
+		s.mux.Lock()
+		if s.generation == startGeneration {
+			s.result = Result[T]{value, callErr, time.Now()}
+			s.hasResult = true
+			s.loading = false
+			s.callCond.Broadcast()
+		}
+		s.mux.Unlock()
+		return value, callErr, false
 	}
-
-	startGeneration := s.generation
-	s.loading = true
-	s.mux.Unlock()
-
-	value, callErr := fn()
-
-	s.callMu.Lock()
-	s.call.val, s.call.err = value, callErr
-	s.callMu.Unlock()
-
-	s.mux.Lock()
-	if s.generation == startGeneration {
-		s.result = Result[T]{s.call.val, s.call.err, time.Now()}
-		s.hasResult = true
-	}
-	s.loading = false
-	s.callCond.Broadcast()
-	s.mux.Unlock()
-	return value, callErr, false
 }
 
 // Cached reports a Do result that has not expired yet, so a caller can answer

@@ -71,3 +71,35 @@ func TestReset(t *testing.T) {
 
 	assert.Equal(t, 2, foo)
 }
+
+func TestResetDuringCallRetriesWaiter(t *testing.T) {
+	t.Parallel()
+	single := NewSingle[int](time.Minute)
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	firstResult := make(chan int, 1)
+	go func() {
+		value, _, _ := single.Do(func() (int, error) {
+			close(firstStarted)
+			<-releaseFirst
+			return 1, nil
+		})
+		firstResult <- value
+	}()
+	<-firstStarted
+
+	waiterResult := make(chan int, 1)
+	go func() {
+		value, _, _ := single.Do(func() (int, error) {
+			return 2, nil
+		})
+		waiterResult <- value
+	}()
+
+	time.Sleep(10 * time.Millisecond)
+	single.Reset()
+	close(releaseFirst)
+
+	assert.Equal(t, 1, <-firstResult)
+	assert.Equal(t, 2, <-waiterResult)
+}
