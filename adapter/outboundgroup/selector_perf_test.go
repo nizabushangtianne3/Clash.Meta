@@ -44,6 +44,31 @@ func TestSelectorSelectedProxyUsesNameIndex(t *testing.T) {
 	require.EqualValues(t, 0, allocations)
 }
 
+// A host that caches a group's document keys it on this counter beside the
+// provider versions instead of resolving the selection on every read, so every
+// way a selection can move has to move the counter -- including a re-select of
+// the name already selected, which the counter cannot tell from a real change.
+func TestSelectorSelectionVersionMovesOnEverySelectionChange(t *testing.T) {
+	group, _ := selectorBenchmarkGroup(t, 8)
+
+	start := group.SelectionVersion()
+	require.NoError(t, group.Set("node-003"))
+	require.Equal(t, start+1, group.SelectionVersion())
+	require.Equal(t, "node-003", group.Now())
+
+	group.ForceSet("node-005")
+	require.Equal(t, start+2, group.SelectionVersion())
+	require.Equal(t, "node-005", group.Now())
+
+	require.NoError(t, group.Set("node-005"))
+	require.Equal(t, start+3, group.SelectionVersion(),
+		"a re-select of the name already selected still moves the counter")
+
+	group.ForceSet("node-000")
+	require.Equal(t, start+4, group.SelectionVersion())
+	require.Equal(t, "node-000", group.Now())
+}
+
 func TestSelectorSmallGroupKeepsLinearSelection(t *testing.T) {
 	group, selected := selectorBenchmarkGroup(t, 2)
 	require.Nil(t, group.providerCache.Load().byName)

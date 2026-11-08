@@ -25,6 +25,7 @@ type URLTestOption struct {
 type URLTest struct {
 	*GroupBase
 	selected           atomic.Pointer[string]
+	selectedVersion    atomic.Uint64
 	testUrl            string
 	expectedStatus     string
 	tolerance          uint16
@@ -71,8 +72,16 @@ func (u *URLTest) SelectedName() string {
 	return u.selectedName()
 }
 
+// SelectionVersion reports how many times the pinned selection moved. The
+// live selection this group reports as now moves on its own re-elections, so
+// only a caller keying the pinned field keys it on this.
+func (u *URLTest) SelectionVersion() uint64 {
+	return u.selectedVersion.Load()
+}
+
 func (u *URLTest) setSelected(name string) {
 	u.selected.Store(&name)
+	u.selectedVersion.Add(1)
 }
 
 func (u *URLTest) ForceSet(name string) {

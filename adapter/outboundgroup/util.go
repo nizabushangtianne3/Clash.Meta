@@ -14,6 +14,11 @@ type ProxyGroup interface {
 	Providers() []P.ProxyProvider
 	Proxies() []C.Proxy
 	Now() string
+	// SelectionVersion counts how many times this group's selection moved, so
+	// a caller that caches a group's answer can key it on the count beside the
+	// provider versions instead of resolving the selection on every read. A
+	// group with no selection of its own reports zero.
+	SelectionVersion() uint64
 	Touch()
 
 	Hidden() bool

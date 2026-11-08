@@ -90,6 +90,14 @@ func (s *Selector) Now() string {
 	return s.selectedProxy(false).Name()
 }
 
+// SelectionVersion reports how many times this group's selection has moved.
+// setSelected is the only writer of the selection, so a host that caches a
+// group's document can key it on this counter and the provider versions
+// instead of resolving the selection on every read.
+func (s *Selector) SelectionVersion() uint64 {
+	return s.selectedVersion.Load()
+}
+
 func (s *Selector) setSelected(name string) {
 	s.selectedMu.Lock()
 	s.selected = name

@@ -393,6 +393,12 @@ func (lb *LoadBalance) Now() string {
 	return ""
 }
 
+// SelectionVersion reports how many times this group's selection moved. A
+// LoadBalance picks per request, so it has none to report.
+func (lb *LoadBalance) SelectionVersion() uint64 {
+	return 0
+}
+
 func NewLoadBalance(option GroupCommonOption, loadBalanceOption LoadBalanceOption, emptyFallback C.Proxy, providers []P.ProxyProvider) (lb *LoadBalance, err error) {
 	var strategyFn strategyFn
 	withKey, err := hashKey(loadBalanceOption.HashKey)

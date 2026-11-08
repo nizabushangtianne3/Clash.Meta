@@ -31,6 +31,7 @@ type Fallback struct {
 	disableUDP     bool
 	testUrl        string
 	selected       atomic.Pointer[string]
+	selectedVersion atomic.Uint64
 	expectedStatus string
 	rotateProbe    atomic.Bool
 	probeCursor    atomic.Uint32
@@ -62,8 +63,16 @@ func (f *Fallback) SelectedName() string {
 	return f.selectedName()
 }
 
+// SelectionVersion reports how many times the pinned selection moved. The live
+// selection this group reports as now moves on its own re-elections, so only a
+// caller keying the pinned field keys it on this.
+func (f *Fallback) SelectionVersion() uint64 {
+	return f.selectedVersion.Load()
+}
+
 func (f *Fallback) setSelected(name string) {
 	f.selected.Store(&name)
+	f.selectedVersion.Add(1)
 	f.clearSelection()
 }
 
@@ -74,6 +83,7 @@ func (f *Fallback) clearSelected(name string) {
 			return
 		}
 		if f.selected.CompareAndSwap(selected, nil) {
+			f.selectedVersion.Add(1)
 			break
 		}
 	}
