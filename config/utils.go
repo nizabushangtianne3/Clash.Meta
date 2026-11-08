@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"os"
 	"strconv"
+	"sync"
 
 	"github.com/metacubex/mihomo/adapter/outboundgroup"
 	"github.com/metacubex/mihomo/common/structure"
@@ -185,7 +186,39 @@ func validateDialerProxies(proxies map[string]C.Proxy) error {
 	return nil
 }
 
+// The answer to verifyIP6 is cached: walking every interface address is a
+// syscall measured at milliseconds on Windows, which the config parse would
+// otherwise pay on every apply, and only a new network can change it. The host
+// reports one through ResetIPV6Support.
+var (
+	ipv6SupportMu    sync.RWMutex
+	ipv6SupportValue bool
+	ipv6SupportKnown bool
+)
+
 func verifyIP6() bool {
+	ipv6SupportMu.RLock()
+	known, value := ipv6SupportKnown, ipv6SupportValue
+	ipv6SupportMu.RUnlock()
+	if known {
+		return value
+	}
+	value = systemSupportsIP6()
+	ipv6SupportMu.Lock()
+	ipv6SupportKnown, ipv6SupportValue = true, value
+	ipv6SupportMu.Unlock()
+	return value
+}
+
+// ResetIPV6Support drops the cached answer so the next parse asks the system
+// again.
+func ResetIPV6Support() {
+	ipv6SupportMu.Lock()
+	ipv6SupportKnown = false
+	ipv6SupportMu.Unlock()
+}
+
+func systemSupportsIP6() bool {
 	if skip, _ := strconv.ParseBool(os.Getenv("SKIP_SYSTEM_IPV6_CHECK")); skip {
 		return true
 	}

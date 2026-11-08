@@ -6,6 +6,23 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestVerifyIP6CachesUntilTheNetworkChanges(t *testing.T) {
+	t.Setenv("SKIP_SYSTEM_IPV6_CHECK", "")
+
+	ResetIPV6Support()
+	system := verifyIP6()
+	// A second read answers from the cache, so the system is not walked twice.
+	assert.Equal(t, system, verifyIP6())
+
+	t.Setenv("SKIP_SYSTEM_IPV6_CHECK", "true")
+	ResetIPV6Support()
+	assert.True(t, verifyIP6(), "the escape hatch still forces support")
+
+	t.Setenv("SKIP_SYSTEM_IPV6_CHECK", "")
+	ResetIPV6Support()
+	assert.Equal(t, system, verifyIP6(), "a reset re-asks the system")
+}
+
 func TestValidateDialerProxies(t *testing.T) {
 	testCases := []struct {
 		testName string
