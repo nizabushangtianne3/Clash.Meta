@@ -147,6 +147,36 @@ func TestProxyMarshalJSONCarriesDelayState(t *testing.T) {
 	assert.Empty(t, mapping["extra"])
 }
 
+// A proxy that is only read owns no map table: the table is built on first
+// use, and a subscription of a thousand nodes would build one per node that
+// never holds anything. Writing still publishes before it stores, so a reader
+// that sees the flag clear knows the table is empty rather than unseen.
+func TestProxyExtraStateIsBuiltOnlyByAWrite(t *testing.T) {
+	proxy := testProxy()
+	require.False(t, proxy.hasExtraState())
+
+	// An unseen url falls back to the global state, which a fresh proxy carries.
+	assert.True(t, proxy.AliveForTestUrl("http://a/"))
+	assert.Empty(t, proxy.DelayHistoryForTestUrl("http://a/"))
+	assert.Equal(t, uint16(0xffff), proxy.LastDelayForTestUrl("http://a/"))
+	require.False(t, proxy.extra.Initialized(), "reads must not build the table")
+	require.False(t, proxy.hasExtraState())
+
+	proxy.SetAliveForTestUrl("http://a/", true)
+	require.True(t, proxy.hasExtraState())
+	require.True(t, proxy.extra.Initialized())
+	assert.True(t, proxy.AliveForTestUrl("http://a/"))
+	assert.True(t, proxy.AliveForTestUrl(""), "a url state must not touch the global one")
+	assert.True(t, proxy.AliveForTestUrl("http://unseen/"), "an unseen url falls back to the global state")
+
+	empty := testProxy()
+	assert.Empty(t, empty.ExtraDelayHistories())
+	require.False(t, empty.extra.Initialized())
+	document, err := empty.MarshalJSON()
+	require.NoError(t, err)
+	assert.Contains(t, string(document), `"extra":{}`)
+}
+
 func BenchmarkProxyMarshalJSON(b *testing.B) {
 	proxy := testProxy()
 

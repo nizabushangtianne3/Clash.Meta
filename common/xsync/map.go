@@ -1193,6 +1193,12 @@ func (m *Map[K, V]) Size() int {
 	return int(m.table.Load().sumSize())
 }
 
+// Initialized reports whether the map has built its table. Every entry point
+// builds one on first use, so a caller that only ever reads can check this
+// first and leave an untouched map untouched.
+func (m *Map[K, V]) Initialized() bool {
+	return m.table.Load() != nil
+}
 // It is safe to use plain stores here because the destination bucket must be
 // either locked or exclusively written to by the helper during resize.
 func appendToBucket[K comparable, V any](h2 uint8, e *entry[K, V], b *bucketPadded) {

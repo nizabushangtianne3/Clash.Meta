@@ -38,9 +38,18 @@ type internalProxyState struct {
 
 type Proxy struct {
 	C.ProxyAdapter
-	alive   atomic.Bool
-	history *queue.Queue[C.DelayHistory]
-	extra   xsync.Map[string, *internalProxyState]
+	alive    atomic.Bool
+	history  *queue.Queue[C.DelayHistory]
+	extra    xsync.Map[string, *internalProxyState]
+	hasExtra atomic.Bool
+}
+
+// hasExtraState reports whether this proxy carries per-URL test state. A proxy
+// that only ever gets read owns no table for it: the map builds its table on
+// first use, which for a subscription of a thousand nodes is a table per node
+// that never holds anything.
+func (p *Proxy) hasExtraState() bool {
+	return p.hasExtra.Load()
 }
 
 // Adapter implements C.Proxy
@@ -50,14 +59,19 @@ func (p *Proxy) Adapter() C.ProxyAdapter {
 
 // AliveForTestUrl implements C.Proxy
 func (p *Proxy) AliveForTestUrl(url string) bool {
-	if state, ok := p.extra.Load(url); ok {
-		return state.alive.Load()
+	if p.hasExtraState() {
+		if state, ok := p.extra.Load(url); ok {
+			return state.alive.Load()
+		}
 	}
 
 	return p.alive.Load()
 }
 
 func (p *Proxy) testState(url string, alive bool) *internalProxyState {
+	// Published before the table is touched, so a reader that sees the flag
+	// clear knows nothing has ever been stored and never has to build one.
+	p.hasExtra.Store(true)
 	if state, ok := p.extra.Load(url); ok {
 		return state
 	}
@@ -100,8 +114,10 @@ func (p *Proxy) DelayHistory() []C.DelayHistory {
 
 // DelayHistoryForTestUrl implements C.Proxy
 func (p *Proxy) DelayHistoryForTestUrl(url string) []C.DelayHistory {
-	if state, ok := p.extra.Load(url); ok {
-		return state.history.Copy()
+	if p.hasExtraState() {
+		if state, ok := p.extra.Load(url); ok {
+			return state.history.Copy()
+		}
 	}
 	return nil
 }
@@ -110,6 +126,9 @@ func (p *Proxy) DelayHistoryForTestUrl(url string) []C.DelayHistory {
 // implements C.Proxy
 func (p *Proxy) ExtraDelayHistories() map[string]C.ProxyState {
 	histories := map[string]C.ProxyState{}
+	if !p.hasExtraState() {
+		return histories
+	}
 
 	p.extra.Range(func(k string, v *internalProxyState) bool {
 		testUrl := k
@@ -129,18 +148,18 @@ func (p *Proxy) ExtraDelayHistories() map[string]C.ProxyState {
 // LastDelayForTestUrl return last history record of the specified URL. if proxy is not alive, return the max value of uint16.
 // implements C.Proxy
 func (p *Proxy) LastDelayForTestUrl(url string) (delay uint16) {
-	var maxDelay uint16 = 0xffff
-
 	alive := false
 	var history C.DelayHistory
 
-	if state, ok := p.extra.Load(url); ok {
-		alive = state.alive.Load()
-		history = state.history.Last()
+	if p.hasExtraState() {
+		if state, ok := p.extra.Load(url); ok {
+			alive = state.alive.Load()
+			history = state.history.Last()
+		}
 	}
 
 	if !alive || history.Delay == 0 {
-		return maxDelay
+		return 0xffff
 	}
 	return history.Delay
 }
@@ -176,8 +195,9 @@ func (p *Proxy) AppendJSON(dst []byte) []byte {
 	dst = append(dst, ']')
 
 	dst = append(dst, `,"extra":{`...)
-	if p.extra.Size() != 0 {
-		urls := make([]string, 0, p.extra.Size())
+	if p.hasExtraState() {
+		size := p.extra.Size()
+		urls := make([]string, 0, size)
 		p.extra.RangeRelaxed(func(url string, _ *internalProxyState) bool {
 			urls = append(urls, url)
 			return true
