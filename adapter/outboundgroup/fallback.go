@@ -3,7 +3,6 @@ package outboundgroup
 import (
 	"context"
 	"errors"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -31,8 +30,7 @@ type Fallback struct {
 	*GroupBase
 	disableUDP     bool
 	testUrl        string
-	selectedMu     sync.RWMutex
-	selected       string
+	selected       atomic.Pointer[string]
 	expectedStatus string
 	rotateProbe    atomic.Bool
 	probeCursor    atomic.Uint32
@@ -52,9 +50,10 @@ func (f *Fallback) healthCheck() {
 }
 
 func (f *Fallback) selectedName() string {
-	f.selectedMu.RLock()
-	defer f.selectedMu.RUnlock()
-	return f.selected
+	if selected := f.selected.Load(); selected != nil {
+		return *selected
+	}
+	return ""
 }
 
 // SelectedName exposes the pinned selection the group document reports as
@@ -64,18 +63,20 @@ func (f *Fallback) SelectedName() string {
 }
 
 func (f *Fallback) setSelected(name string) {
-	f.selectedMu.Lock()
-	f.selected = name
-	f.selectedMu.Unlock()
+	f.selected.Store(&name)
 	f.clearSelection()
 }
 
 func (f *Fallback) clearSelected(name string) {
-	f.selectedMu.Lock()
-	if f.selected == name {
-		f.selected = ""
+	for {
+		selected := f.selected.Load()
+		if selected == nil || *selected != name {
+			return
+		}
+		if f.selected.CompareAndSwap(selected, nil) {
+			break
+		}
 	}
-	f.selectedMu.Unlock()
 	f.clearSelection()
 }
 

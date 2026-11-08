@@ -75,6 +75,26 @@ func (s *Single[T]) Cached() (v T, err error, ok bool) {
 	return v, err, false
 }
 
+// CachedValid is Cached with the stale check folded in: a result at least age
+// old that stale rejects is dropped and reported as a miss, so a caller that
+// would otherwise pay one lock for ForgetAfter and another for Cached pays a
+// single one.
+func (s *Single[T]) CachedValid(age time.Duration, stale func(T) bool) (v T, ok bool) {
+	s.mux.Lock()
+	if !s.hasResult || time.Since(s.result.Time) >= s.wait {
+		s.mux.Unlock()
+		return v, false
+	}
+	if time.Since(s.result.Time) >= age && stale(s.result.Val) {
+		s.hasResult = false
+		s.mux.Unlock()
+		return v, false
+	}
+	result := s.result.Val
+	s.mux.Unlock()
+	return result, true
+}
+
 func (s *Single[T]) Reset() {
 	s.mux.Lock()
 	s.generation++

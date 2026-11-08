@@ -24,8 +24,7 @@ type URLTestOption struct {
 
 type URLTest struct {
 	*GroupBase
-	selectedMu         sync.RWMutex
-	selected           string
+	selected           atomic.Pointer[string]
 	testUrl            string
 	expectedStatus     string
 	tolerance          uint16
@@ -60,9 +59,10 @@ func (u *URLTest) Set(name string) error {
 }
 
 func (u *URLTest) selectedName() string {
-	u.selectedMu.RLock()
-	defer u.selectedMu.RUnlock()
-	return u.selected
+	if selected := u.selected.Load(); selected != nil {
+		return *selected
+	}
+	return ""
 }
 
 // SelectedName exposes the pinned selection the group document reports as
@@ -72,9 +72,7 @@ func (u *URLTest) SelectedName() string {
 }
 
 func (u *URLTest) setSelected(name string) {
-	u.selectedMu.Lock()
-	u.selected = name
-	u.selectedMu.Unlock()
+	u.selected.Store(&name)
 }
 
 func (u *URLTest) ForceSet(name string) {
@@ -192,10 +190,9 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 	// with a traffic notice; held for the whole cache window, that pick outlasts
 	// the first health check and fails every connection meanwhile. The hold keeps
 	// a group with no usable member from walking them all on every connection.
-	u.fastSingle.ForgetAfter(unmeasuredPickHold, func(pick C.Proxy) bool {
+	if cached, ok := u.fastSingle.CachedValid(unmeasuredPickHold, func(pick C.Proxy) bool {
 		return pick.LastDelayForTestUrl(u.testUrl) == math.MaxUint16
-	})
-	if cached, _, ok := u.fastSingle.Cached(); ok {
+	}); ok {
 		if touch { // the same recency the cached Do result reports as shared
 			u.Touch()
 		}
