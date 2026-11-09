@@ -160,10 +160,6 @@ func Rules() []C.Rule {
 	return loadRuntime().rules
 }
 
-func Listeners() map[string]C.InboundListener {
-	return loadRuntime().listeners
-}
-
 // UpdateRules handle update rules
 func UpdateRules(newRules []C.Rule, newSubRule map[string][]C.Rule, rp map[string]P.RuleProvider) {
 	updateRuntime(func(next *runtimeSnapshot) {
@@ -199,12 +195,6 @@ func UpdateProxies(newProxies map[string]C.Proxy, newProviders map[string]P.Prox
 	currentRuntime.Store(next)
 	invalidateAllProxies()
 	configMux.Unlock()
-}
-
-func UpdateListeners(newListeners map[string]C.InboundListener) {
-	updateRuntime(func(next *runtimeSnapshot) {
-		next.listeners = cloneMap(newListeners)
-	})
 }
 
 func UpdateSniffer(dispatcher *sniffer.Dispatcher) {

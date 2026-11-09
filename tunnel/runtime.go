@@ -12,7 +12,6 @@ import (
 type runtimeSnapshot struct {
 	rules             []C.Rule
 	ruleIndex         *ruleIndex
-	listeners         map[string]C.InboundListener
 	subRules          map[string][]C.Rule
 	subRuleIndexes    map[string]*ruleIndex
 	proxies           map[string]C.Proxy
@@ -30,9 +29,8 @@ var (
 
 func init() {
 	currentRuntime.Store(&runtimeSnapshot{
-		listeners: make(map[string]C.InboundListener),
-		proxies:   make(map[string]C.Proxy),
-		mode:      Rule,
+		proxies: make(map[string]C.Proxy),
+		mode:    Rule,
 	})
 }
 
