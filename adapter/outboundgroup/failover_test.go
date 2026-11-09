@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -59,11 +60,21 @@ func (p *swapProvider) RegisterHealthCheckTask(string, utils.IntRanges[uint16], 
 
 func (p *swapProvider) AppendJSON(dst []byte) []byte { return dst }
 
+// A provider swapping its list moves the core's list generation, which no
+// provider a test can build reaches. The outboundgroup tests stand in for it
+// here, so a swap forgets the cached pick the way it does in the core.
+var listGenerationStamp atomic.Uint64
+
+func init() {
+	listGeneration = listGenerationStamp.Load
+}
+
 func (p *swapProvider) swap(proxies []C.Proxy) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.proxies = proxies
 	p.version++
+	listGenerationStamp.Add(1)
 }
 
 type recordingDeadlineProxy struct {

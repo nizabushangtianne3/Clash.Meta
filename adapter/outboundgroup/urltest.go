@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/metacubex/mihomo/adapter/provider"
 	"github.com/metacubex/mihomo/common/callback"
 	N "github.com/metacubex/mihomo/common/net"
 	"github.com/metacubex/mihomo/common/singledo"
@@ -37,7 +38,7 @@ type URLTest struct {
 	rotateProbe        atomic.Bool
 	probeCursor        atomic.Uint32
 	versionsMu         sync.Mutex
-	knownVersions      atomic.Pointer[[]uint32]
+	knownGeneration    atomic.Uint64
 }
 
 func (u *URLTest) Now() string {
@@ -284,26 +285,26 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 	return elm
 }
 
+// listGeneration reads the generation the providers' lists carry. A variable so
+// a test can stand in for a provider swapping its list, which only the core's
+// own providers do.
+var listGeneration = provider.ListGeneration
+
 // dropCacheForProviderSwap forgets the cached fast node when a provider has
 // replaced its list underneath it: the cached node may no longer be a member,
 // and its delay says nothing about the members that took its place.
 func (u *URLTest) dropCacheForProviderSwap() {
-	if u.providerVersionsUnchanged() {
+	generation := listGeneration()
+	if u.knownGeneration.Load() == generation {
 		return
 	}
 	u.versionsMu.Lock()
 	defer u.versionsMu.Unlock()
-	if u.providerVersionsUnchanged() {
+	if u.knownGeneration.Load() == generation {
 		return
 	}
-	versions := u.providerVersionsNow()
-	u.knownVersions.Store(&versions)
+	u.knownGeneration.Store(generation)
 	u.resetFastNode()
-}
-
-func (u *URLTest) providerVersionsUnchanged() bool {
-	known := u.knownVersions.Load()
-	return known != nil && u.providerVersionsEqual(*known)
 }
 
 func (u *URLTest) resetFastNode() {
