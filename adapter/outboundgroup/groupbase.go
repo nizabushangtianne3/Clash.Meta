@@ -148,6 +148,10 @@ func (gb *GroupBase) GetProxies(touch bool) []C.Proxy {
 		gb.providerVersionsEqual(cache.versions) {
 		return cache.proxies
 	}
+	// Version before proxies. Reading it after the lists would stamp a
+	// provider that swapped during this call with its newer version, and the
+	// mixed list would be served from the cache for the rest of the run.
+	providerVersions := gb.providerVersionsNow()
 	parts := make([][]C.Proxy, len(gb.providers))
 	if len(gb.filterRegs) == 0 {
 		for i, pd := range gb.providers {
@@ -239,10 +243,8 @@ func (gb *GroupBase) GetProxies(touch bool) []C.Proxy {
 		return []C.Proxy{gb.EmptyFallback()}
 	}
 
-	// Version is read after the lists: a provider that swaps during this call
-	// bumps the stamped version, so the next call rebuilds rather than caching
-	// the mixed result under the old generation.
-	providerVersions := gb.providerVersionsNow()
+	// The versions were read before the lists: a swap during the rebuild leaves
+	// the stamp behind the current one, which the next read sees.
 	gb.providerCache.Store(&providerProxyCache{
 		versions: providerVersions,
 		proxies:  proxies,

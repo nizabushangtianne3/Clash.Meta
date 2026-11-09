@@ -27,6 +27,12 @@ type swapProvider struct {
 	name    string
 	proxies []C.Proxy
 	version uint32
+
+	// A list to install on the next read instead of on a swap call, so a test
+	// can stand in for a provider whose list moved while the group was reading
+	// it.
+	pending     []C.Proxy
+	pendingRead bool
 }
 
 func newSwapProvider(name string, proxies []C.Proxy) *swapProvider {
@@ -46,7 +52,22 @@ func (p *swapProvider) Count() int                 { return len(p.Proxies()) }
 func (p *swapProvider) Proxies() []C.Proxy {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.pendingRead {
+		p.pendingRead = false
+		stale := p.proxies
+		p.proxies, p.version = p.pending, p.version+1
+		return stale
+	}
 	return p.proxies
+}
+
+// swapDuringRead installs the list on the next Proxies call: that read is
+// handed the list it already held, while the version it leaves behind is the
+// new one.
+func (p *swapProvider) swapDuringRead(proxies []C.Proxy) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.pending, p.pendingRead = proxies, true
 }
 
 func (p *swapProvider) Version() uint32 {
