@@ -31,6 +31,20 @@ const (
 	ReservedName = "default"
 )
 
+// providerListGeneration counts every swap of a provider's list. A group's
+// membership is a function of its providers' lists, so one counter answers
+// "did any list move since the caller last looked" without walking them.
+var providerListGeneration atomic.Uint64
+
+// ListGeneration reports the generation the providers' lists currently carry.
+// A caller reads it before assembling a list it means to keep, then compares
+// it on the next read: a difference means some list moved, so the kept one is
+// stale. Reading it after assembling would stamp a mixed list with the newer
+// generation, and the staleness would never be seen again.
+func ListGeneration() uint64 {
+	return providerListGeneration.Load()
+}
+
 type ProxySchema struct {
 	Proxies []map[string]any `yaml:"proxies"`
 }
@@ -95,6 +109,7 @@ func (bp *baseProvider) setProxies(proxies []C.Proxy) {
 	defer bp.mutex.Unlock()
 	bp.proxies = proxies
 	bp.version.Add(1)
+	providerListGeneration.Add(1)
 	bp.healthCheck.setProxies(proxies)
 	if bp.healthCheck.auto() {
 		go bp.healthCheck.check()
