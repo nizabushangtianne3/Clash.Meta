@@ -70,6 +70,38 @@ func (p *swapProvider) swapDuringRead(proxies []C.Proxy) {
 	p.pending, p.pendingRead = proxies, true
 }
 
+// A group whose answer names neither a pin nor a pick reports a version that
+// never moves, so a caller keying on it always answers from its cache; and a
+// group that has yet to answer at all reports zero rather than one.
+func TestAnswerVersionReportsZeroWhereThereIsNothingToCount(t *testing.T) {
+	emptyFallback := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "COMPATIBLE"}))
+	loadBalance, err := NewLoadBalance(
+		GroupCommonOption{Name: "load-balance"},
+		LoadBalanceOption{},
+		emptyFallback,
+		[]P.ProxyProvider{failoverProvider(t, balancedProxies(3))},
+	)
+	require.NoError(t, err)
+	if got := loadBalance.AnswerVersion(); got != 0 {
+		t.Errorf("a LoadBalance that picks per request reports version %d, want 0", got)
+	}
+
+	urlTest, err := NewURLTest(
+		GroupCommonOption{Name: "url-test", URL: testUrl, TestTimeout: 1000},
+		URLTestOption{},
+		emptyFallback,
+		[]P.ProxyProvider{failoverProvider(t, balancedProxies(2))},
+	)
+	require.NoError(t, err)
+	if got := urlTest.AnswerVersion(); got != 0 {
+		t.Errorf("a group that never answered reports version %d, want 0", got)
+	}
+	urlTest.Now()
+	if got := urlTest.AnswerVersion(); got != 1 {
+		t.Errorf("version after the first answer = %d, want 1", got)
+	}
+}
+
 func (p *swapProvider) Version() uint32 {
 	p.mu.Lock()
 	defer p.mu.Unlock()
