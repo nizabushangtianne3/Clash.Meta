@@ -26,7 +26,6 @@ type URLTestOption struct {
 type URLTest struct {
 	*GroupBase
 	selected           atomic.Pointer[string]
-	selectedVersion    atomic.Uint64
 	testUrl            string
 	expectedStatus     string
 	tolerance          uint16
@@ -39,19 +38,11 @@ type URLTest struct {
 	probeCursor        atomic.Uint32
 	versionsMu         sync.Mutex
 	knownGeneration    atomic.Uint64
-	livePick           atomic.Pointer[livePick]
+	answeredPick       atomic.Pointer[answeredPick]
 }
 
 func (u *URLTest) Now() string {
 	return u.fast(false).Name()
-}
-
-// LiveSelectionVersion reports how many times the pick this group answers with
-// has moved. Unlike SelectionVersion it counts the live pick, which this group
-// re-elects on its own, so a caller that caches the group's answer can key it on
-// this instead of resolving the pick on every read.
-func (u *URLTest) LiveSelectionVersion() uint64 {
-	return liveVersionOf(&u.livePick)
 }
 
 func (u *URLTest) Set(name string) error {
@@ -76,22 +67,17 @@ func (u *URLTest) selectedName() string {
 	return ""
 }
 
-// SelectedName exposes the pinned selection the group document reports as
-// fixed, so the host can cache the document on the values it would encode.
-func (u *URLTest) SelectedName() string {
-	return u.selectedName()
-}
-
-// SelectionVersion reports how many times the pinned selection moved. The
-// live selection this group reports as now moves on its own re-elections, so
-// only a caller keying the pinned field keys it on this.
-func (u *URLTest) SelectionVersion() uint64 {
-	return u.selectedVersion.Load()
+// AnswerVersion counts every move this group's answer names: the pinned
+// selection, which setSelected writes, and the pick this group answers with,
+// which it re-elects on its own. A caller that caches the answer reads this
+// one counter instead of resolving either.
+func (u *URLTest) AnswerVersion() uint64 {
+	return answerVersionOf(&u.answeredPick)
 }
 
 func (u *URLTest) setSelected(name string) {
 	u.selected.Store(&name)
-	u.selectedVersion.Add(1)
+	bumpAnswer(&u.answeredPick)
 }
 
 func (u *URLTest) ForceSet(name string) {
@@ -291,7 +277,7 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 		u.Touch()
 	}
 
-	announceLivePick(&u.livePick, elm)
+	announceAnswer(&u.answeredPick, elm)
 	return elm
 }
 

@@ -94,13 +94,9 @@ func (s *Selector) Now() string {
 // setSelected is the only writer of the selection, so a host that caches a
 // group's document can key it on this counter and the provider versions
 // instead of resolving the selection on every read.
-func (s *Selector) SelectionVersion() uint64 {
-	return s.selectedVersion.Load()
-}
-
-// LiveSelectionVersion is the pinned selection's count: a Selector answers with
-// the selection it holds, so the two cannot drift apart.
-func (s *Selector) LiveSelectionVersion() uint64 {
+// AnswerVersion is the pinned selection's count: a Selector answers with the
+// selection it holds, so the two cannot drift apart.
+func (s *Selector) AnswerVersion() uint64 {
 	return s.selectedVersion.Load()
 }
 

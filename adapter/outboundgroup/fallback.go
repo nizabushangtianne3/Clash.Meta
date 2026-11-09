@@ -31,23 +31,16 @@ type Fallback struct {
 	disableUDP     bool
 	testUrl        string
 	selected       atomic.Pointer[string]
-	selectedVersion atomic.Uint64
 	expectedStatus string
 	rotateProbe    atomic.Bool
 	probeCursor    atomic.Uint32
 	selection      atomic.Pointer[fallbackSelection]
-	livePick       atomic.Pointer[livePick]
+	answeredPick   atomic.Pointer[answeredPick]
 }
 
 func (f *Fallback) Now() string {
 	proxy := f.findAliveProxy(false)
 	return proxy.Name()
-}
-
-// LiveSelectionVersion reports how many times the pick this group answers with
-// has moved, including the moves this group makes on its own as members fail.
-func (f *Fallback) LiveSelectionVersion() uint64 {
-	return liveVersionOf(&f.livePick)
 }
 
 func (f *Fallback) healthCheck() {
@@ -64,22 +57,19 @@ func (f *Fallback) selectedName() string {
 	return ""
 }
 
-// SelectedName exposes the pinned selection the group document reports as
-// fixed, so the host can cache the document on the values it would encode.
-func (f *Fallback) SelectedName() string {
-	return f.selectedName()
-}
-
 // SelectionVersion reports how many times the pinned selection moved. The live
 // selection this group reports as now moves on its own re-elections, so only a
 // caller keying the pinned field keys it on this.
-func (f *Fallback) SelectionVersion() uint64 {
-	return f.selectedVersion.Load()
+// AnswerVersion counts every move this group's answer names: the pinned
+// selection and the pick this group answers with, which it re-elects on its own
+// as members fail.
+func (f *Fallback) AnswerVersion() uint64 {
+	return answerVersionOf(&f.answeredPick)
 }
 
 func (f *Fallback) setSelected(name string) {
 	f.selected.Store(&name)
-	f.selectedVersion.Add(1)
+	bumpAnswer(&f.answeredPick)
 	f.clearSelection()
 }
 
@@ -90,7 +80,7 @@ func (f *Fallback) clearSelected(name string) {
 			return
 		}
 		if f.selected.CompareAndSwap(selected, nil) {
-			f.selectedVersion.Add(1)
+			bumpAnswer(&f.answeredPick)
 			break
 		}
 	}
@@ -251,7 +241,6 @@ func (f *Fallback) findAliveProxyState(touch bool) (C.Proxy, bool) {
 		if touch {
 			f.Touch()
 		}
-		announceLivePick(&f.livePick, selection.proxy)
 		return selection.proxy, selection.hasAlternative
 	}
 	versions, fresh := f.providerVersionsFromCache()
@@ -259,7 +248,7 @@ func (f *Fallback) findAliveProxyState(touch bool) (C.Proxy, bool) {
 		versions = f.providerVersionsNow()
 	}
 	proxy, hasAlternative := f.resolveAliveProxyState(touch)
-	announceLivePick(&f.livePick, proxy)
+	announceAnswer(&f.answeredPick, proxy)
 	if proxy != f.EmptyFallback() && proxy.AliveForTestUrl(f.testUrl) {
 		f.storeSelection(proxy, hasAlternative, versions)
 	}

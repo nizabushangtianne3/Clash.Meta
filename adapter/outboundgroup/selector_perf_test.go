@@ -51,21 +51,21 @@ func TestSelectorSelectedProxyUsesNameIndex(t *testing.T) {
 func TestSelectorSelectionVersionMovesOnEverySelectionChange(t *testing.T) {
 	group, _ := selectorBenchmarkGroup(t, 8)
 
-	start := group.SelectionVersion()
+	start := group.AnswerVersion()
 	require.NoError(t, group.Set("node-003"))
-	require.Equal(t, start+1, group.SelectionVersion())
+	require.Equal(t, start+1, group.AnswerVersion())
 	require.Equal(t, "node-003", group.Now())
 
 	group.ForceSet("node-005")
-	require.Equal(t, start+2, group.SelectionVersion())
+	require.Equal(t, start+2, group.AnswerVersion())
 	require.Equal(t, "node-005", group.Now())
 
 	require.NoError(t, group.Set("node-005"))
-	require.Equal(t, start+3, group.SelectionVersion(),
+	require.Equal(t, start+3, group.AnswerVersion(),
 		"a re-select of the name already selected still moves the counter")
 
 	group.ForceSet("node-000")
-	require.Equal(t, start+4, group.SelectionVersion())
+	require.Equal(t, start+4, group.AnswerVersion())
 	require.Equal(t, "node-000", group.Now())
 }
 

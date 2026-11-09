@@ -120,44 +120,60 @@ func (gb *GroupBase) Icon() string {
 	return gb.icon
 }
 
-func (gb *GroupBase) EmptyFallback() C.Proxy {
-	return gb.emptyFallback
-}
-
-// livePick is the pick a group answers with, and the version of that answer.
-// Both ride one pointer, so a reader that loads it sees a matching pair: a
-// caller can key a cached answer on the version and skip resolving the pick.
-type livePick struct {
+// answeredPick is the pick a group answered with, and the version of that
+// answer. Both ride one pointer, so a reader that loads it sees a matching
+// pair, and a pick that moved twice is counted twice.
+type answeredPick struct {
 	proxy   C.Proxy
 	version uint64
 }
 
-// announceLivePick records the pick a group answered with and moves the live
+// announceAnswer records the pick a group answered with and moves the answer
 // version when it is not the pick it answered before. A URLTest or a Fallback
 // picks on its own as members die and its fast window expires, so this is the
-// only signal a caller has that the answer it cached has moved.
-func announceLivePick(cell *stdatomic.Pointer[livePick], pick C.Proxy) {
+// only signal a caller has that the answer it cached moved.
+func announceAnswer(cell *stdatomic.Pointer[answeredPick], pick C.Proxy) {
 	for {
-		live := cell.Load()
-		if live != nil && live.proxy == pick {
+		answer := cell.Load()
+		if answer != nil && answer.proxy == pick {
 			return
 		}
-		next := &livePick{proxy: pick, version: 1}
-		if live != nil {
-			next.version = live.version + 1
+		next := &answeredPick{proxy: pick, version: 1}
+		if answer != nil {
+			next.version = answer.version + 1
 		}
-		if cell.CompareAndSwap(live, next) {
+		if cell.CompareAndSwap(answer, next) {
 			return
 		}
 	}
 }
 
-// liveVersionOf reports the version of the pick cell currently carries.
-func liveVersionOf(cell *stdatomic.Pointer[livePick]) uint64 {
-	if live := cell.Load(); live != nil {
-		return live.version
+// bumpAnswer moves the answer version without naming a new pick, for a pinned
+// selection change: the pin is part of the answer, and the pick resolved from
+// it may or may not differ from the one before.
+func bumpAnswer(cell *stdatomic.Pointer[answeredPick]) {
+	for {
+		answer := cell.Load()
+		next := &answeredPick{version: 1}
+		if answer != nil {
+			next.proxy, next.version = answer.proxy, answer.version+1
+		}
+		if cell.CompareAndSwap(answer, next) {
+			return
+		}
+	}
+}
+
+// answerVersionOf reports the version the cell currently carries.
+func answerVersionOf(cell *stdatomic.Pointer[answeredPick]) uint64 {
+	if answer := cell.Load(); answer != nil {
+		return answer.version
 	}
 	return 0
+}
+
+func (gb *GroupBase) EmptyFallback() C.Proxy {
+	return gb.emptyFallback
 }
 
 func (gb *GroupBase) Touch() {

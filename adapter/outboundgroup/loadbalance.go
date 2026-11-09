@@ -395,13 +395,9 @@ func (lb *LoadBalance) Now() string {
 
 // SelectionVersion reports how many times this group's selection moved. A
 // LoadBalance picks per request, so it has none to report.
-func (lb *LoadBalance) SelectionVersion() uint64 {
-	return 0
-}
-
-// LiveSelectionVersion reports zero: a LoadBalance picks per request, so its
-// answer names no pick for a caller to key on.
-func (lb *LoadBalance) LiveSelectionVersion() uint64 {
+// AnswerVersion reports zero: a LoadBalance picks per request, so its answer
+// names no pick and no pin for a caller to key on.
+func (lb *LoadBalance) AnswerVersion() uint64 {
 	return 0
 }
 

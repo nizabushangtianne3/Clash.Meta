@@ -14,17 +14,13 @@ type ProxyGroup interface {
 	Providers() []P.ProxyProvider
 	Proxies() []C.Proxy
 	Now() string
-	// SelectionVersion counts how many times this group's selection moved, so
-	// a caller that caches a group's answer can key it on the count beside the
-	// provider versions instead of resolving the selection on every read. A
-	// group with no selection of its own reports zero.
-	SelectionVersion() uint64
-	// LiveSelectionVersion counts how many times the pick this group answers
-	// with has moved, the moves it makes on its own included. A URLTest or a
-	// Fallback re-elects as members fail and its fast window expires, so this
-	// is the count a caller keying the live pick needs. A group whose answer
-	// names no pick reports zero.
-	LiveSelectionVersion() uint64
+	// AnswerVersion counts every move the group's answer names: its pinned
+	// selection and the pick it answers with. Both can move without the caller
+	// asking, so a caller that caches the answer reads this one counter instead
+	// of resolving either. The members the answer names ride the provider list
+	// generation, which such a caller already reads. A group whose answer names
+	// neither reports zero.
+	AnswerVersion() uint64
 	Touch()
 
 	Hidden() bool

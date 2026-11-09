@@ -150,12 +150,12 @@ func TestFallbackFollowsAProviderSwapInsteadOfACachedPick(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, first.Name(), group.Now())
-	before := group.LiveSelectionVersion()
-	require.Equal(t, before, group.LiveSelectionVersion(),
+	before := group.AnswerVersion()
+	require.Equal(t, before, group.AnswerVersion(),
 		"a read that resolved no new pick must not move the live count")
 	pd.swap([]C.Proxy{second})
 	require.Equal(t, second.Name(), group.Now())
-	require.Greater(t, group.LiveSelectionVersion(), before,
+	require.Greater(t, group.AnswerVersion(), before,
 		"a pick that moved has to move the live count with it, or a cached answer keeps naming it")
 }
 
@@ -174,12 +174,12 @@ func TestURLTestFollowsAProviderSwapInsteadOfACachedPick(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, first.Name(), group.Now())
-	before := group.LiveSelectionVersion()
-	require.Equal(t, before, group.LiveSelectionVersion(),
+	before := group.AnswerVersion()
+	require.Equal(t, before, group.AnswerVersion(),
 		"a read that resolved no new pick must not move the live count")
 	pd.swap([]C.Proxy{second})
 	require.Equal(t, second.Name(), group.Now())
-	require.Greater(t, group.LiveSelectionVersion(), before,
+	require.Greater(t, group.AnswerVersion(), before,
 		"a pick that moved has to move the live count with it, or a cached answer keeps naming it")
 }
 
