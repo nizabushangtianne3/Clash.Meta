@@ -354,32 +354,6 @@ func (m *Metadata) SourceAddrPort() netip.AddrPort {
 	return netip.AddrPortFrom(m.SrcIP.Unmap(), m.SrcPort)
 }
 
-func (m *Metadata) appendSourceDetail(dst []byte) []byte {
-	if m.Type == INNER {
-		return append(dst, MihomoName...)
-	}
-
-	dst = m.appendSourceAddress(dst)
-	switch {
-	case m.Process != "" && m.Uid != 0:
-		dst = append(dst, '(')
-		dst = append(dst, m.Process...)
-		dst = append(dst, ',', ' ', 'u', 'i', 'd', '=')
-		dst = strconv.AppendUint(dst, uint64(m.Uid), 10)
-		return append(dst, ')')
-	case m.Uid != 0:
-		dst = append(dst, '(', 'u', 'i', 'd', '=')
-		dst = strconv.AppendUint(dst, uint64(m.Uid), 10)
-		return append(dst, ')')
-	case m.Process != "":
-		dst = append(dst, '(')
-		dst = append(dst, m.Process...)
-		return append(dst, ')')
-	default:
-		return dst
-	}
-}
-
 func (m *Metadata) SourceDetail() string {
 	if m.Type == INNER {
 		return MihomoName
