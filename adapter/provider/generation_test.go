@@ -12,6 +12,7 @@ import (
 	"github.com/metacubex/mihomo/adapter/outbound"
 	"github.com/metacubex/mihomo/component/resource"
 	C "github.com/metacubex/mihomo/constant"
+	P "github.com/metacubex/mihomo/constant/provider"
 )
 
 // memberListParser reads the member names a test wrote, one per line.
@@ -109,6 +110,57 @@ func TestProxySetProviderReportsItsOwnState(t *testing.T) {
 		}
 	}
 	marshaled, err := pd.MarshalJSON()
+	if err != nil {
+		t.Fatalf("MarshalJSON: %v", err)
+	}
+	if !bytes.Equal(marshaled, document) {
+		t.Errorf("MarshalJSON = %s, want the same document as AppendJSON", marshaled)
+	}
+}
+
+// An inline provider carries its payload rather than a file, so it reports
+// itself the same way the host reads a fetched one.
+func TestInlineProviderReportsItsOwnState(t *testing.T) {
+	// The config entry point builds the parser, which a test cannot: its
+	// override schema is internal to this package.
+	pd, err := ParseProxyProvider("inline", map[string]any{
+		"type": "inline",
+		"payload": []map[string]any{
+			{"name": "member-a", "type": "direct"},
+		},
+	}, nil)
+	if err != nil {
+		t.Fatalf("ParseProxyProvider: %v", err)
+	}
+	inline, ok := pd.(*InlineProvider)
+	if !ok {
+		t.Fatalf("an inline vehicle answered a provider of another kind")
+	}
+	t.Cleanup(func() { _ = inline.Close() })
+
+	if got := inline.VehicleType(); got != P.Inline {
+		t.Errorf("vehicle type = %v, want inline", got)
+	}
+	if got := inline.Count(); got != 1 {
+		t.Errorf("count = %d, want the payload it parsed", got)
+	}
+	if got := inline.Proxies()[0].Name(); got != "member-a" {
+		t.Errorf("member = %q, want the payload's", got)
+	}
+	// An inline provider has nothing to fetch, so an update only restamps it
+	// and stays happy; the members it parsed have to survive it.
+	if err := inline.Update(); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if got := inline.Count(); got != 1 {
+		t.Errorf("count after an update = %d, want the same member", got)
+	}
+
+	document := inline.AppendJSON(nil)
+	if !strings.Contains(string(document), `"vehicleType":"Inline"`) {
+		t.Errorf("document %s does not name its vehicle", document)
+	}
+	marshaled, err := inline.MarshalJSON()
 	if err != nil {
 		t.Fatalf("MarshalJSON: %v", err)
 	}
