@@ -36,11 +36,18 @@ type Fallback struct {
 	rotateProbe    atomic.Bool
 	probeCursor    atomic.Uint32
 	selection      atomic.Pointer[fallbackSelection]
+	livePick       atomic.Pointer[livePick]
 }
 
 func (f *Fallback) Now() string {
 	proxy := f.findAliveProxy(false)
 	return proxy.Name()
+}
+
+// LiveSelectionVersion reports how many times the pick this group answers with
+// has moved, including the moves this group makes on its own as members fail.
+func (f *Fallback) LiveSelectionVersion() uint64 {
+	return liveVersionOf(&f.livePick)
 }
 
 func (f *Fallback) healthCheck() {
@@ -244,6 +251,7 @@ func (f *Fallback) findAliveProxyState(touch bool) (C.Proxy, bool) {
 		if touch {
 			f.Touch()
 		}
+		announceLivePick(&f.livePick, selection.proxy)
 		return selection.proxy, selection.hasAlternative
 	}
 	versions, fresh := f.providerVersionsFromCache()
@@ -251,6 +259,7 @@ func (f *Fallback) findAliveProxyState(touch bool) (C.Proxy, bool) {
 		versions = f.providerVersionsNow()
 	}
 	proxy, hasAlternative := f.resolveAliveProxyState(touch)
+	announceLivePick(&f.livePick, proxy)
 	if proxy != f.EmptyFallback() && proxy.AliveForTestUrl(f.testUrl) {
 		f.storeSelection(proxy, hasAlternative, versions)
 	}

@@ -399,6 +399,12 @@ func (lb *LoadBalance) SelectionVersion() uint64 {
 	return 0
 }
 
+// LiveSelectionVersion reports zero: a LoadBalance picks per request, so its
+// answer names no pick for a caller to key on.
+func (lb *LoadBalance) LiveSelectionVersion() uint64 {
+	return 0
+}
+
 func NewLoadBalance(option GroupCommonOption, loadBalanceOption LoadBalanceOption, emptyFallback C.Proxy, providers []P.ProxyProvider) (lb *LoadBalance, err error) {
 	var strategyFn strategyFn
 	withKey, err := hashKey(loadBalanceOption.HashKey)

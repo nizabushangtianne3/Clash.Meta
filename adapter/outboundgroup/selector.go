@@ -98,6 +98,12 @@ func (s *Selector) SelectionVersion() uint64 {
 	return s.selectedVersion.Load()
 }
 
+// LiveSelectionVersion is the pinned selection's count: a Selector answers with
+// the selection it holds, so the two cannot drift apart.
+func (s *Selector) LiveSelectionVersion() uint64 {
+	return s.selectedVersion.Load()
+}
+
 func (s *Selector) setSelected(name string) {
 	s.selectedMu.Lock()
 	s.selected = name

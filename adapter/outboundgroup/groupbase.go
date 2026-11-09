@@ -124,6 +124,42 @@ func (gb *GroupBase) EmptyFallback() C.Proxy {
 	return gb.emptyFallback
 }
 
+// livePick is the pick a group answers with, and the version of that answer.
+// Both ride one pointer, so a reader that loads it sees a matching pair: a
+// caller can key a cached answer on the version and skip resolving the pick.
+type livePick struct {
+	proxy   C.Proxy
+	version uint64
+}
+
+// announceLivePick records the pick a group answered with and moves the live
+// version when it is not the pick it answered before. A URLTest or a Fallback
+// picks on its own as members die and its fast window expires, so this is the
+// only signal a caller has that the answer it cached has moved.
+func announceLivePick(cell *stdatomic.Pointer[livePick], pick C.Proxy) {
+	for {
+		live := cell.Load()
+		if live != nil && live.proxy == pick {
+			return
+		}
+		next := &livePick{proxy: pick, version: 1}
+		if live != nil {
+			next.version = live.version + 1
+		}
+		if cell.CompareAndSwap(live, next) {
+			return
+		}
+	}
+}
+
+// liveVersionOf reports the version of the pick cell currently carries.
+func liveVersionOf(cell *stdatomic.Pointer[livePick]) uint64 {
+	if live := cell.Load(); live != nil {
+		return live.version
+	}
+	return 0
+}
+
 func (gb *GroupBase) Touch() {
 	for _, pd := range gb.providers {
 		pd.Touch()

@@ -19,6 +19,12 @@ type ProxyGroup interface {
 	// provider versions instead of resolving the selection on every read. A
 	// group with no selection of its own reports zero.
 	SelectionVersion() uint64
+	// LiveSelectionVersion counts how many times the pick this group answers
+	// with has moved, the moves it makes on its own included. A URLTest or a
+	// Fallback re-elects as members fail and its fast window expires, so this
+	// is the count a caller keying the live pick needs. A group whose answer
+	// names no pick reports zero.
+	LiveSelectionVersion() uint64
 	Touch()
 
 	Hidden() bool

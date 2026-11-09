@@ -39,10 +39,19 @@ type URLTest struct {
 	probeCursor        atomic.Uint32
 	versionsMu         sync.Mutex
 	knownGeneration    atomic.Uint64
+	livePick           atomic.Pointer[livePick]
 }
 
 func (u *URLTest) Now() string {
 	return u.fast(false).Name()
+}
+
+// LiveSelectionVersion reports how many times the pick this group answers with
+// has moved. Unlike SelectionVersion it counts the live pick, which this group
+// re-elects on its own, so a caller that caches the group's answer can key it on
+// this instead of resolving the pick on every read.
+func (u *URLTest) LiveSelectionVersion() uint64 {
+	return liveVersionOf(&u.livePick)
 }
 
 func (u *URLTest) Set(name string) error {
@@ -282,6 +291,7 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 		u.Touch()
 	}
 
+	announceLivePick(&u.livePick, elm)
 	return elm
 }
 
