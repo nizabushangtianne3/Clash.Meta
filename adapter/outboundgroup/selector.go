@@ -104,6 +104,7 @@ func (s *Selector) setSelected(name string) {
 	s.selectedMu.Lock()
 	s.selected = name
 	s.selectedVersion.Add(1)
+	answerGeneration.Add(1)
 	s.selectedMu.Unlock()
 	s.selection.Store(nil)
 }

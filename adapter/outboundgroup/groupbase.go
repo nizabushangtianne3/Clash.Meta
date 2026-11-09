@@ -132,6 +132,19 @@ type answeredPick struct {
 // version when it is not the pick it answered before. A URLTest or a Fallback
 // picks on its own as members die and its fast window expires, so this is the
 // only signal a caller has that the answer it cached moved.
+
+// answerGeneration counts every move any group's answer names in this
+// process. A caller that only asks whether some group moved reads this one
+// counter instead of walking every group's own version: the host refreshes a
+// cached document per answer and there is no cheaper way to say "nothing
+// moved" than a counter no writer skips.
+var answerGeneration stdatomic.Uint64
+
+// AnswerGeneration reports how many times any group's answer moved.
+func AnswerGeneration() uint64 {
+	return answerGeneration.Load()
+}
+
 func announceAnswer(cell *stdatomic.Pointer[answeredPick], pick C.Proxy) {
 	for {
 		answer := cell.Load()
@@ -143,6 +156,7 @@ func announceAnswer(cell *stdatomic.Pointer[answeredPick], pick C.Proxy) {
 			next.version = answer.version + 1
 		}
 		if cell.CompareAndSwap(answer, next) {
+			answerGeneration.Add(1)
 			return
 		}
 	}
@@ -159,6 +173,7 @@ func bumpAnswer(cell *stdatomic.Pointer[answeredPick]) {
 			next.proxy, next.version = answer.proxy, answer.version+1
 		}
 		if cell.CompareAndSwap(answer, next) {
+			answerGeneration.Add(1)
 			return
 		}
 	}

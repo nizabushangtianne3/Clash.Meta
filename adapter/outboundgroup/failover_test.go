@@ -102,6 +102,43 @@ func TestAnswerVersionReportsZeroWhereThereIsNothingToCount(t *testing.T) {
 	}
 }
 
+// The host skips revalidating its cached documents while nothing moved, and
+// one counter answers that for every group at once: a pin that moves it, a
+// pick the group elects on its own it, and nothing else does.
+func TestAnswerGenerationMovesWhenAGroupsAnswerDoes(t *testing.T) {
+	emptyFallback := adapter.NewProxy(outbound.NewDirectWithOption(outbound.DirectOption{Name: "COMPATIBLE"}))
+
+	selector, err := NewSelector(
+		GroupCommonOption{Name: "selector"},
+		SelectorOption{},
+		emptyFallback,
+		[]P.ProxyProvider{failoverProvider(t, balancedProxies(2))},
+	)
+	require.NoError(t, err)
+
+	before := AnswerGeneration()
+	selector.setSelected("member")
+	if moved := AnswerGeneration() - before; moved != 1 {
+		t.Errorf("a pinned selection moved the generation by %d, want 1", moved)
+	}
+	selector.setSelected("member")
+	if moved := AnswerGeneration() - before; moved != 2 {
+		t.Errorf("the same pin again moved the generation to %d, want 2", moved)
+	}
+
+	urltest, err := NewURLTest(
+		GroupCommonOption{Name: "url-test", URL: testUrl, TestTimeout: 1000},
+		URLTestOption{},
+		emptyFallback,
+		[]P.ProxyProvider{failoverProvider(t, balancedProxies(2))},
+	)
+	require.NoError(t, err)
+	urltest.Now()
+	if moved := AnswerGeneration() - before; moved != 3 {
+		t.Errorf("a group's own first pick moved the generation to %d, want 3", moved)
+	}
+}
+
 func (p *swapProvider) Version() uint32 {
 	p.mu.Lock()
 	defer p.mu.Unlock()
