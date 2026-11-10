@@ -1,20 +1,21 @@
 package config
 
-import "sync"
+import "sync/atomic"
 
 var (
-	proxyNameList   []string
-	proxyNameListMu sync.RWMutex
+	// The list is replaced whole rather than edited in place, so it rides one
+	// pointer a reader takes without the lock: a host reads it on every answer
+	// it gives, and a write lands once per config parse.
+	proxyNameList atomic.Pointer[[]string]
 )
 
 func GetProxyNameList() []string {
-	proxyNameListMu.RLock()
-	defer proxyNameListMu.RUnlock()
-	return proxyNameList
+	if list := proxyNameList.Load(); list != nil {
+		return *list
+	}
+	return nil
 }
 
 func SetProxyNameList(list []string) {
-	proxyNameListMu.Lock()
-	defer proxyNameListMu.Unlock()
-	proxyNameList = list
+	proxyNameList.Store(&list)
 }
