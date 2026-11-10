@@ -2,6 +2,7 @@ package tunnel
 
 import (
 	"sync"
+	"sync/atomic"
 
 	C "github.com/metacubex/mihomo/constant"
 	P "github.com/metacubex/mihomo/constant/provider"
@@ -17,12 +18,35 @@ func init() {
 
 var (
 	allProxiesMu sync.Mutex
+	// The table and the provider versions it was built from ride one pointer,
+	// so a reader sees both or neither and answers without the lock.
+	allProxies atomic.Pointer[allProxiesTable]
+)
+
+// allProxiesTable is the merged table with the provider versions that stood
+// when it was built; those versions are what tell a reader it is still this.
+type allProxiesTable struct {
 	// Published copy-on-write: a rebuild installs a new map rather than writing
 	// to one a caller may still be reading.
-	allProxies map[string]C.Proxy
+	proxies map[string]C.Proxy
 	// Provider version the cache was built from, per provider name.
-	allProxiesVersions map[string]uint32
-)
+	versions map[string]uint32
+}
+
+// upToDate reports whether the providers still carry the versions this table
+// was built from.
+func (t *allProxiesTable) upToDate(currentProviders map[string]P.ProxyProvider) bool {
+	if len(currentProviders) != len(t.versions) {
+		return false
+	}
+	for name, p := range currentProviders {
+		version, tracked := t.versions[name]
+		if !tracked || version != p.Version() {
+			return false
+		}
+	}
+	return true
+}
 
 // AllProxies returns every proxy the tunnel can route to — the ones the config
 // declared plus the ones its providers carry — keyed by name. The result is
@@ -33,13 +57,24 @@ var (
 // invalidate it: an apply replacing the maps, which calls invalidateAllProxies,
 // and a provider swapping its list, which bumps its own Version.
 func AllProxies() map[string]C.Proxy {
+	if table := allProxies.Load(); table != nil && table.upToDate(loadRuntime().providers) {
+		return table.proxies
+	}
+	return rebuildAllProxies()
+}
+
+// rebuildAllProxies assembles the table under the lock. A reader that found the
+// cache stale reaches here too, so the lock serializes the rebuilds rather than
+// the reads.
+func rebuildAllProxies() map[string]C.Proxy {
 	allProxiesMu.Lock()
 	defer allProxiesMu.Unlock()
 
 	runtimeState := loadRuntime()
 	currentProviders := runtimeState.providers
-	if allProxies != nil && allProxiesUpToDate(currentProviders) {
-		return allProxies
+	// Another answer may have built it under these very versions already.
+	if table := allProxies.Load(); table != nil && table.upToDate(currentProviders) {
+		return table.proxies
 	}
 
 	rebuilt := make(map[string]C.Proxy)
@@ -56,22 +91,8 @@ func AllProxies() map[string]C.Proxy {
 		}
 	}
 
-	allProxies = rebuilt
-	allProxiesVersions = versions
-	return allProxies
-}
-
-func allProxiesUpToDate(currentProviders map[string]P.ProxyProvider) bool {
-	if len(currentProviders) != len(allProxiesVersions) {
-		return false
-	}
-	for name, p := range currentProviders {
-		version, tracked := allProxiesVersions[name]
-		if !tracked || version != p.Version() {
-			return false
-		}
-	}
-	return true
+	allProxies.Store(&allProxiesTable{proxies: rebuilt, versions: versions})
+	return rebuilt
 }
 
 // InvalidateAllProxies drops the cache for a host that would rather pay for one
@@ -87,8 +108,7 @@ func InvalidateAllProxies() {
 func invalidateAllProxies() {
 	allProxiesMu.Lock()
 	defer allProxiesMu.Unlock()
-	allProxies = nil
-	allProxiesVersions = nil
+	allProxies.Store(nil)
 }
 
 // ProvidersSnapshot returns the proxy providers the tunnel holds, read under

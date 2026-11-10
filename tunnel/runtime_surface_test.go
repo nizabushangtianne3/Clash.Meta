@@ -118,21 +118,21 @@ func TestAllProxiesCacheAndInvalidation(test *testing.T) {
 	assert.Len(test, proxies, 2)
 	assert.Contains(test, proxies, "declared")
 	assert.Contains(test, proxies, "provider-a-node")
-	require.NotNil(test, allProxies)
-	require.NotNil(test, allProxiesVersions)
+	require.NotNil(test, allProxies.Load())
+	require.NotNil(test, allProxies.Load().versions)
 
 	// the cache survives a read while the provider version holds
-	assert.True(test, allProxiesUpToDate(map[string]P.ProxyProvider{"provider-a": provider}))
+	assert.True(test, allProxies.Load().upToDate(map[string]P.ProxyProvider{"provider-a": provider}))
 	cached := AllProxies()
 	assert.Equal(test, proxies, cached)
 
 	// a missing provider, an extra one or a bumped version all invalidate it
-	assert.False(test, allProxiesUpToDate(nil))
-	assert.False(test, allProxiesUpToDate(map[string]P.ProxyProvider{}))
+	assert.False(test, allProxies.Load().upToDate(nil))
+	assert.False(test, allProxies.Load().upToDate(map[string]P.ProxyProvider{}))
 	other := &surfaceProvider{name: "provider-b"}
-	assert.False(test, allProxiesUpToDate(map[string]P.ProxyProvider{"provider-a": provider, "provider-b": other}))
+	assert.False(test, allProxies.Load().upToDate(map[string]P.ProxyProvider{"provider-a": provider, "provider-b": other}))
 	provider.version = 2
-	assert.False(test, allProxiesUpToDate(map[string]P.ProxyProvider{"provider-a": provider}))
+	assert.False(test, allProxies.Load().upToDate(map[string]P.ProxyProvider{"provider-a": provider}))
 
 	// the rebuild follows the new version and swaps the node
 	provider.proxies = []C.Proxy{surfaceProxy{name: "provider-a-node-2", adapterType: C.Direct}}
@@ -143,7 +143,7 @@ func TestAllProxiesCacheAndInvalidation(test *testing.T) {
 
 	// an explicit drop forces the next read to rebuild
 	InvalidateAllProxies()
-	assert.Nil(test, allProxies)
+	assert.Nil(test, allProxies.Load())
 	after := AllProxies()
 	assert.Contains(test, after, "provider-a-node-2")
 }
