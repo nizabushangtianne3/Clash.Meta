@@ -56,6 +56,16 @@ type Manager struct {
 	proxyDownloadBlip atomic.Int64
 	pid               int32
 	memory            atomic.Uint64
+	members           atomic.Uint64
+}
+
+// Generation answers a counter that moves on every join and leave. A reader
+// that stored the value it saw when it last walked the table can skip the
+// walk whenever the counter has not moved: the bump follows the map
+// operation, so a new value is only ever observed once the change behind it is
+// visible.
+func (m *Manager) Generation() uint64 {
+	return m.members.Load()
 }
 
 func (m *Manager) Join(c Tracker) {
@@ -63,10 +73,12 @@ func (m *Manager) Join(c Tracker) {
 		DefaultRequestNotify(c)
 	}
 	m.connections.Store(c.Info().UUID, c)
+	m.members.Add(1)
 }
 
 func (m *Manager) Leave(c Tracker) {
 	m.connections.Delete(c.Info().UUID)
+	m.members.Add(1)
 }
 
 func (m *Manager) Get(id string) (c Tracker) {

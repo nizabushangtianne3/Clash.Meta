@@ -155,6 +155,33 @@ func TestTrackerClonesMetadataIntoCreationSnapshot(t *testing.T) {
 	output = snapshot.AppendJSON(output)
 	assert.Contains(t, string(output), `"host":"original.example"`)
 	assert.NotContains(t, string(output), `"host":"mutated.example"`)
+
+	// Traffic through a live tracker never rewrites the snapshot it answers
+	// from, which is what lets a reader hold one row per connection and skip
+	// re-reading a connection whose snapshot pointer has not moved.
+	echo := make(chan int, 1)
+	go func() {
+		buf := make([]byte, 64)
+		n, _ := remote.Read(buf)
+		echo <- n
+	}()
+	go func() {
+		_, _ = remote.Write([]byte("client-hello"))
+	}()
+	buf := make([]byte, 64)
+	_, err := tracker.Read(buf)
+	require.NoError(t, err)
+	n, err := tracker.Write([]byte("server-hello"))
+	require.NoError(t, err)
+	assert.Equal(t, len("server-hello"), n)
+	assert.Equal(t, len("server-hello"), <-echo)
+
+	later := tracker.Info().Metadata
+	assert.Equal(t, "original.example", later.Host)
+	assert.Empty(t, later.SpecialRules)
+	assert.Equal(t, metadata.NetWork, later.NetWork)
+	assert.Equal(t, metadata.DstPort, later.DstPort)
+	assert.Same(t, snapshot.Metadata, tracker.Info().Metadata)
 }
 func TestUDPTrackerAccountsPackets(t *testing.T) {
 	manager := newStripedManager()

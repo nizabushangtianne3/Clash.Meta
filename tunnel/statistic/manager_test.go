@@ -87,6 +87,25 @@ func TestManagerRangesBinaryKeyedTrackers(t *testing.T) {
 	require.Equal(t, 1, ranged)
 }
 
+func TestManagerGenerationMovesOnJoinAndLeave(t *testing.T) {
+	manager := &Manager{}
+	tracker := newTestTracker(t)
+
+	before := manager.Generation()
+	manager.Join(tracker)
+	require.Equal(t, before+1, manager.Generation())
+
+	manager.Leave(tracker)
+	require.Equal(t, before+2, manager.Generation())
+
+	// Leaving what is already gone still moves the counter: a reader that
+	// skipped its walk on an unmoved counter then walks again and still sees a
+	// table that no longer holds the tracker.
+	manager.Leave(tracker)
+	require.Equal(t, before+3, manager.Generation())
+	require.Nil(t, manager.Get(tracker.ID()))
+}
+
 func newStripedManager() *Manager {
 	manager := &Manager{stripes: make([]counterStripe, counterStripeCount)}
 	return manager
