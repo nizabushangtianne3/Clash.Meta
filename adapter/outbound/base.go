@@ -77,15 +77,34 @@ func NewBase(opt BaseOption) *Base {
 }
 
 func buildDialOptions(opt BaseOption) []dialer.Option {
-	var opts []dialer.Option
+	// The slice is shared by every dial, so a caller that appends its own option
+	// must reallocate instead of writing into storage another dial still reads:
+	// the capacity is the number of settings, so it is exactly the length.
+	var capacity int
+	if opt.Interface != "" {
+		capacity++
+	}
+	if opt.RoutingMark != 0 {
+		capacity++
+	}
+	switch opt.Prefer {
+	case C.IPv4Only, C.IPv6Only, C.IPv4Prefer, C.IPv6Prefer:
+		capacity++
+	}
+	if opt.TFO {
+		capacity++
+	}
+	if opt.MPTCP {
+		capacity++
+	}
+
+	opts := make([]dialer.Option, 0, capacity)
 	if opt.Interface != "" {
 		opts = append(opts, dialer.WithInterface(opt.Interface))
 	}
-
 	if opt.RoutingMark != 0 {
 		opts = append(opts, dialer.WithRoutingMark(opt.RoutingMark))
 	}
-
 	switch opt.Prefer {
 	case C.IPv4Only:
 		opts = append(opts, dialer.WithOnlySingleStack(true))
@@ -96,15 +115,12 @@ func buildDialOptions(opt BaseOption) []dialer.Option {
 	case C.IPv6Prefer:
 		opts = append(opts, dialer.WithPreferIPv6())
 	}
-
 	if opt.TFO {
 		opts = append(opts, dialer.WithTFO(true))
 	}
-
 	if opt.MPTCP {
 		opts = append(opts, dialer.WithMPTCP(true))
 	}
-
 	return opts
 }
 
