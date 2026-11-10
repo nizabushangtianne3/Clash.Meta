@@ -135,7 +135,7 @@ func unpackDirectUDPReply(wire []byte, off int, query D.Question, bits uint16) (
 		return nil, false
 	}
 
-	answerName, off, ok := unpackUDPReplyName(wire, off, query.Name, query, "", 0)
+	answerName, _, ok := unpackUDPReplyName(wire, off, query.Name, query, "", 0)
 	if !ok {
 		return nil, false
 	}

@@ -18,13 +18,12 @@ func simpleReplyWire(t *testing.T, qtype uint16, compress bool) ([]byte, *D.Msg)
 	reply.RecursionAvailable = true
 	reply.Question = append(reply.Question, query.Question[0])
 
-	data := make([]byte, 4)
 	var record D.RR
 	if qtype == D.TypeA {
-		data = net.IPv4(192, 0, 2, 10)
+		data := net.IPv4(192, 0, 2, 10)
 		record = &D.A{Hdr: D.RR_Header{Name: query.Question[0].Name, Rrtype: qtype, Class: D.ClassINET, Ttl: 60}, A: data}
 	} else {
-		data = net.ParseIP("2001:db8::10").To16()
+		data := net.ParseIP("2001:db8::10").To16()
 		record = &D.AAAA{Hdr: D.RR_Header{Name: query.Question[0].Name, Rrtype: qtype, Class: D.ClassINET, Ttl: 60}, AAAA: data}
 	}
 	reply.Answer = append(reply.Answer, record)
