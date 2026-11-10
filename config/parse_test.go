@@ -1,6 +1,8 @@
 package config
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/metacubex/mihomo/component/geodata"
@@ -98,4 +100,40 @@ func TestTemporarilySetGeneralRollsBack(t *testing.T) {
 	assert.Equal(t, asnUrl, geodata.ASNUrl())
 	assert.Equal(t, ua, http.UA())
 	assert.Equal(t, etag, resource.ETag())
+}
+
+// A large profile is what a config switch parses, so the parse itself is the
+// startup cost this benchmark pins: the document is unmarshalled and parsed
+// exactly as the executor does it.
+func BenchmarkParseRawConfigBig(b *testing.B) {
+	doc := bigParseDocument(800, 200)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		rawCfg, err := UnmarshalRawConfig([]byte(doc))
+		if err != nil {
+			b.Fatal(err)
+		}
+		if _, err := ParseRawConfig(rawCfg); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func bigParseDocument(proxies, groups int) string {
+	var sb strings.Builder
+	sb.WriteString("mixed-port: 7890\nmode: rule\nlog-level: info\nipv6: false\ngeodata-mode: false\netag-support: false\nproxies:\n")
+	for i := 0; i < proxies; i++ {
+		fmt.Fprintf(&sb, "  - {name: node-%04d, type: ss, server: 10.0.%d.%d, port: 443, cipher: aes-128-gcm, password: password}\n", i, i/256%256, i%256)
+	}
+	sb.WriteString("proxy-groups:\n")
+	for g := 0; g < groups; g++ {
+		fmt.Fprintf(&sb, "  - {name: group-%03d, type: select, proxies: [node-%04d, node-%04d, node-%04d]}\n", g, g*3%proxies, (g*3+1)%proxies, (g*3+2)%proxies)
+	}
+	sb.WriteString("rules:\n")
+	for g := 0; g < groups; g++ {
+		fmt.Fprintf(&sb, "  - DOMAIN-SUFFIX,example-%03d.test,group-%03d\n", g, g)
+	}
+	sb.WriteString("  - MATCH,DIRECT\n")
+	return sb.String()
 }
