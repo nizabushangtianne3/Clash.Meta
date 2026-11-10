@@ -311,10 +311,7 @@ func TestHandleTCPConnSniffsTheDomainAFakeIPCannotName(t *testing.T) {
 		DstPort: 443,
 	}
 
-	go handleTCPConn(serverSide, metadata)
-
-	_, err = client.Write(testClientHello("sniffed.example.com"))
-	require.NoError(t, err)
+	go handleTCPConn(&prefilledConn{Conn: serverSide, buffered: testClientHello("sniffed.example.com")}, metadata)
 
 	select {
 	case name := <-dialed:
@@ -340,6 +337,24 @@ func TestHandleTCPConnSniffsTheDomainAFakeIPCannotName(t *testing.T) {
 			t.Fatal("the destination never answered the bytes after the client hello")
 		}
 	}
+
+}
+
+// A connection whose first bytes are already in the buffer: the sniffer reads
+// them without waiting on the read deadline, which is what keeps the sniff
+// independent of how quickly a test writes.
+type prefilledConn struct {
+	net.Conn
+	buffered []byte
+}
+
+func (c *prefilledConn) Read(p []byte) (int, error) {
+	if len(c.buffered) > 0 {
+		n := copy(p, c.buffered)
+		c.buffered = c.buffered[n:]
+		return n, nil
+	}
+	return c.Conn.Read(p)
 }
 
 // With nothing to read a name from, a connection whose record is missing is
