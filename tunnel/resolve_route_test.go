@@ -57,7 +57,8 @@ func TestResolveRouteReportsATableWithNothingInIt(t *testing.T) {
 		DstIP:   netip.MustParseAddr("127.0.0.1"),
 		DstPort: 443,
 	})
-	if err == nil {
-		require.Nil(t, proxy, "an empty table names no adapter")
-	}
+	// An empty table names no adapter and reports no error: the host gets a nil
+	// answer rather than a failure it would have to interpret.
+	require.NoError(t, err)
+	require.Nil(t, proxy)
 }
