@@ -3,7 +3,6 @@ package statistic
 import (
 	"net/netip"
 	"strconv"
-	"time"
 
 	"github.com/gofrs/uuid/v5"
 	"github.com/metacubex/mihomo/common/jsonutil"
@@ -71,9 +70,7 @@ func (i *TrackerInfo) appendSuffixJSON(dst []byte) []byte {
 	i.suffixOnce.Do(func() {
 		buf := make([]byte, 0, 256)
 		buf = append(buf, `,"start":`...)
-		buf = append(buf, '"')
-		buf = i.Start.AppendFormat(buf, time.RFC3339Nano)
-		buf = append(buf, '"')
+		buf = strconv.AppendInt(buf, i.Start, 10)
 		buf = append(buf, `,"chains":`...)
 		buf = appendJSONStringSlice(buf, i.Chain)
 		buf = append(buf, `,"providerChains":`...)

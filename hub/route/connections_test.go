@@ -74,7 +74,7 @@ func TestRouterConnectionsView(test *testing.T) {
 			ID             string   `json:"id"`
 			Upload         int64    `json:"upload"`
 			Download       int64    `json:"download"`
-			Start          string   `json:"start"`
+			Start          int64    `json:"start"`
 			Chains         []string `json:"chains"`
 			ProviderChains []string `json:"providerChains"`
 			Rule           string   `json:"rule"`

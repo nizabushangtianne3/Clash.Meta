@@ -47,7 +47,7 @@ func goldenSnapshot() *Snapshot {
 	}
 	rich := &TrackerInfo{
 		UUID:        uuid.Must(uuid.FromString("0f8fad5b-d9cb-469f-a165-70867728950e")),
-		Start:       time.Date(2026, 10, 26, 3, 4, 5, 123456789, time.FixedZone("weird", 5*3600+1800)),
+		Start:       time.Date(2026, 10, 26, 3, 4, 5, 123456789, time.FixedZone("weird", 5*3600+1800)).UnixMicro(),
 		Chain:       C.Chain{"DIRECT", "Proxy"},
 		Rule:        "DOMAIN-SUFFIX,example.com",
 		RulePayload: "payload",
@@ -58,7 +58,7 @@ func goldenSnapshot() *Snapshot {
 	rich.DownloadTotal.Store(-42)
 
 	zero := &TrackerInfo{
-		Start:         time.Date(1, 1, 1, 0, 0, 0, 0, time.UTC),
+		Start:         time.Date(1, 1, 1, 0, 0, 0, 0, time.UTC).UnixMicro(),
 		Chain:         C.Chain{},
 		ProviderChain: C.Chain{"one"},
 	}
@@ -67,7 +67,7 @@ func goldenSnapshot() *Snapshot {
 
 	unknown := &TrackerInfo{
 		UUID:  uuid.Must(uuid.FromString("ffffffff-ffff-ffff-ffff-ffffffffffff")),
-		Start: time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC),
+		Start: time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC).UnixMicro(),
 	}
 	unknown.metadata = C.Metadata{
 		NetWork: C.NetWork(77),

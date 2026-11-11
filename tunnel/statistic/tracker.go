@@ -42,7 +42,7 @@ type TrackerInfo struct {
 	Metadata      *C.Metadata  `json:"metadata"`
 	UploadTotal   atomic.Int64 `json:"upload"`
 	DownloadTotal atomic.Int64 `json:"download"`
-	Start         time.Time    `json:"start"`
+	Start         int64        `json:"start"`
 	Chain         C.Chain      `json:"chains"`
 	ProviderChain C.Chain      `json:"providerChains"`
 	Rule          string       `json:"rule"`
@@ -173,7 +173,7 @@ func NewTCPTracker(conn C.Conn, manager *Manager, metadata *C.Metadata, rule C.R
 		stripe:  manager.bindStripe(),
 		TrackerInfo: TrackerInfo{
 			UUID:          newTrackerID(),
-			Start:         time.Now(),
+			Start:         time.Now().UnixMicro(),
 			Chain:         chains,
 			ProviderChain: providerChains,
 			Rule:          "",
@@ -278,7 +278,7 @@ func NewUDPTracker(conn C.PacketConn, manager *Manager, metadata *C.Metadata, ru
 		stripe:     manager.bindStripe(),
 		TrackerInfo: TrackerInfo{
 			UUID:          newTrackerID(),
-			Start:         time.Now(),
+			Start:         time.Now().UnixMicro(),
 			Chain:         chains,
 			ProviderChain: providerChains,
 			Rule:          "",
