@@ -12,11 +12,12 @@ import (
 // swap takes away, and that a swap leaves nothing for the next one.
 func TestManagerCountersAnswerWhatAPushLeftAndASwapTakes(t *testing.T) {
 	manager := &Manager{stripes: newCounterStripes()}
+	stripe := &manager.stripes[0]
 
-	manager.PushUploaded(false, 100)
-	manager.PushUploaded(true, 7)
-	manager.PushDownloaded(false, 40)
-	manager.PushDownloaded(true, 3)
+	stripe.pushUploaded(100, false)
+	stripe.pushUploaded(7, true)
+	stripe.pushDownloaded(40, false)
+	stripe.pushDownloaded(3, true)
 
 	totalUp, totalDown := manager.Total()
 	require.Equal(t, int64(107), totalUp)
@@ -84,8 +85,9 @@ func TestManagerAppendJSONCarriesTheCountersAndTheRows(t *testing.T) {
 		string(empty.AppendJSON(nil)))
 
 	manager := &Manager{stripes: newCounterStripes()}
-	manager.PushUploaded(false, 12)
-	manager.PushDownloaded(false, 34)
+	stripe := &manager.stripes[0]
+	stripe.pushUploaded(12, false)
+	stripe.pushDownloaded(34, false)
 	tracker := newTestTracker(t)
 	manager.Join(tracker)
 

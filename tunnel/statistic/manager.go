@@ -103,22 +103,11 @@ func (m *Manager) Size() int {
 	return m.connections.Size()
 }
 
-func (m *Manager) PushUploaded(direct bool, size int64) {
-	m.sharedStripe().pushUploaded(size, direct)
-}
-
 func (m *Manager) bindStripe() *counterStripe {
 	if len(m.stripes) == 0 {
 		return nil
 	}
 	return &m.stripes[m.stripeCursor.Add(1)%uint64(counterStripeCount)]
-}
-
-func (m *Manager) sharedStripe() *counterStripe {
-	if len(m.stripes) == 0 {
-		return nil
-	}
-	return &m.stripes[0]
 }
 
 func (c *counterStripe) pushUploaded(size int64, direct bool) {
@@ -201,10 +190,6 @@ func (m *Manager) swapProxyDownloadTemp() (sum int64) {
 		sum += m.stripes[i].proxyDownloadTemp.Swap(0)
 	}
 	return sum
-}
-
-func (m *Manager) PushDownloaded(direct bool, size int64) {
-	m.sharedStripe().pushDownloaded(size, direct)
 }
 
 func (m *Manager) Now() (up int64, down int64) {

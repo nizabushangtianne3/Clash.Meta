@@ -120,8 +120,9 @@ func TestManagerParallelPushSumsExactlyAcrossStripes(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			stripe := manager.bindStripe()
 			for i := 0; i < 1000; i++ {
-				manager.PushDownloaded(false, 3)
+				stripe.pushDownloaded(3, false)
 			}
 		}()
 	}
@@ -136,7 +137,7 @@ func TestManagerParallelPushSumsExactlyAcrossStripes(t *testing.T) {
 	require.EqualValues(t, 0, proxyUp)
 	require.EqualValues(t, expected, proxyDown)
 
-	manager.PushUploaded(true, 7)
+	manager.stripes[0].pushUploaded(7, true)
 	up, down = manager.TotalTraffic(false)
 	require.EqualValues(t, 7, up)
 	require.EqualValues(t, expected, down)
@@ -215,10 +216,6 @@ func TestManagerZeroValueHasNoStripePanic(t *testing.T) {
 	manager := &Manager{}
 
 	require.Nil(t, manager.bindStripe())
-	require.Nil(t, manager.sharedStripe())
-
-	manager.PushUploaded(false, 1)
-	manager.PushDownloaded(false, 1)
 
 	up, down := manager.TotalTraffic(false)
 	require.EqualValues(t, 0, up)
